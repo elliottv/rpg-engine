@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>RPGEngine</RootNamespace>
+    <AssemblyName>RPGEngine</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="SkiaSharp" Version="3.119.4" />
+    <PackageReference Include="DotTiled" Version="1.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Lets the test project exercise internal helpers (e.g. the character compositor)
+         without exposing them as public API. -->
+    <InternalsVisibleTo Include="RPGEngine.Tests" />
+  </ItemGroup>
+
+</Project>
