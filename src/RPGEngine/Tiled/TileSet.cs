@@ -1,4 +1,5 @@
 using DotTiled;
+using DotTiled.Serialization;
 using SkiaSharp;
 
 namespace RPGEngine.Tiled;
@@ -9,9 +10,12 @@ namespace RPGEngine.Tiled;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Instances are created by <see cref="TileSetManager"/> (for standalone tilesets
-/// loaded from <c>.tsx</c> files) or by <see cref="TileMap.Load"/> (for the tilesets
-/// referenced by a map). The constructor is internal; use one of those entry points.
+/// Standalone tilesets are created through the static factories
+/// <see cref="Load(string)"/> (local file system) and
+/// <see cref="Load(Stream, Uri, TiledAssetFetcher)"/> (streams, e.g. fetched from a URL
+/// in WebAssembly). The tilesets referenced by a map are created internally by
+/// <see cref="TileMap.Load(string)"/> and <see cref="TileMap.Load(Stream, Uri, TiledAssetFetcher)"/>.
+/// The constructor is internal; use one of those entry points.
 /// </para>
 /// <para>
 /// The backing image is decoded exactly once with SkiaSharp and kept for the whole
@@ -33,8 +37,8 @@ public sealed class TileSet
 
     /// <summary>
     /// Gets the global tile ID of the first tile in this tileset (the GID that maps to
-    /// local tile ID 0). For standalone tilesets registered through
-    /// <see cref="TileSetManager"/> this is <c>0</c> because the tileset is not part of a map.
+    /// local tile ID 0). For standalone tilesets loaded through
+    /// <see cref="Load(string)"/> this is <c>0</c> because the tileset is not part of a map.
     /// </summary>
     public uint FirstGid { get; }
 
@@ -64,6 +68,76 @@ public sealed class TileSet
         _columns = columns;
         _spacing = spacing;
         _margin = margin;
+    }
+
+    /// <summary>
+    /// Loads the Tiled tileset (<c>.tsx</c>) at <paramref name="path"/> and decodes its
+    /// image. The image <c>source</c> declared by the tileset is resolved relative to the
+    /// directory containing the <c>.tsx</c> file.
+    /// </summary>
+    /// <param name="path">The path to a Tiled <c>.tsx</c> tileset file.</param>
+    /// <returns>The loaded <see cref="TileSet"/>.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="path"/> is <see langword="null"/>.</exception>
+    /// <exception cref="InvalidOperationException">The tileset has no image or the image could not be decoded.</exception>
+    /// <exception cref="FileNotFoundException">The tileset file or its image does not exist.</exception>
+    public static TileSet Load(string path)
+    {
+        ArgumentNullException.ThrowIfNull(path);
+
+        var fullPath = Path.GetFullPath(path);
+        var baseDirectory = Path.GetDirectoryName(fullPath) ?? Environment.CurrentDirectory;
+        var dotTiledTileset = Loader.Default().LoadTileset(fullPath);
+
+        return FromDotTiled(dotTiledTileset, dotTiledTileset.FirstGID.GetValueOr(0u), source =>
+        {
+            var imagePath = Path.IsPathRooted(source)
+                ? source
+                : Path.Combine(baseDirectory, source);
+
+            return SKBitmap.Decode(imagePath)
+                ?? throw new FileNotFoundException(
+                    $"Unable to load tileset image for '{dotTiledTileset.Name}'.", imagePath);
+        });
+    }
+
+    /// <summary>
+    /// Loads a Tiled tileset (<c>.tsx</c>) from <paramref name="stream"/> and decodes its
+    /// image. The image <c>source</c> declared by the tileset is resolved relative to
+    /// <paramref name="baseUri"/> and fetched through <paramref name="fetcher"/>.
+    /// </summary>
+    /// <param name="stream">A stream containing the Tiled <c>.tsx</c> tileset content.</param>
+    /// <param name="baseUri">
+    /// The URI the tileset was fetched from (e.g. <c>https://example.com/tiles/tiles.tsx</c>).
+    /// Relative image sources declared by the tileset are resolved against it.
+    /// </param>
+    /// <param name="fetcher">Fetches the raw bytes of a resolved asset URI.</param>
+    /// <returns>The loaded <see cref="TileSet"/>.</returns>
+    /// <exception cref="ArgumentNullException">Any argument is <see langword="null"/>.</exception>
+    /// <exception cref="InvalidOperationException">The tileset has no image or the image could not be decoded.</exception>
+    /// <remarks>
+    /// This overload is the file-system-free entry point: it is used when the tileset
+    /// content was obtained without a local file path, such as in a WebAssembly build
+    /// running in a browser where the <c>.tsx</c> and its image are fetched over HTTP.
+    /// The caller remains the owner of <paramref name="stream"/>.
+    /// </remarks>
+    public static TileSet Load(Stream stream, Uri baseUri, TiledAssetFetcher fetcher)
+    {
+        ArgumentNullException.ThrowIfNull(stream);
+        ArgumentNullException.ThrowIfNull(baseUri);
+        ArgumentNullException.ThrowIfNull(fetcher);
+
+        var content = ReadAllText(stream);
+        var dotTiledTileset = ParseTilesetContent(content);
+
+        return FromDotTiled(dotTiledTileset, dotTiledTileset.FirstGID.GetValueOr(0u), source =>
+        {
+            var imageUri = new Uri(baseUri, source);
+            var bytes = fetcher(imageUri);
+            using var imageStream = new MemoryStream(bytes, writable: false);
+            return SKBitmap.Decode(imageStream)
+                ?? throw new InvalidOperationException(
+                    $"Unable to decode tileset image '{imageUri}' for '{dotTiledTileset.Name}'.");
+        });
     }
 
     /// <summary>
@@ -118,21 +192,26 @@ public sealed class TileSet
     }
 
     /// <summary>
-    /// Creates a <see cref="TileSet"/> from a DotTiled <see cref="Tileset"/> whose image is
-    /// resolved relative to <paramref name="imageBaseDirectory"/> and decoded with SkiaSharp.
+    /// Creates a <see cref="TileSet"/> from a DotTiled <see cref="Tileset"/>, decoding its
+    /// image with <paramref name="imageDecoder"/>.
     /// </summary>
     /// <param name="tileset">The parsed DotTiled tileset.</param>
     /// <param name="firstGid">The first global tile ID of the tileset within its map.</param>
-    /// <param name="imageBaseDirectory">
-    /// The directory used to resolve the tileset image <c>source</c> when it is relative.
+    /// <param name="imageDecoder">
+    /// Decodes the image of the tileset given its raw <c>source</c> string as declared by the
+    /// tileset. The caller resolves the source (e.g. relative to a directory or a URI) and
+    /// returns the decoded bitmap; the resolution base is owned by the caller.
     /// </param>
     /// <returns>A fully decoded <see cref="TileSet"/>.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="tileset"/> or <paramref name="imageDecoder"/> is <see langword="null"/>.</exception>
     /// <exception cref="InvalidOperationException">
     /// The tileset has no image, or the image could not be decoded.
     /// </exception>
-    /// <exception cref="FileNotFoundException">The tileset image file does not exist.</exception>
-    internal static TileSet FromDotTiled(Tileset tileset, uint firstGid, string imageBaseDirectory)
+    internal static TileSet FromDotTiled(Tileset tileset, uint firstGid, Func<string, SKBitmap> imageDecoder)
     {
+        ArgumentNullException.ThrowIfNull(tileset);
+        ArgumentNullException.ThrowIfNull(imageDecoder);
+
         if (!tileset.Image.HasValue)
         {
             throw new InvalidOperationException(
@@ -145,13 +224,8 @@ public sealed class TileSet
             throw new InvalidOperationException($"Tileset '{tileset.Name}' does not declare an image source.");
         }
 
-        var imagePath = Path.IsPathRooted(source)
-            ? source
-            : Path.Combine(imageBaseDirectory, source);
-
-        var sourceImage = SKBitmap.Decode(imagePath)
-            ?? throw new FileNotFoundException(
-                $"Unable to load tileset image for '{tileset.Name}'.", imagePath);
+        var sourceImage = imageDecoder(source)
+            ?? throw new InvalidOperationException($"Unable to decode the image for tileset '{tileset.Name}'.");
 
         return new TileSet(
             tileset.Name,
@@ -163,5 +237,23 @@ public sealed class TileSet
             tileset.Columns,
             tileset.Spacing,
             tileset.Margin);
+    }
+
+    private static Tileset ParseTilesetContent(string content)
+    {
+        using var reader = new TilesetReader(
+            content,
+            externalTilesetResolver: source => throw new NotSupportedException(
+                $"External tileset '{source}' is not supported when loading a standalone tileset."),
+            externalTemplateResolver: source => throw new NotSupportedException(
+                $"External template '{source}' is not supported when loading a standalone tileset."),
+            customTypeResolver: _ => Optional.Empty);
+        return reader.ReadTileset();
+    }
+
+    private static string ReadAllText(Stream stream)
+    {
+        using var reader = new StreamReader(stream, leaveOpen: true);
+        return reader.ReadToEnd();
     }
 }

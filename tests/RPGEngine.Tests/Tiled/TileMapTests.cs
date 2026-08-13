@@ -1,4 +1,3 @@
-using System.Text;
 using RPGEngine.Tiled;
 using SkiaSharp;
 using Xunit;
@@ -6,8 +5,8 @@ using Xunit;
 namespace RPGEngine.Tests.Tiled;
 
 /// <summary>
-/// Acceptance tests for <see cref="TileMap"/>, <see cref="TileSet"/> and
-/// <see cref="TileSetManager"/> (story 7: Tiled TMX/TSX loading and rendering).
+/// Acceptance tests for <see cref="TileMap"/> and <see cref="TileSet"/>
+/// (story 7: Tiled TMX/TSX loading and rendering).
 /// </summary>
 public class TileMapTests
 {
@@ -191,52 +190,111 @@ public class TileMapTests
     }
 
     // ---------------------------------------------------------------------
-    // Acceptance 6: TileSetManager unique-name registration, duplicate names
-    // throw, and unknown lookups throw.
+    // TileSet factories (replacing the removed TileSetManager): standalone
+    // tilesets are loaded directly, from the file system or from a stream
+    // resolved over HTTP (the WebAssembly-compatible path).
     // ---------------------------------------------------------------------
-    /// <summary>Verifies TileSetManager registers tilesets under unique names, throws on duplicate registration and throws for unknown lookups.</summary>
+    /// <summary>Verifies TileSet.Load(path) loads a standalone TSX from the file system and resolves its image relative to the TSX directory.</summary>
     [Fact]
-    public void TileSetManager_RegistersUniqueNames_AndRejectsDuplicates()
+    public void TileSet_LoadFromPath_LoadsStandaloneTileset()
     {
         using var fixture = TiledTestFixture.Create2x2(new[] { Ground });
-        var manager = new TileSetManager();
 
-        var tileSet = manager.Load("tiles", fixture.TilesetPath);
+        var tileSet = TileSet.Load(fixture.TilesetPath);
 
-        Assert.True(manager.Contains("tiles"));
-        Assert.Same(tileSet, manager.Get("tiles"));
-        Assert.False(manager.Contains("missing"));
+        Assert.Equal("test_tiles", tileSet.Name);
+        Assert.Equal(0u, tileSet.FirstGid); // standalone tilesets have no map GID base
+        Assert.Equal(48, tileSet.TileWidth);
+        Assert.Equal(48, tileSet.TileHeight);
 
-        // Duplicate registration throws.
-        Assert.Throws<InvalidOperationException>(() => manager.Load("tiles", fixture.TilesetPath));
-
-        // Unknown lookup throws.
-        Assert.Throws<KeyNotFoundException>(() => manager.Get("missing"));
+        using var tileImage = tileSet.GetTileImage(0);
+        Assert.Equal(48, tileImage.Width);
+        Assert.Equal(48, tileImage.Height);
     }
 
-    /// <summary>Verifies TileSetManager.Load(name, Stream) parses a TSX from a stream and registers it under the given name.</summary>
+    /// <summary>
+    /// Verifies TileSet.Load(stream, baseUri, fetcher) parses a TSX from a stream and
+    /// resolves its image through the fetcher, i.e. without touching the local file system.
+    /// </summary>
     [Fact]
-    public void TileSetManager_LoadFromStream_RegistersTileset()
+    public void TileSet_LoadFromStreamWithFetcher_ResolvesImageUri()
     {
         using var fixture = TiledTestFixture.Create2x2(new[] { Ground });
-        var manager = new TileSetManager();
+        var baseUri = new Uri("https://example.com/maps/tiles.tsx");
+        using var stream = new MemoryStream(File.ReadAllBytes(fixture.TilesetPath));
 
-        // Rewrite the TSX so the image source is absolute (a stream has no
-        // file-system location to resolve a relative path against).
-        var tsx = File.ReadAllText(fixture.TilesetPath).Replace(
-            "source=\"tiles.png\"",
-            $"source=\"{fixture.ImagePath}\"");
-        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(tsx));
+        var tileSet = TileSet.Load(stream, baseUri, CreateFetcher(fixture));
 
-        var tileSet = manager.Load("stream_tiles", stream);
+        Assert.Equal("test_tiles", tileSet.Name);
+        Assert.Equal(48, tileSet.TileWidth);
+        Assert.Equal(48, tileSet.TileHeight);
 
-        Assert.True(manager.Contains("stream_tiles"));
-        Assert.Same(tileSet, manager.Get("stream_tiles"));
+        // The image was fetched from https://example.com/maps/tiles.png.
+        using var tileImage = tileSet.GetTileImage(0);
+        Assert.Equal(48, tileImage.Width);
+        Assert.Equal(48, tileImage.Height);
+    }
 
-        // A duplicate registration throws (using a fresh stream: the first call
-        // consumed its stream).
-        using var duplicateStream = new MemoryStream(Encoding.UTF8.GetBytes(tsx));
-        Assert.Throws<InvalidOperationException>(() => manager.Load("stream_tiles", duplicateStream));
+    // ---------------------------------------------------------------------
+    // WebAssembly-compatible map loading: TileMap.Load(stream, baseUri,
+    // fetcher) parses a TMX from a stream and resolves the external TSX and
+    // its image exclusively through the fetcher (no file system access).
+    // ---------------------------------------------------------------------
+    /// <summary>Verifies TileMap.Load(stream, baseUri, fetcher) loads a TMX whose external TSX and image are fetched through the fetcher.</summary>
+    [Fact]
+    public void TileMap_LoadFromStreamWithFetcher_LoadsExternalTileset()
+    {
+        using var fixture = TiledTestFixture.Create2x2(new[] { Ground });
+        var baseUri = new Uri("https://example.com/maps/map.tmx");
+        using var stream = new MemoryStream(File.ReadAllBytes(fixture.MapPath));
+
+        var map = TileMap.Load(stream, baseUri, CreateFetcher(fixture));
+
+        Assert.Equal(2, map.Width);
+        Assert.Equal(2, map.Height);
+        Assert.Equal(48, map.TileWidth);
+        Assert.Equal(48, map.TileHeight);
+
+        Assert.Equal(1u, map.GetTileId("ground", 0, 0));
+        Assert.Equal(TileFlags.FlippedHorizontally, map.GetTileFlags("ground", 0, 1));
+    }
+
+    /// <summary>Verifies a map loaded through the fetcher renders its tiles correctly.</summary>
+    [Fact]
+    public void TileMap_LoadFromStreamWithFetcher_Renders()
+    {
+        using var fixture = TiledTestFixture.Create2x2(new[] { Ground });
+        var baseUri = new Uri("https://example.com/maps/map.tmx");
+        using var stream = new MemoryStream(File.ReadAllBytes(fixture.MapPath));
+
+        var map = TileMap.Load(stream, baseUri, CreateFetcher(fixture));
+
+        using var bitmap = RenderMap(map);
+
+        // Tile at (0,0) is solid red and opaque.
+        Assert.NotEqual(0, bitmap.GetPixel(24, 24).Alpha);
+        // Empty cell at (1,0) stays transparent.
+        Assert.Equal(0, bitmap.GetPixel(72, 24).Alpha);
+    }
+
+    /// <summary>
+    /// Verifies the fetcher is genuinely used: a map whose external tileset references an
+    /// image the fetcher cannot provide fails with an informative error instead of reading
+    /// from disk.
+    /// </summary>
+    [Fact]
+    public void TileMap_LoadFromStreamWithFetcher_ThrowsWhenAssetMissing()
+    {
+        using var fixture = TiledTestFixture.Create2x2(new[] { Ground });
+        var baseUri = new Uri("https://example.com/maps/map.tmx");
+        using var stream = new MemoryStream(File.ReadAllBytes(fixture.MapPath));
+
+        // A fetcher that only serves the map and TSX but not the PNG image.
+        TiledAssetFetcher fetcher = uri => uri.Segments[^1] == "tiles.png"
+            ? throw new KeyNotFoundException($"Asset not found: {uri}")
+            : CreateFetcher(fixture)(uri);
+
+        Assert.Throws<KeyNotFoundException>(() => TileMap.Load(stream, baseUri, fetcher));
     }
 
     // ---------------------------------------------------------------------
@@ -247,8 +305,7 @@ public class TileMapTests
     public void GetTileImage_ReturnsCroppedTile()
     {
         using var fixture = TiledTestFixture.Create2x2(new[] { Ground });
-        var manager = new TileSetManager();
-        var tileSet = manager.Load("tiles", fixture.TilesetPath);
+        var tileSet = TileSet.Load(fixture.TilesetPath);
 
         using var tileImage = tileSet.GetTileImage(0);
 
@@ -296,6 +353,24 @@ public class TileMapTests
         // A fully opaque red tile drawn at 50% opacity yields roughly half-alpha pixels.
         var alpha = bitmap.GetPixel(24, 24).Alpha;
         Assert.InRange(alpha, 96, 160);
+    }
+
+    /// <summary>
+    /// Builds a fetcher that serves the fixture's map, tileset and image bytes under a
+    /// fake HTTP base URI, simulating the WebAssembly/HTTP asset loading scenario.
+    /// </summary>
+    private static TiledAssetFetcher CreateFetcher(TiledTestFixture fixture)
+    {
+        var assets = new Dictionary<string, byte[]>(StringComparer.Ordinal)
+        {
+            ["map.tmx"] = File.ReadAllBytes(fixture.MapPath),
+            ["tiles.tsx"] = File.ReadAllBytes(fixture.TilesetPath),
+            ["tiles.png"] = File.ReadAllBytes(fixture.ImagePath),
+        };
+
+        return uri => assets.TryGetValue(uri.Segments[^1], out var bytes)
+            ? bytes
+            : throw new KeyNotFoundException($"Unexpected asset URI: {uri}");
     }
 
     private static SKBitmap RenderMap(TileMap map)

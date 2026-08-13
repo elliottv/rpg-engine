@@ -10,9 +10,10 @@ namespace RPGEngine.Tiled;
 /// <remarks>
 /// <para>
 /// A map owns the <see cref="TileSet"/>s that its layers reference; these are created during
-/// <see cref="Load"/> and are <em>not</em> registered in any <see cref="TileSetManager"/>.
-/// Tilesets registered globally (through <c>GameEngine.LoadTileSet</c>) are unrelated to the
-/// tilesets a map uses internally.
+/// <see cref="Load(string)"/> and are not registered anywhere globally. Loading a map never
+/// touches the engine's tilesets; standalone tilesets are loaded explicitly through the
+/// <see cref="TileSet.Load(string)"/> / <see cref="TileSet.Load(Stream, Uri, TiledAssetFetcher)"/>
+/// factories instead.
 /// </para>
 /// <para>
 /// Tile coordinates are 0-based. Layer data is stored row-major. Only the orthogonal map
@@ -72,7 +73,7 @@ public sealed class TileMap
 
     /// <summary>
     /// Loads the Tiled map at <paramref name="path"/>, parsing the referenced external tilesets
-    /// and decoding their images.
+    /// and decoding their images from the local file system.
     /// </summary>
     /// <param name="path">The path to a Tiled <c>.tmx</c> map file.</param>
     /// <returns>The loaded <see cref="TileMap"/>.</returns>
@@ -85,32 +86,40 @@ public sealed class TileMap
         var mapDirectory = Path.GetDirectoryName(fullPath) ?? Environment.CurrentDirectory;
         var map = Loader.Default().LoadMap(fullPath);
 
-        var tileSets = new List<TileSet>();
-        foreach (var dotTiledTileset in map.Tilesets)
-        {
-            // The image source inside an external TSX is relative to that TSX file, while the
-            // image source inside an embedded <tileset> is relative to the map file.
-            var imageBaseDirectory = mapDirectory;
-            if (dotTiledTileset.Source.HasValue && !string.IsNullOrWhiteSpace(dotTiledTileset.Source.Value))
-            {
-                var tsxPath = Path.GetFullPath(Path.Combine(mapDirectory, dotTiledTileset.Source.Value));
-                imageBaseDirectory = Path.GetDirectoryName(tsxPath) ?? mapDirectory;
-            }
+        return BuildMap(map, dotTiledTileset => CreateFileSystemTileSet(dotTiledTileset, mapDirectory));
+    }
 
-            var firstGid = dotTiledTileset.FirstGID.GetValueOr(0u);
-            tileSets.Add(TileSet.FromDotTiled(dotTiledTileset, firstGid, imageBaseDirectory));
-        }
+    /// <summary>
+    /// Loads the Tiled map content from <paramref name="stream"/>, parsing the referenced
+    /// external tilesets and decoding their images. External resources declared by the map
+    /// (external <c>.tsx</c> tilesets and their images) are resolved against
+    /// <paramref name="baseUri"/> and fetched through <paramref name="fetcher"/>.
+    /// </summary>
+    /// <param name="stream">A stream containing the Tiled <c>.tmx</c> map content.</param>
+    /// <param name="baseUri">
+    /// The URI the map was fetched from (e.g. <c>https://example.com/maps/map.tmx</c>).
+    /// Relative references declared by the map and its tilesets are resolved against it.
+    /// </param>
+    /// <param name="fetcher">Fetches the raw bytes of a resolved asset URI.</param>
+    /// <returns>The loaded <see cref="TileMap"/>.</returns>
+    /// <exception cref="ArgumentNullException">Any argument is <see langword="null"/>.</exception>
+    /// <exception cref="InvalidOperationException">A referenced tileset has no image or an image could not be decoded.</exception>
+    /// <remarks>
+    /// This overload is the file-system-free entry point: it is used when the map content was
+    /// obtained without a local file path, such as in a WebAssembly build running in a browser
+    /// where the <c>.tmx</c>, the <c>.tsx</c> tilesets and the tile images are fetched over
+    /// HTTP. The caller remains the owner of <paramref name="stream"/>.
+    /// </remarks>
+    public static TileMap Load(Stream stream, Uri baseUri, TiledAssetFetcher fetcher)
+    {
+        ArgumentNullException.ThrowIfNull(stream);
+        ArgumentNullException.ThrowIfNull(baseUri);
+        ArgumentNullException.ThrowIfNull(fetcher);
 
-        var layers = new List<TileMapLayer>();
-        foreach (var layer in map.Layers)
-        {
-            if (layer is TileLayer tileLayer)
-            {
-                layers.Add(TileMapLayer.FromDotTiled(tileLayer));
-            }
-        }
+        var content = ReadAllText(stream);
+        var map = ParseMapContent(content, baseUri, fetcher);
 
-        return new TileMap(map.Width, map.Height, map.TileWidth, map.TileHeight, tileSets, layers);
+        return BuildMap(map, dotTiledTileset => CreateUriTileSet(dotTiledTileset, baseUri, fetcher));
     }
 
     /// <summary>
@@ -275,6 +284,110 @@ public sealed class TileMap
         {
             canvas.Restore();
         }
+    }
+
+    private static TileMap BuildMap(Map map, Func<Tileset, TileSet> tileSetFactory)
+    {
+        var tileSets = new List<TileSet>();
+        foreach (var dotTiledTileset in map.Tilesets)
+        {
+            tileSets.Add(tileSetFactory(dotTiledTileset));
+        }
+
+        var layers = new List<TileMapLayer>();
+        foreach (var layer in map.Layers)
+        {
+            if (layer is TileLayer tileLayer)
+            {
+                layers.Add(TileMapLayer.FromDotTiled(tileLayer));
+            }
+        }
+
+        return new TileMap(map.Width, map.Height, map.TileWidth, map.TileHeight, tileSets, layers);
+    }
+
+    private static TileSet CreateFileSystemTileSet(Tileset dotTiledTileset, string mapDirectory)
+    {
+        // The image source inside an external TSX is relative to that TSX file, while the
+        // image source inside an embedded <tileset> is relative to the map file.
+        var imageBaseDirectory = mapDirectory;
+        if (dotTiledTileset.Source.HasValue && !string.IsNullOrWhiteSpace(dotTiledTileset.Source.Value))
+        {
+            var tsxPath = Path.GetFullPath(Path.Combine(mapDirectory, dotTiledTileset.Source.Value));
+            imageBaseDirectory = Path.GetDirectoryName(tsxPath) ?? mapDirectory;
+        }
+
+        var firstGid = dotTiledTileset.FirstGID.GetValueOr(0u);
+        return TileSet.FromDotTiled(dotTiledTileset, firstGid, source =>
+        {
+            var imagePath = Path.IsPathRooted(source)
+                ? source
+                : Path.Combine(imageBaseDirectory, source);
+
+            return SKBitmap.Decode(imagePath)
+                ?? throw new FileNotFoundException(
+                    $"Unable to load tileset image for '{dotTiledTileset.Name}'.", imagePath);
+        });
+    }
+
+    private static TileSet CreateUriTileSet(Tileset dotTiledTileset, Uri baseUri, TiledAssetFetcher fetcher)
+    {
+        // An external TSX's image is relative to the TSX URI, while an embedded <tileset>'s
+        // image is relative to the map URI.
+        var tilesetUri = baseUri;
+        if (dotTiledTileset.Source.HasValue && !string.IsNullOrWhiteSpace(dotTiledTileset.Source.Value))
+        {
+            tilesetUri = new Uri(baseUri, dotTiledTileset.Source.Value);
+        }
+
+        var firstGid = dotTiledTileset.FirstGID.GetValueOr(0u);
+        return TileSet.FromDotTiled(dotTiledTileset, firstGid, source =>
+        {
+            var imageUri = new Uri(tilesetUri, source);
+            var bytes = fetcher(imageUri);
+            using var imageStream = new MemoryStream(bytes, writable: false);
+            return SKBitmap.Decode(imageStream)
+                ?? throw new InvalidOperationException(
+                    $"Unable to decode tileset image '{imageUri}' for '{dotTiledTileset.Name}'.");
+        });
+    }
+
+    private static Map ParseMapContent(string content, Uri baseUri, TiledAssetFetcher fetcher)
+    {
+        using var reader = new MapReader(
+            content,
+            externalTilesetResolver: source => LoadExternalTileset(new Uri(baseUri, source), fetcher),
+            externalTemplateResolver: source => throw new NotSupportedException(
+                $"External template '{source}' is not supported when loading a map from a stream."),
+            customTypeResolver: _ => Optional.Empty);
+        return reader.ReadMap();
+    }
+
+    private static Tileset LoadExternalTileset(Uri tilesetUri, TiledAssetFetcher fetcher)
+    {
+        var bytes = fetcher(tilesetUri);
+        var content = TextFromBytes(bytes);
+
+        using var reader = new TilesetReader(
+            content,
+            externalTilesetResolver: source => LoadExternalTileset(new Uri(tilesetUri, source), fetcher),
+            externalTemplateResolver: source => throw new NotSupportedException(
+                $"External template '{source}' is not supported when loading a map from a stream."),
+            customTypeResolver: _ => Optional.Empty);
+        return reader.ReadTileset();
+    }
+
+    private static string ReadAllText(Stream stream)
+    {
+        using var reader = new StreamReader(stream, leaveOpen: true);
+        return reader.ReadToEnd();
+    }
+
+    private static string TextFromBytes(byte[] bytes)
+    {
+        using var stream = new MemoryStream(bytes, writable: false);
+        using var reader = new StreamReader(stream);
+        return reader.ReadToEnd();
     }
 
     private TileMapLayer GetLayer(string layerName)
