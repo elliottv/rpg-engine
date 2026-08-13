@@ -1,0 +1,9 @@
+html, body { margin: 0; padding: 0; height: 100%; font-family: 'Segoe UI', Tahoma, sans-serif; }
+#app { height: 100%; }
+.loading { padding: 2rem; text-align: center; color: #555; }
+#blazor-error-ui { background: #ffdddd; color: #700; bottom: 0; box-shadow: 0 -1px 2px rgba(0,0,0,.2); display: none; left: 0; padding: 1rem; position: fixed; right: 0; z-index: 1000; }
+#blazor-error-ui .dismiss { cursor: pointer; float: right; margin-right: 1rem; }
+
+.wasm-host { display: flex; flex-direction: column; height: 100vh; }
+.hud { padding: 0.5rem 1rem; background: #1e1e2e; color: #eee; display: flex; justify-content: space-between; }
+.gl-host { flex: 1; outline: none; }

@@ -220,6 +220,48 @@ public sealed class GameEngine
     public void LoadSpriteSheet(string name, Stream stream) => _spriteSheetManager.Load(name, stream);
 
     /// <summary>
+    /// Loads a <em>part</em> character spritesheet of layer <paramref name="partType"/> from
+    /// <paramref name="path"/> and registers it under <paramref name="name"/> so characters can
+    /// reference it by name (see <see cref="Character.SpriteSheets"/>). Part sheets are composed
+    /// in the fixed RPG Maker MZ order described by the character compositor; see
+    /// <c>CharacterSpriteCompositor</c> and the <c>docs/Architecture.md</c> ordering table.
+    /// </summary>
+    /// <param name="name">The unique name used to reference the sheet.</param>
+    /// <param name="path">The path to an image file (PNG or other SkiaSharp-supported format).</param>
+    /// <param name="partType">The character layer the sheet provides.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="name"/> or <paramref name="path"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="name"/> is empty after trimming, the image cannot be decoded, or its
+    /// dimensions are not exactly <see cref="SpriteSheet.SheetWidth"/>×<see cref="SpriteSheet.SheetHeight"/>.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">A sheet named <paramref name="name"/> is already loaded.</exception>
+    /// <remarks>
+    /// This is the <see cref="SpriteSheetManager.LoadPart(string, string, CharacterPartType)"/> entry
+    /// point of the engine: the part sheet becomes visible to every character configured with a
+    /// <see cref="SpriteSheetRef"/> pointing at <paramref name="name"/>.
+    /// </remarks>
+    public void LoadPartSpriteSheet(string name, string path, CharacterPartType partType)
+        => _spriteSheetManager.LoadPart(name, path, partType);
+
+    /// <summary>
+    /// Loads a <em>part</em> character spritesheet of layer <paramref name="partType"/> from
+    /// <paramref name="stream"/> and registers it under <paramref name="name"/>. This is the
+    /// file-system-free entry point (e.g. WebAssembly builds where assets are fetched over HTTP).
+    /// </summary>
+    /// <param name="name">The unique name used to reference the sheet.</param>
+    /// <param name="stream">A stream containing the encoded image (PNG or other SkiaSharp-supported format).</param>
+    /// <param name="partType">The character layer the sheet provides.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="name"/> or <paramref name="stream"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="name"/> is empty after trimming, the image cannot be decoded, or its
+    /// dimensions are not exactly <see cref="SpriteSheet.SheetWidth"/>×<see cref="SpriteSheet.SheetHeight"/>.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">A sheet named <paramref name="name"/> is already loaded.</exception>
+    /// <remarks>The caller remains the owner of <paramref name="stream"/>; it is not disposed here.</remarks>
+    public void LoadPartSpriteSheet(string name, Stream stream, CharacterPartType partType)
+        => _spriteSheetManager.LoadPart(name, stream, partType);
+
+    /// <summary>
     /// Computes the camera origin: the world pixel position that maps to the canvas' top-left
     /// corner. The desired origin centers the player; it is then clamped so the viewport stays
     /// inside the map (<c>origin ∈ [0, max(0, PixelSize - canvasSize)]</c> per axis). When no

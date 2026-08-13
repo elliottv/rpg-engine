@@ -1,0 +1,136 @@
+@page "/"
+@using System.Diagnostics
+@using Microsoft.AspNetCore.Components.Web
+@using SkiaSharp
+@using SkiaSharp.Views.Blazor
+@implements IDisposable
+
+@* GPU-backed rendering host: SKGLView renders onto a WebGL surface (GRContext) so every
+    engine draw call is hardware accelerated. The render loop is driven by SKGLView's
+    EnableRenderLoop and forwards keyboard events to engine.Input(...). *@
+
+<PageTitle>RPG Engine — WebAssembly Sample</PageTitle>
+
+<div class="wasm-host">
+    <div class="hud">
+        <span>Use <strong>WASD</strong> to move the hero.</span>
+        <span>FPS: @(_fps.ToString("F0"))</span>
+    </div>
+    <div class="gl-host" tabindex="0" @onkeydown="OnKeyDown" @onkeyup="OnKeyUp">
+        <SKGLView EnableRenderLoop="true" OnPaintSurface="OnPaintSurface" Style="width:100%; height:100%;" />
+    </div>
+</div>
+
+@code {
+    [Inject]
+    private NavigationManager NavigationManager { get; set; } = default!;
+
+    private GameEngine? _engine;
+    private readonly Stopwatch _stopwatch = Stopwatch.StartNew();
+    private double _lastFrame;
+    private double _fps;
+    private int _frameCount;
+    private double _fpsTimer;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var http = new HttpClient { BaseAddress = new Uri(NavigationManager.BaseUri) };
+        var scene = await GameScene.LoadAsync(http, "assets/");
+        _engine = scene.Engine;
+        _lastFrame = _stopwatch.Elapsed.TotalSeconds;
+    }
+
+    /// <summary>Called every animation frame by SKGLView's render loop: update, then draw.</summary>
+    private void OnPaintSurface(SKPaintGLSurfaceEventArgs e)
+    {
+        if (_engine is null)
+        {
+            return;
+        }
+
+        var now = _stopwatch.Elapsed.TotalSeconds;
+        var dt = Math.Clamp(now - _lastFrame, 0, 0.1);
+        _lastFrame = now;
+
+        // Update the simulation, then render onto the GPU-backed GL surface.
+        _engine.Update(dt);
+        var canvas = e.Surface.Canvas;
+        canvas.Clear(SKColors.Black);
+        _engine.Render(canvas, dt);
+
+        // Simple FPS counter (updated ~4 times per second to avoid re-render churn).
+        _frameCount++;
+        _fpsTimer += dt;
+        if (_fpsTimer >= 0.25)
+        {
+            _fps = _frameCount / _fpsTimer;
+            _frameCount = 0;
+            _fpsTimer = 0;
+            _ = InvokeAsync(StateHasChanged);
+        }
+    }
+
+    /// <summary>Translates a browser key event to the engine's framework-agnostic Key and presses it.</summary>
+    private void OnKeyDown(KeyboardEventArgs e)
+    {
+        if (TranslateKey(e) is Key key)
+        {
+            _engine?.Input(key, isPressed: true);
+        }
+    }
+
+    /// <summary>Translates a browser key event to the engine's framework-agnostic Key and releases it.</summary>
+    private void OnKeyUp(KeyboardEventArgs e)
+    {
+        if (TranslateKey(e) is Key key)
+        {
+            _engine?.Input(key, isPressed: false);
+        }
+    }
+
+    /// <summary>Maps <see cref="KeyboardEventArgs"/> to the engine <see cref="Key"/> values.</summary>
+    private static Key? TranslateKey(KeyboardEventArgs e)
+    {
+        // Normalize: "w" -> "W", "ArrowUp" -> "Up", " " -> "Space".
+        var key = e.Key.Trim();
+        return key switch
+        {
+            "a" or "A" => Key.A,
+            "b" or "B" => Key.B,
+            "c" or "C" => Key.C,
+            "d" or "D" => Key.D,
+            "e" or "E" => Key.E,
+            "f" or "F" => Key.F,
+            "g" or "G" => Key.G,
+            "h" or "H" => Key.H,
+            "i" or "I" => Key.I,
+            "j" or "J" => Key.J,
+            "k" or "K" => Key.K,
+            "l" or "L" => Key.L,
+            "m" or "M" => Key.M,
+            "n" or "N" => Key.N,
+            "o" or "O" => Key.O,
+            "p" or "P" => Key.P,
+            "q" or "Q" => Key.Q,
+            "r" or "R" => Key.R,
+            "s" or "S" => Key.S,
+            "t" or "T" => Key.T,
+            "u" or "U" => Key.U,
+            "v" or "V" => Key.V,
+            "w" or "W" => Key.W,
+            "x" or "X" => Key.X,
+            "y" or "Y" => Key.Y,
+            "z" or "Z" => Key.Z,
+            "ArrowUp" => Key.Up,
+            "ArrowDown" => Key.Down,
+            "ArrowLeft" => Key.Left,
+            "ArrowRight" => Key.Right,
+            " " or "Spacebar" => Key.Space,
+            _ => null,
+        };
+    }
+
+    public void Dispose()
+    {
+    }
+}
