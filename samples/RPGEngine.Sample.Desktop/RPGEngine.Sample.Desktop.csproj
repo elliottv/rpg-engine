@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.19041</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <RootNamespace>RPGEngine.Sample.Desktop</RootNamespace>
+    <!-- Sample hosts are not part of the documented public API; CS1591 (missing XML
+         comments on public members) is suppressed here. The engine library itself keeps
+         it as an error and is the source of the docs/api reference. -->
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <AssemblyName>RPGEngine.Sample.Desktop</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="SkiaSharp.Views.WPF" Version="3.119.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\RPGEngine\RPGEngine.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The committed fixture assets (map, tileset and base64-encoded PNGs) are copied to the
+         output so the sample can materialize them at startup, exactly like the tests do. -->
+    <Content Include="..\..\assets\**\*"
+             Link="Assets\%(RecursiveDir)%(Filename)%(Extension)"
+             CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

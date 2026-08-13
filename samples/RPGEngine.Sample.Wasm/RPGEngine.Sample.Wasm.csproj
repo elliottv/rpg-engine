@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk.BlazorWebAssembly">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>RPGEngine.Sample.Wasm</RootNamespace>
+    <AssemblyName>RPGEngine.Sample.Wasm</AssemblyName>
+    <!-- Sample hosts are not part of the documented public API; CS1591 (missing XML
+         comments on public members) is suppressed here. The engine library itself keeps
+         it as an error and is the source of the docs/api reference. -->
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <WasmBuildNative>true</WasmBuildNative>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" Version="10.0.5" />
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.DevServer" Version="10.0.5" PrivateAssets="all" />
+    <PackageReference Include="SkiaSharp.Views.Blazor" Version="3.119.4" />
+    <PackageReference Include="SkiaSharp.NativeAssets.WebAssembly" Version="3.119.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\RPGEngine\RPGEngine.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The committed fixture assets are copied into the project's wwwroot folder so the
+         WebAssembly host can fetch them over HTTP (base64-encoded PNGs are decoded at runtime
+         with Convert.FromBase64String). Copying into wwwroot makes them part of the static web
+         assets that are served by the Blazor host. -->
+    <Content Include="..\..\assets\**\*"
+             Link="wwwroot\assets\%(RecursiveDir)%(Filename)%(Extension)"
+             CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>
