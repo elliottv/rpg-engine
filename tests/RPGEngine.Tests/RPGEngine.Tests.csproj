@@ -22,4 +22,11 @@
     <ProjectReference Include="..\..\src\RPGEngine\RPGEngine.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Committed fixture assets (map, tileset and base64-encoded PNGs) are copied to the
+         test output as Fixtures/ so the smoke and documentation-example tests can load the
+         exact scene the sample hosts use. -->
+    <Content Include="..\..\assets\**\*" Link="Fixtures\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>
