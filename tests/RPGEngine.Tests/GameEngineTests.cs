@@ -1,4 +1,3 @@
-using System.Text;
 using RPGEngine.Sprites;
 using RPGEngine.Tiled;
 using RPGEngine.Tests.Tiled;
@@ -9,9 +8,10 @@ namespace RPGEngine.Tests;
 
 /// <summary>
 /// Acceptance tests for <see cref="GameEngine"/> (story 3): the root object that owns the
-/// player, NPCs, map, configuration and asset registries, and exposes the
-/// <c>Update</c>/<c>Render</c>/<c>Input</c>/<c>LoadSpriteSheet</c>/<c>LoadTileSet</c> API used
-/// by the host game loop.
+/// player, NPCs, map, configuration and spritesheet registry, and exposes the
+/// <c>Update</c>/<c>Render</c>/<c>Input</c>/<c>LoadSpriteSheet</c> API used by the host game
+/// loop. Tile sets are loaded by the <c>TileMap</c> itself and are not part of the engine's
+/// public API.
 /// </summary>
 public class GameEngineTests
 {
@@ -193,8 +193,10 @@ public class GameEngineTests
     }
 
     // ---------------------------------------------------------------------
-    // Acceptance 6a: LoadSpriteSheet registers by unique name; a duplicate
-    // throws InvalidOperationException.
+    // Acceptance 6: LoadSpriteSheet registers by unique name (duplicate →
+    // InvalidOperationException), and Render uses the loaded sheets (a character
+    // configured with a loaded sheet name and a valid character index 1..8
+    // renders non-empty; an index outside 1..8 is rejected).
     // ---------------------------------------------------------------------
     /// <summary>Verifies LoadSpriteSheet rejects a duplicate name with InvalidOperationException.</summary>
     [Fact]
@@ -210,50 +212,6 @@ public class GameEngineTests
         Assert.Throws<InvalidOperationException>(() => engine.LoadSpriteSheet("hero", duplicate));
     }
 
-    // ---------------------------------------------------------------------
-    // Acceptance 6b: LoadTileSet registers by unique name (path overload); a
-    // duplicate throws InvalidOperationException.
-    // ---------------------------------------------------------------------
-    /// <summary>Verifies LoadTileSet (path overload) rejects a duplicate name with InvalidOperationException.</summary>
-    [Fact]
-    public void LoadTileSet_DuplicateName_ThrowsInvalidOperationException()
-    {
-        using var fixture = new TiledTestFixture(2, 2, new[] { FilledLayer(2, 2) });
-        var engine = new GameEngine();
-
-        engine.LoadTileSet("tiles", fixture.TilesetPath);
-
-        Assert.Throws<InvalidOperationException>(() => engine.LoadTileSet("tiles", fixture.TilesetPath));
-    }
-
-    // ---------------------------------------------------------------------
-    // Acceptance 6c: LoadTileSet (stream overload) registers by unique name; a
-    // duplicate throws InvalidOperationException.
-    // ---------------------------------------------------------------------
-    /// <summary>Verifies LoadTileSet (stream overload) registers a TSX and rejects a duplicate name with InvalidOperationException.</summary>
-    [Fact]
-    public void LoadTileSet_FromStream_RegistersAndRejectsDuplicate()
-    {
-        using var fixture = new TiledTestFixture(2, 2, new[] { FilledLayer(2, 2) });
-        var engine = new GameEngine();
-
-        // The fixture TSX references "tiles.png" relative to its own directory; the stream
-        // overload resolves images against the current directory, so rewrite the source to an
-        // absolute path.
-        var tsx = File.ReadAllText(fixture.TilesetPath)
-            .Replace("source=\"tiles.png\"", $"source=\"{fixture.ImagePath}\"");
-        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(tsx));
-        engine.LoadTileSet("tiles", stream);
-
-        using var duplicate = new MemoryStream(Encoding.UTF8.GetBytes(tsx));
-        Assert.Throws<InvalidOperationException>(() => engine.LoadTileSet("tiles", duplicate));
-    }
-
-    // ---------------------------------------------------------------------
-    // Acceptance 6d: Render uses the loaded spritesheets — a character
-    // configured with a loaded sheet name and a valid character index (1..8)
-    // renders non-empty. A character index outside 1..8 is rejected.
-    // ---------------------------------------------------------------------
     /// <summary>Verifies a player configured with a loaded sheet and a valid character index renders non-empty pixels.</summary>
     [Fact]
     public void Render_CharacterWithLoadedSheetAndValidIndex_RendersNonEmpty()
