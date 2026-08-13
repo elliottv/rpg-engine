@@ -22,10 +22,10 @@ public class GameEngineSmokeTests
         Assert.Empty(engine.Characters);
 
         Assert.NotNull(engine.Config);
-        Assert.Equal(Key.W, engine.Config.MoveUp);
-        Assert.Equal(Key.S, engine.Config.MoveDown);
-        Assert.Equal(Key.A, engine.Config.MoveLeft);
-        Assert.Equal(Key.D, engine.Config.MoveRight);
+        Assert.Equal(Key.W, engine.Config.UpKey);
+        Assert.Equal(Key.S, engine.Config.DownKey);
+        Assert.Equal(Key.A, engine.Config.LeftKey);
+        Assert.Equal(Key.D, engine.Config.RightKey);
 
         Assert.Null(engine.Map);
     }
