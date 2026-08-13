@@ -6,9 +6,9 @@ namespace RPGEngine;
 
 /// <summary>
 /// The root of the engine. It owns the game state (player, characters, map and configuration),
-/// the asset registries (spritesheets and tilesets) and the pressed-keys state, and exposes the
-/// game-loop entry points <see cref="Update"/>, <see cref="Render"/>, <see cref="Input"/> and the
-/// asset-loading methods used by the host application.
+/// the spritesheet registry and the pressed-keys state, and exposes the game-loop entry points
+/// <see cref="Update"/>, <see cref="Render"/>, <see cref="Input"/> and the asset-loading methods
+/// used by the host application.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -37,11 +37,15 @@ namespace RPGEngine;
 /// per frame. When no bound key is held the player stops and its animation snaps back to the
 /// standing frame.
 /// </para>
+/// <para>
+/// Tile sets are not loaded through the engine: a <see cref="TileMap"/> owns the tilesets that
+/// its layers reference (they are created when the map is loaded). Standalone tilesets can be
+/// loaded directly through the <c>TileSet.Load</c> factories in <c>RPGEngine.Tiled</c>.
+/// </para>
 /// </remarks>
 public sealed class GameEngine
 {
     private readonly SpriteSheetManager _spriteSheetManager = new();
-    private readonly TileSetManager _tileSetManager = new();
     private readonly List<Character> _characters = [];
     private readonly HashSet<Key> _pressedKeys = [];
     private readonly List<Key> _pressedKeyOrder = [];
@@ -49,8 +53,8 @@ public sealed class GameEngine
     /// <summary>
     /// Initializes a new instance of the <see cref="GameEngine"/> class with default state: a
     /// fresh <see cref="Player"/>, an empty <see cref="Characters"/> list, a
-    /// <see cref="GameConfig"/> with the default WASD bindings, no map and empty asset
-    /// registries.
+    /// <see cref="GameConfig"/> with the default WASD bindings, no map and an empty spritesheet
+    /// registry.
     /// </summary>
     public GameEngine()
     {
@@ -214,30 +218,6 @@ public sealed class GameEngine
     /// <exception cref="InvalidOperationException">A sheet named <paramref name="name"/> is already loaded.</exception>
     /// <remarks>The caller remains the owner of <paramref name="stream"/>; it is not disposed here.</remarks>
     public void LoadSpriteSheet(string name, Stream stream) => _spriteSheetManager.Load(name, stream);
-
-    /// <summary>
-    /// Loads the Tiled tileset (<c>.tsx</c>) at <paramref name="path"/> and registers it under
-    /// <paramref name="name"/>.
-    /// </summary>
-    /// <param name="name">The unique name used to reference the tileset.</param>
-    /// <param name="path">The path to a Tiled <c>.tsx</c> tileset file.</param>
-    /// <exception cref="ArgumentNullException"><paramref name="name"/> or <paramref name="path"/> is <see langword="null"/>.</exception>
-    /// <exception cref="ArgumentException"><paramref name="name"/> is empty after trimming.</exception>
-    /// <exception cref="InvalidOperationException">A tileset named <paramref name="name"/> is already registered.</exception>
-    public void LoadTileSet(string name, string path) => _tileSetManager.Load(name, path);
-
-    /// <summary>
-    /// Loads a Tiled tileset (<c>.tsx</c>) from <paramref name="stream"/> and registers it under
-    /// <paramref name="name"/>. A relative image <c>source</c> declared by the tileset is resolved
-    /// against the current directory.
-    /// </summary>
-    /// <param name="name">The unique name used to reference the tileset.</param>
-    /// <param name="stream">A stream containing the Tiled <c>.tsx</c> tileset content.</param>
-    /// <exception cref="ArgumentNullException"><paramref name="name"/> or <paramref name="stream"/> is <see langword="null"/>.</exception>
-    /// <exception cref="ArgumentException"><paramref name="name"/> is empty after trimming.</exception>
-    /// <exception cref="InvalidOperationException">A tileset named <paramref name="name"/> is already registered.</exception>
-    /// <remarks>The caller remains the owner of <paramref name="stream"/>; it is not disposed here.</remarks>
-    public void LoadTileSet(string name, Stream stream) => _tileSetManager.Load(name, stream);
 
     /// <summary>
     /// Computes the camera origin: the world pixel position that maps to the canvas' top-left
