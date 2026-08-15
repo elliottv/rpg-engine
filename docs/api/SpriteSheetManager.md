@@ -17,8 +17,9 @@ unique name.
 ### `SpriteSheet Load(string name, string path)`
 
 Loads the full character spritesheet at `path` and registers it under `name`. Throws for a null
-name/path, an empty trimmed name, a non-576×384 image, an undecodable image, or a duplicate
-name.
+name/path, an empty trimmed name, an image whose dimensions do not form a valid 12×8 grid
+(positive width divisible by 12 and positive height divisible by 8), an undecodable image, or
+a duplicate name.
 
 ```csharp
 var manager = new SpriteSheetManager();
