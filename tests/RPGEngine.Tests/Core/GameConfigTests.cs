@@ -196,6 +196,86 @@ public class GameConfigTests
         Assert.Null(config.GetDirection(Key.D));
     }
 
+    // ---------------------------------------------------------------------
+    // Acceptance 5 (story 21): GetMovementDirection combines the held bound
+    // keys into a single 8-direction vector.
+    // ---------------------------------------------------------------------
+    /// <summary>Verifies a single bound key resolves to its cardinal direction (W → Up).</summary>
+    [Fact]
+    public void GetMovementDirection_SingleKey_ReturnsItsCardinalDirection()
+    {
+        var config = new GameConfig();
+
+        Assert.Equal(Direction.Up, config.GetMovementDirection([Key.W]));
+    }
+
+    /// <summary>Verifies two perpendicular keys combine into a diagonal (W+D → UpRight).</summary>
+    [Fact]
+    public void GetMovementDirection_TwoPerpendicularKeys_ReturnsDiagonal()
+    {
+        var config = new GameConfig();
+
+        Assert.Equal(Direction.UpRight, config.GetMovementDirection([Key.W, Key.D]));
+    }
+
+    /// <summary>Verifies opposite keys cancel out and produce no movement (W+S → null).</summary>
+    [Fact]
+    public void GetMovementDirection_OppositeKeys_CancelToNull()
+    {
+        var config = new GameConfig();
+
+        Assert.Null(config.GetMovementDirection([Key.W, Key.S]));
+        Assert.Null(config.GetMovementDirection([Key.A, Key.D]));
+    }
+
+    /// <summary>Verifies a cancelling horizontal pair leaves the vertical direction (W+A+D → Up).</summary>
+    [Fact]
+    public void GetMovementDirection_ThreeKeysWithCancellingHorizontalPair_ReturnsVertical()
+    {
+        var config = new GameConfig();
+
+        Assert.Equal(Direction.Up, config.GetMovementDirection([Key.W, Key.A, Key.D]));
+    }
+
+    /// <summary>Verifies an empty pressed set produces no movement.</summary>
+    [Fact]
+    public void GetMovementDirection_EmptySet_ReturnsNull()
+    {
+        var config = new GameConfig();
+
+        Assert.Null(config.GetMovementDirection(Array.Empty<Key>()));
+    }
+
+    /// <summary>Verifies keys not bound to any movement direction are ignored.</summary>
+    [Fact]
+    public void GetMovementDirection_UnmappedKeysAreIgnored()
+    {
+        var config = new GameConfig();
+
+        Assert.Null(config.GetMovementDirection([Key.Space]));
+        Assert.Equal(Direction.Up, config.GetMovementDirection([Key.W, Key.Space]));
+    }
+
+    /// <summary>Verifies diagonal resolution respects rebinding (Z+D → UpRight after UpKey = Z).</summary>
+    [Fact]
+    public void GetMovementDirection_RespectsRebinding()
+    {
+        var config = new GameConfig();
+        config.UpKey = Key.Z;
+
+        Assert.Equal(Direction.Up, config.GetMovementDirection([Key.Z]));
+        Assert.Equal(Direction.UpRight, config.GetMovementDirection([Key.Z, Key.D]));
+    }
+
+    /// <summary>Verifies GetMovementDirection rejects a null pressed-keys argument.</summary>
+    [Fact]
+    public void GetMovementDirection_NullArgument_ThrowsArgumentNullException()
+    {
+        var config = new GameConfig();
+
+        Assert.Throws<ArgumentNullException>(() => config.GetMovementDirection(null!));
+    }
+
     private static void Set(GameConfig config, string propertyName, Key key)
     {
         switch (propertyName)
