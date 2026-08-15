@@ -368,6 +368,63 @@ public class GameEngineTests
     }
 
     // ---------------------------------------------------------------------
+    // Acceptance (story 23): the player is clamped inside the map using its
+    // actual sprite size (78×108 for a 936×864 sheet), verified through
+    // ComputeCameraOrigin/rendering.
+    // ---------------------------------------------------------------------
+    /// <summary>Verifies ClampPlayerToMap uses the player's derived 78×108 sprite size (maxX = PixelWidth - 78, maxY = PixelHeight - 108).</summary>
+    [Fact]
+    public void ClampPlayerToMap_UsesPlayerSpriteSize()
+    {
+        using var fixture = CreateFilledMapFixture(10, 10); // 480×480 px
+        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+
+        using (var stream = CharacterTestHelper.CreateSheetStream(seed: 1, width: 936, height: 864))
+        {
+            engine.LoadSpriteSheet("hero", stream);
+        }
+        engine.Player.SpriteSheets.Add(new SpriteSheetRef("hero", CharacterIndex: 1));
+
+        // Beyond the bottom-right corner: clamps to (480 - 78, 480 - 108) = (402, 372).
+        engine.Player.Position = new Position(1000, 1000);
+        engine.Update(FrameDt);
+        Assert.Equal(480 - 78, engine.Player.Position.X, precision: 6);
+        Assert.Equal(480 - 108, engine.Player.Position.Y, precision: 6);
+
+        // Negative position clamps to (0, 0).
+        engine.Player.Position = new Position(-100, -100);
+        engine.Update(FrameDt);
+        Assert.Equal(0, engine.Player.Position.X, precision: 6);
+        Assert.Equal(0, engine.Player.Position.Y, precision: 6);
+    }
+
+    /// <summary>Verifies the 78×108 clamp through ComputeCameraOrigin and rendered output.</summary>
+    [Fact]
+    public void ClampPlayerToMap_LargeSheet_VerifiedViaCameraAndRender()
+    {
+        const int canvasSize = 240;
+        using var fixture = CreateFilledMapFixture(10, 10); // 480×480 px
+        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+
+        using (var stream = CharacterTestHelper.CreateSheetStream(seed: 1, width: 936, height: 864))
+        {
+            engine.LoadSpriteSheet("hero", stream);
+        }
+        engine.Player.SpriteSheets.Add(new SpriteSheetRef("hero", CharacterIndex: 1));
+
+        engine.Player.Position = new Position(1000, 1000);
+        engine.Update(FrameDt); // clamps to (402, 372)
+
+        // The camera origin clamps to the map: maxX = maxY = 480 - 240 = 240.
+        Assert.Equal(new Position(240, 240), engine.ComputeCameraOrigin(canvasSize, canvasSize));
+
+        // The 78×108 sprite renders at screen (402 - 240, 372 - 240) = (162, 132).
+        using var bitmap = Render(engine, canvasSize, canvasSize);
+        var expected = CharacterTestHelper.SpriteColor(seed: 1, characterIndex: 1, Direction.Down, StandingFrame);
+        Assert.Equal(expected, bitmap.GetPixel(162 + 39, 132 + 54));
+    }
+
+    // ---------------------------------------------------------------------
     // Helpers
     // ---------------------------------------------------------------------
 
