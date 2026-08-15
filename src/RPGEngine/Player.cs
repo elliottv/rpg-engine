@@ -24,7 +24,8 @@ public sealed class Player
 {
     /// <summary>
     /// The default movement speed, in pixels per second, of a player created by the parameterless
-    /// constructor: 96 px/s, i.e. one 48px tile every half second. This is a gameplay tuning
+    /// constructor: 96 px/s, i.e. two 48px map tiles every second (the tile grid is fixed at
+    /// 48px regardless of the sprite's derived cell size). This is a gameplay tuning
     /// constant and is expected to be adjusted later.
     /// </summary>
     public const double DefaultBaseSpeed = 96;

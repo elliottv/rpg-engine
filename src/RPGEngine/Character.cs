@@ -166,7 +166,7 @@ public sealed class Character
     /// <paramref name="spriteSheetManager"/>, which the engine supplies at draw time.
     /// </summary>
     /// <param name="canvas">The canvas to draw onto.</param>
-    /// <param name="screenPosition">The top-left screen position of the 48×48 sprite.</param>
+    /// <param name="screenPosition">The top-left screen position of the sprite (its size is the sheet's derived cell size).</param>
     /// <param name="dt">The elapsed time in seconds (reserved for future animation timing).</param>
     /// <param name="spriteSheetManager">The manager that resolves the referenced sheet names.</param>
     /// <exception cref="InvalidOperationException">
@@ -179,6 +179,30 @@ public sealed class Character
     internal void Draw(SKCanvas canvas, Position screenPosition, double dt, SpriteSheetManager spriteSheetManager)
     {
         _compositor.Draw(canvas, screenPosition, _spriteSheets, Direction, _animationFrame, spriteSheetManager);
+    }
+
+    /// <summary>
+    /// Resolves the pixel size of the character's sprite: the first entry of
+    /// <see cref="SpriteSheets"/> is looked up through <paramref name="manager"/> and that sheet's
+    /// derived <see cref="SpriteSheet.CellWidth"/>/<see cref="SpriteSheet.CellHeight"/> are
+    /// returned. When <see cref="SpriteSheets"/> is empty, the documented default of 48×48 is
+    /// returned (the classic RPG Maker MZ cell size).
+    /// </summary>
+    /// <param name="manager">The manager that resolves the referenced sheet names.</param>
+    /// <returns>The sprite size <c>(width, height)</c> in pixels.</returns>
+    /// <remarks>
+    /// Used by the engine to clamp a character (notably the player) inside the map bounds using
+    /// its actual rendered size, whatever the sheet's derived cell size is.
+    /// </remarks>
+    internal (int Width, int Height) GetSpriteSize(SpriteSheetManager manager)
+    {
+        if (_spriteSheets.Count == 0)
+        {
+            return (48, 48);
+        }
+
+        var sheet = manager.Get(_spriteSheets[0].Name);
+        return (sheet.CellWidth, sheet.CellHeight);
     }
 
     private void AdvanceFrame()

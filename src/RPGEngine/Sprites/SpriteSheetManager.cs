@@ -18,6 +18,13 @@ namespace RPGEngine.Sprites;
 /// given layer. The kind and part type are stored on the returned <see cref="SpriteSheet"/>.
 /// </para>
 /// <para>
+/// Any image whose dimensions form a valid 12×8 grid is accepted: the width must be a positive
+/// multiple of <see cref="SpriteSheet.Columns"/> and the height a positive multiple of
+/// <see cref="SpriteSheet.Rows"/>. The cell size is derived from the decoded image
+/// (<c>width / 12</c> × <c>height / 8</c>), so both the standard 576×384 sheet (48×48 cells)
+/// and e.g. a 936×864 sheet (78×108 cells) load correctly.
+/// </para>
+/// <para>
 /// Names are case-sensitive and trimmed on registration, lookup and duplicate checks. Loading a
 /// name that is already registered throws <see cref="InvalidOperationException"/>.
 /// </para>
@@ -36,7 +43,9 @@ public sealed class SpriteSheetManager
     /// <exception cref="ArgumentNullException"><paramref name="name"/> or <paramref name="path"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">
     /// <paramref name="name"/> is empty after trimming, the image cannot be decoded, or its
-    /// dimensions are not exactly <see cref="SpriteSheet.SheetWidth"/>×<see cref="SpriteSheet.SheetHeight"/>.
+    /// dimensions do not form a valid 12×8 grid (positive width divisible by
+    /// <see cref="SpriteSheet.Columns"/> and positive height divisible by
+    /// <see cref="SpriteSheet.Rows"/>).
     /// </exception>
     /// <exception cref="InvalidOperationException">A sheet named <paramref name="name"/> is already loaded.</exception>
     public SpriteSheet Load(string name, string path)
@@ -60,7 +69,9 @@ public sealed class SpriteSheetManager
     /// <exception cref="ArgumentNullException"><paramref name="name"/> or <paramref name="stream"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">
     /// <paramref name="name"/> is empty after trimming, the image cannot be decoded, or its
-    /// dimensions are not exactly <see cref="SpriteSheet.SheetWidth"/>×<see cref="SpriteSheet.SheetHeight"/>.
+    /// dimensions do not form a valid 12×8 grid (positive width divisible by
+    /// <see cref="SpriteSheet.Columns"/> and positive height divisible by
+    /// <see cref="SpriteSheet.Rows"/>).
     /// </exception>
     /// <exception cref="InvalidOperationException">A sheet named <paramref name="name"/> is already loaded.</exception>
     /// <remarks>
@@ -90,7 +101,9 @@ public sealed class SpriteSheetManager
     /// <exception cref="ArgumentNullException"><paramref name="name"/> or <paramref name="stream"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">
     /// <paramref name="name"/> is empty after trimming, the image cannot be decoded, or its
-    /// dimensions are not exactly <see cref="SpriteSheet.SheetWidth"/>×<see cref="SpriteSheet.SheetHeight"/>.
+    /// dimensions do not form a valid 12×8 grid (positive width divisible by
+    /// <see cref="SpriteSheet.Columns"/> and positive height divisible by
+    /// <see cref="SpriteSheet.Rows"/>).
     /// </exception>
     /// <exception cref="InvalidOperationException">A sheet named <paramref name="name"/> is already loaded.</exception>
     /// <remarks>
@@ -126,7 +139,9 @@ public sealed class SpriteSheetManager
     /// <exception cref="ArgumentNullException"><paramref name="name"/> or <paramref name="path"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">
     /// <paramref name="name"/> is empty after trimming, the image cannot be decoded, or its
-    /// dimensions are not exactly <see cref="SpriteSheet.SheetWidth"/>×<see cref="SpriteSheet.SheetHeight"/>.
+    /// dimensions do not form a valid 12×8 grid (positive width divisible by
+    /// <see cref="SpriteSheet.Columns"/> and positive height divisible by
+    /// <see cref="SpriteSheet.Rows"/>).
     /// </exception>
     /// <exception cref="InvalidOperationException">A sheet named <paramref name="name"/> is already loaded.</exception>
     public SpriteSheet LoadPart(string name, string path, CharacterPartType partType)
@@ -151,7 +166,9 @@ public sealed class SpriteSheetManager
     /// <exception cref="ArgumentNullException"><paramref name="name"/> or <paramref name="stream"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">
     /// <paramref name="name"/> is empty after trimming, the image cannot be decoded, or its
-    /// dimensions are not exactly <see cref="SpriteSheet.SheetWidth"/>×<see cref="SpriteSheet.SheetHeight"/>.
+    /// dimensions do not form a valid 12×8 grid (positive width divisible by
+    /// <see cref="SpriteSheet.Columns"/> and positive height divisible by
+    /// <see cref="SpriteSheet.Rows"/>).
     /// </exception>
     /// <exception cref="InvalidOperationException">A sheet named <paramref name="name"/> is already loaded.</exception>
     /// <remarks>
@@ -180,7 +197,9 @@ public sealed class SpriteSheetManager
     /// <exception cref="ArgumentNullException"><paramref name="name"/> or <paramref name="stream"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">
     /// <paramref name="name"/> is empty after trimming, the image cannot be decoded, or its
-    /// dimensions are not exactly <see cref="SpriteSheet.SheetWidth"/>×<see cref="SpriteSheet.SheetHeight"/>.
+    /// dimensions do not form a valid 12×8 grid (positive width divisible by
+    /// <see cref="SpriteSheet.Columns"/> and positive height divisible by
+    /// <see cref="SpriteSheet.Rows"/>).
     /// </exception>
     /// <exception cref="InvalidOperationException">A sheet named <paramref name="name"/> is already loaded.</exception>
     /// <remarks>
@@ -247,7 +266,13 @@ public sealed class SpriteSheetManager
 
     private SpriteSheet Register(string name, SpriteSheetType type, CharacterPartType? partType, SKImage source)
     {
-        var sheet = new SpriteSheet(name, type, partType, source);
+        var sheet = new SpriteSheet(
+            name,
+            type,
+            partType,
+            source,
+            source.Width / SpriteSheet.Columns,
+            source.Height / SpriteSheet.Rows);
         _sheets.Add(name, sheet);
         return sheet;
     }
@@ -275,12 +300,14 @@ public sealed class SpriteSheetManager
         // Dispose() would be a native use-after-free).
         var width = image.Width;
         var height = image.Height;
-        if (width != SpriteSheet.SheetWidth || height != SpriteSheet.SheetHeight)
+        if (width <= 0 || height <= 0 || width % SpriteSheet.Columns != 0 || height % SpriteSheet.Rows != 0)
         {
             image.Dispose();
             throw new ArgumentException(
-                $"Spritesheet '{name}' must be {SpriteSheet.SheetWidth}×{SpriteSheet.SheetHeight} pixels " +
-                $"(RPG Maker MZ full or part sheet), but was {width}×{height}.");
+                $"Spritesheet '{name}' must be an image whose dimensions form a valid " +
+                $"{SpriteSheet.Columns}×{SpriteSheet.Rows} grid (positive width divisible by " +
+                $"{SpriteSheet.Columns} and positive height divisible by {SpriteSheet.Rows}), " +
+                $"but was {width}×{height}.");
         }
 
         return image;
