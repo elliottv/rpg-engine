@@ -370,4 +370,77 @@ public class DocsExamplesTests
 
         Assert.Equal(16, map.Width);
     }
+
+    // ---------------------------------------------------------------------
+    // Async loading (story 22): the async stream-based loaders work with
+    // read-async-only streams and async asset fetchers.
+    // ---------------------------------------------------------------------
+    /// <summary>Verifies the async spritesheet loading example: SpriteSheetManager.LoadAsync and GameEngine.LoadSpriteSheetAsync from an async-only stream.</summary>
+    [Fact]
+    public async Task AsyncSheetLoading_LoadsAndRegisters()
+    {
+        using var fixtures = FixtureAssets.MaterializeToTempDirectory();
+
+        // SpriteSheetManager.LoadAsync: a stream that only supports asynchronous reads, as a
+        // browser host would provide.
+        using (var stream = new AsyncOnlyStream(FixtureAssets.DecodePngStream(FixtureAssets.FullSheet)))
+        {
+            var manager = new SpriteSheetManager();
+            var sheet = await manager.LoadAsync("hero", stream);
+
+            Assert.Equal("hero", sheet.Name);
+            Assert.Equal(SpriteSheetType.Full, sheet.Type);
+        }
+
+        // GameEngine.LoadSpriteSheetAsync: the engine-level delegating overload.
+        var engine = new GameEngine();
+        using (var stream = new AsyncOnlyStream(FixtureAssets.DecodePngStream(FixtureAssets.FullSheet)))
+        {
+            await engine.LoadSpriteSheetAsync("hero", stream);
+        }
+        engine.Player.SpriteSheets.Add(new SpriteSheetRef("hero", CharacterIndex: 1));
+
+        using var bitmap = new SKBitmap(48, 48);
+        using (var canvas = new SKCanvas(bitmap))
+        {
+            canvas.Clear(SKColors.Transparent);
+            engine.Render(canvas, FrameDt);
+        }
+
+        Assert.NotEqual(0, bitmap.GetPixel(24, 24).Alpha);
+    }
+
+    /// <summary>Verifies the async map loading example: TileMap.LoadAsync with a TiledAssetFetcherAsync resolving external assets over HTTP.</summary>
+    [Fact]
+    public async Task AsyncMapLoading_WithAsyncFetcher()
+    {
+        using var fixtures = FixtureAssets.MaterializeToTempDirectory();
+
+        var mapBytes = File.ReadAllBytes(fixtures.PathOf(FixtureAssets.MapFile));
+        using var stream = new AsyncOnlyStream(new MemoryStream(mapBytes, writable: false));
+
+        // A TiledAssetFetcherAsync mirrors what HttpClient.GetByteArrayAsync would do.
+        TiledAssetFetcherAsync fetcher = async uri =>
+        {
+            await Task.Delay(1);
+            var name = Path.GetFileName(uri.AbsolutePath);
+            if (name == FixtureAssets.TilesetFile)
+            {
+                return System.Text.Encoding.UTF8.GetBytes(File.ReadAllText(fixtures.PathOf(FixtureAssets.TilesetFile)));
+            }
+
+            if (name == FixtureAssets.TilesImage)
+            {
+                return File.ReadAllBytes(fixtures.PathOf(FixtureAssets.TilesImage));
+            }
+
+            throw new FileNotFoundException($"Unknown asset '{uri}'.");
+        };
+
+        var map = await TileMap.LoadAsync(stream, new Uri("file:///fixtures/map.tmx"), fetcher);
+
+        Assert.Equal(16, map.Width);
+        Assert.Equal(12, map.Height);
+        Assert.Equal(2, map.Layers.Count);
+    }
 }
