@@ -141,8 +141,49 @@ public sealed class TileSet
     }
 
     /// <summary>
+    /// Asynchronously loads a Tiled tileset (<c>.tsx</c>) from <paramref name="stream"/> and
+    /// decodes its image. The image <c>source</c> declared by the tileset is resolved relative to
+    /// <paramref name="baseUri"/> and fetched through <paramref name="fetcher"/>.
+    /// </summary>
+    /// <param name="stream">A stream containing the Tiled <c>.tsx</c> tileset content.</param>
+    /// <param name="baseUri">
+    /// The URI the tileset was fetched from (e.g. <c>https://example.com/tiles/tiles.tsx</c>).
+    /// Relative image sources declared by the tileset are resolved against it.
+    /// </param>
+    /// <param name="fetcher">Asynchronously fetches the raw bytes of a resolved asset URI.</param>
+    /// <returns>A task that resolves to the loaded <see cref="TileSet"/>.</returns>
+    /// <exception cref="ArgumentNullException">Any argument is <see langword="null"/>.</exception>
+    /// <exception cref="InvalidOperationException">The tileset has no image or the image could not be decoded.</exception>
+    /// <remarks>
+    /// This is the asynchronous counterpart of <see cref="Load(Stream, Uri, TiledAssetFetcher)"/>
+    /// for streams and asset fetchers that only support asynchronous I/O (e.g. certain
+    /// network/browser streams). The TSX content is read with <c>StreamReader.ReadToEndAsync()</c>
+    /// and the image is fetched with <c>await fetcher(...)</c>, so no synchronous read is
+    /// performed on the caller's stream. The caller remains the owner of <paramref name="stream"/>.
+    /// </remarks>
+    public static async Task<TileSet> LoadAsync(Stream stream, Uri baseUri, TiledAssetFetcherAsync fetcher)
+    {
+        ArgumentNullException.ThrowIfNull(stream);
+        ArgumentNullException.ThrowIfNull(baseUri);
+        ArgumentNullException.ThrowIfNull(fetcher);
+
+        var content = await ReadAllTextAsync(stream).ConfigureAwait(false);
+        var dotTiledTileset = ParseTilesetContent(content);
+
+        return await FromDotTiledAsync(dotTiledTileset, dotTiledTileset.FirstGID.GetValueOr(0u), async source =>
+        {
+            var imageUri = new Uri(baseUri, source);
+            var bytes = await fetcher(imageUri).ConfigureAwait(false);
+            using var imageStream = new MemoryStream(bytes, writable: false);
+            return SKBitmap.Decode(imageStream)
+                ?? throw new InvalidOperationException(
+                    $"Unable to decode tileset image '{imageUri}' for '{dotTiledTileset.Name}'.");
+        }).ConfigureAwait(false);
+    }
+
+    /// <summary>
     /// Returns the image of the tile with the given 0-based <paramref name="localTileId"/>,
-    /// cropped from the tileset image at <see cref="TileWidth"/>×<see cref="TileHeight"/>.
+    /// cropped from the tileset image at <see cref="TileWidth"/>&#215;<see cref="TileHeight"/>.
     /// </summary>
     /// <param name="localTileId">The 0-based local tile ID within this tileset.</param>
     /// <returns>An independent raster image containing the requested tile.</returns>
@@ -239,6 +280,62 @@ public sealed class TileSet
             tileset.Margin);
     }
 
+    /// <summary>
+    /// Asynchronously creates a <see cref="TileSet"/> from a DotTiled <see cref="Tileset"/>,
+    /// decoding its image with <paramref name="imageDecoderAsync"/>. Shares the validation of
+    /// <see cref="FromDotTiled"/>: a tileset with no image, an empty image source, or an image
+    /// that cannot be decoded throws the same exceptions.
+    /// </summary>
+    /// <param name="tileset">The parsed DotTiled tileset.</param>
+    /// <param name="firstGid">The first global tile ID of the tileset within its map.</param>
+    /// <param name="imageDecoderAsync">
+    /// Asynchronously decodes the image of the tileset given its raw <c>source</c> string as
+    /// declared by the tileset. The caller resolves the source (e.g. relative to a URI) and
+    /// returns the decoded bitmap; the resolution base is owned by the caller.
+    /// </param>
+    /// <returns>A task that resolves to a fully decoded <see cref="TileSet"/>.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="tileset"/> or <paramref name="imageDecoderAsync"/> is <see langword="null"/>.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// The tileset has no image, or the image could not be decoded.
+    /// </exception>
+    internal static async Task<TileSet> FromDotTiledAsync(
+        Tileset tileset,
+        uint firstGid,
+        Func<string, Task<SKBitmap>> imageDecoderAsync)
+    {
+        ArgumentNullException.ThrowIfNull(tileset);
+        ArgumentNullException.ThrowIfNull(imageDecoderAsync);
+
+        if (!tileset.Image.HasValue)
+        {
+            throw new InvalidOperationException(
+                $"Tileset '{tileset.Name}' has no image; image-collection tilesets are not supported.");
+        }
+
+        var source = tileset.Image.Value.Source.GetValueOr(string.Empty);
+        if (string.IsNullOrWhiteSpace(source))
+        {
+            throw new InvalidOperationException($"Tileset '{tileset.Name}' does not declare an image source.");
+        }
+
+        var sourceImage = await imageDecoderAsync(source).ConfigureAwait(false);
+        if (sourceImage is null)
+        {
+            throw new InvalidOperationException($"Unable to decode the image for tileset '{tileset.Name}'.");
+        }
+
+        return new TileSet(
+            tileset.Name,
+            firstGid,
+            tileset.TileWidth,
+            tileset.TileHeight,
+            sourceImage,
+            tileset.TileCount,
+            tileset.Columns,
+            tileset.Spacing,
+            tileset.Margin);
+    }
+
     private static Tileset ParseTilesetContent(string content)
     {
         using var reader = new TilesetReader(
@@ -255,5 +352,11 @@ public sealed class TileSet
     {
         using var reader = new StreamReader(stream, leaveOpen: true);
         return reader.ReadToEnd();
+    }
+
+    private static async Task<string> ReadAllTextAsync(Stream stream)
+    {
+        using var reader = new StreamReader(stream, leaveOpen: true);
+        return await reader.ReadToEndAsync().ConfigureAwait(false);
     }
 }

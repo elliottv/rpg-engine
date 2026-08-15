@@ -192,7 +192,7 @@ public sealed class GameEngine
     /// <exception cref="ArgumentNullException"><paramref name="name"/> or <paramref name="path"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">
     /// <paramref name="name"/> is empty after trimming, the image cannot be decoded, or its
-    /// dimensions are not exactly <see cref="SpriteSheet.SheetWidth"/>×<see cref="SpriteSheet.SheetHeight"/>.
+    /// dimensions are not exactly <see cref="SpriteSheet.SheetWidth"/>&#215;<see cref="SpriteSheet.SheetHeight"/>.
     /// </exception>
     /// <exception cref="InvalidOperationException">A sheet named <paramref name="name"/> is already loaded.</exception>
     public void LoadSpriteSheet(string name, string path) => _spriteSheetManager.Load(name, path);
@@ -207,7 +207,7 @@ public sealed class GameEngine
     /// <exception cref="ArgumentNullException"><paramref name="name"/> or <paramref name="stream"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">
     /// <paramref name="name"/> is empty after trimming, the image cannot be decoded, or its
-    /// dimensions are not exactly <see cref="SpriteSheet.SheetWidth"/>×<see cref="SpriteSheet.SheetHeight"/>.
+    /// dimensions are not exactly <see cref="SpriteSheet.SheetWidth"/>&#215;<see cref="SpriteSheet.SheetHeight"/>.
     /// </exception>
     /// <exception cref="InvalidOperationException">A sheet named <paramref name="name"/> is already loaded.</exception>
     /// <remarks>The caller remains the owner of <paramref name="stream"/>; it is not disposed here.</remarks>
@@ -226,7 +226,7 @@ public sealed class GameEngine
     /// <exception cref="ArgumentNullException"><paramref name="name"/> or <paramref name="path"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">
     /// <paramref name="name"/> is empty after trimming, the image cannot be decoded, or its
-    /// dimensions are not exactly <see cref="SpriteSheet.SheetWidth"/>×<see cref="SpriteSheet.SheetHeight"/>.
+    /// dimensions are not exactly <see cref="SpriteSheet.SheetWidth"/>&#215;<see cref="SpriteSheet.SheetHeight"/>.
     /// </exception>
     /// <exception cref="InvalidOperationException">A sheet named <paramref name="name"/> is already loaded.</exception>
     /// <remarks>
@@ -248,12 +248,52 @@ public sealed class GameEngine
     /// <exception cref="ArgumentNullException"><paramref name="name"/> or <paramref name="stream"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">
     /// <paramref name="name"/> is empty after trimming, the image cannot be decoded, or its
-    /// dimensions are not exactly <see cref="SpriteSheet.SheetWidth"/>×<see cref="SpriteSheet.SheetHeight"/>.
+    /// dimensions are not exactly <see cref="SpriteSheet.SheetWidth"/>&#215;<see cref="SpriteSheet.SheetHeight"/>.
     /// </exception>
     /// <exception cref="InvalidOperationException">A sheet named <paramref name="name"/> is already loaded.</exception>
     /// <remarks>The caller remains the owner of <paramref name="stream"/>; it is not disposed here.</remarks>
     public void LoadPartSpriteSheet(string name, Stream stream, CharacterPartType partType)
         => _spriteSheetManager.LoadPart(name, stream, partType);
+
+    /// <summary>
+    /// Asynchronously loads a full character spritesheet from <paramref name="stream"/> and
+    /// registers it under <paramref name="name"/> so characters can reference it by name. This
+    /// is the asynchronous counterpart of <see cref="LoadSpriteSheet(string, Stream)"/> for
+    /// streams that only support asynchronous reads (e.g. certain network/browser streams).
+    /// </summary>
+    /// <param name="name">The unique name used to reference the sheet.</param>
+    /// <param name="stream">A stream containing the encoded image (PNG or other SkiaSharp-supported format).</param>
+    /// <returns>A task that completes when the sheet is loaded and registered.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="name"/> or <paramref name="stream"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="name"/> is empty after trimming, the image cannot be decoded, or its
+    /// dimensions are not exactly <see cref="SpriteSheet.SheetWidth"/>&#215;<see cref="SpriteSheet.SheetHeight"/>.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">A sheet named <paramref name="name"/> is already loaded.</exception>
+    /// <remarks>The caller remains the owner of <paramref name="stream"/>; it is not disposed here.</remarks>
+    public Task LoadSpriteSheetAsync(string name, Stream stream)
+        => _spriteSheetManager.LoadAsync(name, stream);
+
+    /// <summary>
+    /// Asynchronously loads a <em>part</em> character spritesheet of layer
+    /// <paramref name="partType"/> from <paramref name="stream"/> and registers it under
+    /// <paramref name="name"/> so characters can reference it by name. This is the asynchronous
+    /// counterpart of <see cref="LoadPartSpriteSheet(string, Stream, CharacterPartType)"/> for
+    /// streams that only support asynchronous reads (e.g. certain network/browser streams).
+    /// </summary>
+    /// <param name="name">The unique name used to reference the sheet.</param>
+    /// <param name="stream">A stream containing the encoded image (PNG or other SkiaSharp-supported format).</param>
+    /// <param name="partType">The character layer the sheet provides.</param>
+    /// <returns>A task that completes when the sheet is loaded and registered.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="name"/> or <paramref name="stream"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="name"/> is empty after trimming, the image cannot be decoded, or its
+    /// dimensions are not exactly <see cref="SpriteSheet.SheetWidth"/>&#215;<see cref="SpriteSheet.SheetHeight"/>.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">A sheet named <paramref name="name"/> is already loaded.</exception>
+    /// <remarks>The caller remains the owner of <paramref name="stream"/>; it is not disposed here.</remarks>
+    public Task LoadPartSpriteSheetAsync(string name, Stream stream, CharacterPartType partType)
+        => _spriteSheetManager.LoadPartAsync(name, stream, partType);
 
     /// <summary>
     /// Computes the camera origin: the world pixel position that maps to the canvas' top-left

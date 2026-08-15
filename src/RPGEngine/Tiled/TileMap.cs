@@ -1,3 +1,4 @@
+using System.Xml.Linq;
 using DotTiled;
 using DotTiled.Serialization;
 using SkiaSharp;
@@ -59,14 +60,14 @@ public sealed class TileMap
     /// <summary>Gets the height of a single tile in pixels.</summary>
     public int TileHeight { get; }
 
-    /// <summary>Gets the total width of the map in pixels (<see cref="Width"/> × <see cref="TileWidth"/>).</summary>
+    /// <summary>Gets the total width of the map in pixels (<see cref="Width"/> &#215; <see cref="TileWidth"/>).</summary>
     public int PixelWidth => Width * TileWidth;
 
-    /// <summary>Gets the total height of the map in pixels (<see cref="Height"/> × <see cref="TileHeight"/>).</summary>
+    /// <summary>Gets the total height of the map in pixels (<see cref="Height"/> &#215; <see cref="TileHeight"/>).</summary>
     public int PixelHeight => Height * TileHeight;
 
     /// <summary>
-    /// Gets the tile layers of the map, in the order they appear in the file (bottom → top).
+    /// Gets the tile layers of the map, in the order they appear in the file (bottom &#8594; top).
     /// Only tile layers are represented; object, image and group layers are ignored for now.
     /// </summary>
     public IReadOnlyList<TileMapLayer> Layers { get; }
@@ -120,6 +121,53 @@ public sealed class TileMap
         var map = ParseMapContent(content, baseUri, fetcher);
 
         return BuildMap(map, dotTiledTileset => CreateUriTileSet(dotTiledTileset, baseUri, fetcher));
+    }
+
+    /// <summary>
+    /// Asynchronously loads the Tiled map content from <paramref name="stream"/>, parsing the
+    /// referenced external tilesets and decoding their images.
+    /// </summary>
+    /// <param name="stream">A stream containing the Tiled <c>.tmx</c> map content.</param>
+    /// <param name="baseUri">
+    /// The URI the map was fetched from (e.g. <c>https://example.com/maps/map.tmx</c>).
+    /// Relative references declared by the map and its tilesets are resolved against it.
+    /// </param>
+    /// <param name="fetcher">Asynchronously fetches the raw bytes of a resolved asset URI.</param>
+    /// <returns>A task that resolves to the loaded <see cref="TileMap"/>.</returns>
+    /// <exception cref="ArgumentNullException">Any argument is <see langword="null"/>.</exception>
+    /// <exception cref="InvalidOperationException">A referenced tileset has no image or an image could not be decoded.</exception>
+    /// <remarks>
+    /// <para>
+    /// This is the asynchronous counterpart of <see cref="Load(Stream, Uri, TiledAssetFetcher)"/>
+    /// for streams and asset fetchers that only support asynchronous I/O (e.g. certain
+    /// network/browser streams). No synchronous read is performed on the caller's stream: the
+    /// TMX content is read with <c>StreamReader.ReadToEndAsync()</c> and every external asset is
+    /// fetched with <c>await fetcher(...)</c>.
+    /// </para>
+    /// <para>
+    /// DotTiled 1.0.0 only exposes synchronous external-tileset resolvers (the parser takes
+    /// <c>Func&lt;string, Tileset&gt;</c>), so the external TSX and its image cannot be awaited
+    /// from inside the parser. The async path therefore <em>pre-fetches the external asset
+    /// graph asynchronously</em> and then reuses the existing synchronous DotTiled
+    /// parsing/decoding against an in-memory cache: the map's external <c>.tsx</c> tilesets and
+    /// the images they reference (plus any embedded <c>&lt;tileset&gt;&lt;image&gt;</c> images)
+    /// are fetched and stored in a <see cref="Dictionary{TKey,TValue}"/> cache keyed by resolved
+    /// URI, and the synchronous helpers then resolve only from that memory cache, so no blocking
+    /// I/O remains. This is a pragmatic bridge until DotTiled exposes asynchronous resolvers; the
+    /// TMX/TSX format remains the source of truth.
+    /// </para>
+    /// </remarks>
+    public static async Task<TileMap> LoadAsync(Stream stream, Uri baseUri, TiledAssetFetcherAsync fetcher)
+    {
+        ArgumentNullException.ThrowIfNull(stream);
+        ArgumentNullException.ThrowIfNull(baseUri);
+        ArgumentNullException.ThrowIfNull(fetcher);
+
+        var content = await ReadAllTextAsync(stream).ConfigureAwait(false);
+        var cache = await PrefetchAssetsAsync(content, baseUri, fetcher).ConfigureAwait(false);
+
+        var map = ParseMapContent(content, baseUri, uri => cache[uri]);
+        return BuildMap(map, dotTiledTileset => CreateUriTileSet(dotTiledTileset, baseUri, uri => cache[uri]));
     }
 
     /// <summary>
@@ -381,6 +429,64 @@ public sealed class TileMap
     {
         using var reader = new StreamReader(stream, leaveOpen: true);
         return reader.ReadToEnd();
+    }
+
+    /// <summary>
+    /// Pre-fetches the external asset graph referenced by <paramref name="mapContent"/> into an
+    /// in-memory cache keyed by resolved URI, so the synchronous DotTiled parse that follows can
+    /// resolve every asset (external TSX and image) without performing blocking I/O.
+    /// </summary>
+    /// <param name="mapContent">The raw TMX content of the map.</param>
+    /// <param name="baseUri">The URI the map was fetched from; relative references are resolved against it.</param>
+    /// <param name="fetcher">Asynchronously fetches the raw bytes of a resolved asset URI.</param>
+    /// <returns>A task that resolves to a cache of resolved asset URIs to their raw bytes.</returns>
+    private static async Task<Dictionary<Uri, byte[]>> PrefetchAssetsAsync(
+        string mapContent,
+        Uri baseUri,
+        TiledAssetFetcherAsync fetcher)
+    {
+        var cache = new Dictionary<Uri, byte[]>();
+
+        var document = XDocument.Parse(mapContent, LoadOptions.PreserveWhitespace);
+        foreach (var tilesetElement in document.Root?.Elements("tileset") ?? Enumerable.Empty<XElement>())
+        {
+            var sourceAttribute = tilesetElement.Attribute("source");
+            if (sourceAttribute is not null && !string.IsNullOrWhiteSpace(sourceAttribute.Value))
+            {
+                // External tileset: fetch the TSX, then parse it to find the image it declares
+                // (relative to the TSX URI) and fetch that too.
+                var tilesetUri = new Uri(baseUri, sourceAttribute.Value);
+                var tsxBytes = await fetcher(tilesetUri).ConfigureAwait(false);
+                cache[tilesetUri] = tsxBytes;
+
+                var tsxContent = TextFromBytes(tsxBytes);
+                var tsxDocument = XDocument.Parse(tsxContent, LoadOptions.PreserveWhitespace);
+                var imageSource = tsxDocument.Root?.Element("image")?.Attribute("source")?.Value;
+                if (!string.IsNullOrWhiteSpace(imageSource))
+                {
+                    var imageUri = new Uri(tilesetUri, imageSource);
+                    cache[imageUri] = await fetcher(imageUri).ConfigureAwait(false);
+                }
+            }
+            else
+            {
+                // Embedded <tileset> with an image: the image source is relative to the map URI.
+                var imageSource = tilesetElement.Element("image")?.Attribute("source")?.Value;
+                if (!string.IsNullOrWhiteSpace(imageSource))
+                {
+                    var imageUri = new Uri(baseUri, imageSource);
+                    cache[imageUri] = await fetcher(imageUri).ConfigureAwait(false);
+                }
+            }
+        }
+
+        return cache;
+    }
+
+    private static async Task<string> ReadAllTextAsync(Stream stream)
+    {
+        using var reader = new StreamReader(stream, leaveOpen: true);
+        return await reader.ReadToEndAsync().ConfigureAwait(false);
     }
 
     private static string TextFromBytes(byte[] bytes)
