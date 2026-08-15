@@ -100,7 +100,7 @@ public sealed class TileMapLayer
             if (rawIds.Length != count)
             {
                 throw new InvalidOperationException(
-                    $"Tile layer '{layer.Name}' declares {count} cells ({width}\u00d7{height}) but its data contains {rawIds.Length} values.");
+                    $"Tile layer '{layer.Name}' declares {count} cells ({width}×{height}) but its data contains {rawIds.Length} values.");
             }
 
             ids = new uint[count];
@@ -130,7 +130,7 @@ public sealed class TileMapLayer
         {
             throw new ArgumentOutOfRangeException(
                 y < 0 || y >= Height ? nameof(y) : nameof(x),
-                $"Coordinates ({x}, {y}) are outside the bounds of layer '{Name}' ({Width}\u00d7{Height}).");
+                $"Coordinates ({x}, {y}) are outside the bounds of layer '{Name}' ({Width}×{Height}).");
         }
 
         return (y * Width) + x;
