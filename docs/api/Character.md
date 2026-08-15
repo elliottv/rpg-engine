@@ -2,8 +2,8 @@
 
 Namespace: `RPGEngine` — a character present in the game world (the player or an NPC).
 
-`Character` holds the position, facing direction, movement speed, the walk-cycle animation state
-and the list of spritesheet references used to render it.
+`Character` holds the position, facing direction (8 directions, cardinal + diagonal), movement
+speed, the walk-cycle animation state and the list of spritesheet references used to render it.
 
 ## Remarks
 
@@ -39,6 +39,22 @@ Gets or sets the movement speed of the character in pixels per second.
 
 ```csharp
 var character = new Character { BaseSpeed = 96 };
+```
+
+### `double AnimationCycleSpeed`
+
+Gets or sets the movement speed (px/s) at which the walk cycle completes exactly one full cycle
+per second. Defaults to 96 (matching the player's default `BaseSpeed`).
+
+The walk cycle is the bounce `0 → 1 → 2 → 1`, i.e. 4 frame steps. The time per frame is
+`secondsPerFrame = AnimationCycleSpeed / (BaseSpeed * FramesPerCycle)`, so at
+`BaseSpeed == AnimationCycleSpeed == 96` one frame lasts 0.25 s (4 frames/s = 1 cycle/s).
+Doubling the movement speed doubles the cycle rate; halving it halves it. Raising this property
+(the reference speed) slows the animation relative to movement speed.
+
+```csharp
+var character = new Character { BaseSpeed = 96, AnimationCycleSpeed = 96 };
+// One full walk cycle (0 → 1 → 2 → 1) completes every second.
 ```
 
 ### `IList<SpriteSheetRef> SpriteSheets`
