@@ -60,14 +60,14 @@ public sealed class TileMap
     /// <summary>Gets the height of a single tile in pixels.</summary>
     public int TileHeight { get; }
 
-    /// <summary>Gets the total width of the map in pixels (<see cref="Width"/> &#215; <see cref="TileWidth"/>).</summary>
+    /// <summary>Gets the total width of the map in pixels (<see cref="Width"/> × <see cref="TileWidth"/>).</summary>
     public int PixelWidth => Width * TileWidth;
 
-    /// <summary>Gets the total height of the map in pixels (<see cref="Height"/> &#215; <see cref="TileHeight"/>).</summary>
+    /// <summary>Gets the total height of the map in pixels (<see cref="Height"/> × <see cref="TileHeight"/>).</summary>
     public int PixelHeight => Height * TileHeight;
 
     /// <summary>
-    /// Gets the tile layers of the map, in the order they appear in the file (bottom &#8594; top).
+    /// Gets the tile layers of the map, in the order they appear in the file (bottom → top).
     /// Only tile layers are represented; object, image and group layers are ignored for now.
     /// </summary>
     public IReadOnlyList<TileMapLayer> Layers { get; }

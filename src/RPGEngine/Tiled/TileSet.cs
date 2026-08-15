@@ -183,7 +183,7 @@ public sealed class TileSet
 
     /// <summary>
     /// Returns the image of the tile with the given 0-based <paramref name="localTileId"/>,
-    /// cropped from the tileset image at <see cref="TileWidth"/>&#215;<see cref="TileHeight"/>.
+    /// cropped from the tileset image at <see cref="TileWidth"/>×<see cref="TileHeight"/>.
     /// </summary>
     /// <param name="localTileId">The 0-based local tile ID within this tileset.</param>
     /// <returns>An independent raster image containing the requested tile.</returns>
