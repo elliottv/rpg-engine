@@ -192,7 +192,7 @@ public sealed class GameEngine
     /// <exception cref="ArgumentNullException"><paramref name="name"/> or <paramref name="path"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">
     /// <paramref name="name"/> is empty after trimming, the image cannot be decoded, or its
-    /// dimensions are not exactly <see cref="SpriteSheet.SheetWidth"/>×<see cref="SpriteSheet.SheetHeight"/>.
+    /// dimensions do not form a valid 12×8 grid (positive width divisible by <see cref="SpriteSheet.Columns"/> and positive height divisible by <see cref="SpriteSheet.Rows"/>).
     /// </exception>
     /// <exception cref="InvalidOperationException">A sheet named <paramref name="name"/> is already loaded.</exception>
     public void LoadSpriteSheet(string name, string path) => _spriteSheetManager.Load(name, path);
@@ -207,7 +207,7 @@ public sealed class GameEngine
     /// <exception cref="ArgumentNullException"><paramref name="name"/> or <paramref name="stream"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">
     /// <paramref name="name"/> is empty after trimming, the image cannot be decoded, or its
-    /// dimensions are not exactly <see cref="SpriteSheet.SheetWidth"/>×<see cref="SpriteSheet.SheetHeight"/>.
+    /// dimensions do not form a valid 12×8 grid (positive width divisible by <see cref="SpriteSheet.Columns"/> and positive height divisible by <see cref="SpriteSheet.Rows"/>).
     /// </exception>
     /// <exception cref="InvalidOperationException">A sheet named <paramref name="name"/> is already loaded.</exception>
     /// <remarks>The caller remains the owner of <paramref name="stream"/>; it is not disposed here.</remarks>
@@ -226,7 +226,7 @@ public sealed class GameEngine
     /// <exception cref="ArgumentNullException"><paramref name="name"/> or <paramref name="path"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">
     /// <paramref name="name"/> is empty after trimming, the image cannot be decoded, or its
-    /// dimensions are not exactly <see cref="SpriteSheet.SheetWidth"/>×<see cref="SpriteSheet.SheetHeight"/>.
+    /// dimensions do not form a valid 12×8 grid (positive width divisible by <see cref="SpriteSheet.Columns"/> and positive height divisible by <see cref="SpriteSheet.Rows"/>).
     /// </exception>
     /// <exception cref="InvalidOperationException">A sheet named <paramref name="name"/> is already loaded.</exception>
     /// <remarks>
@@ -248,7 +248,7 @@ public sealed class GameEngine
     /// <exception cref="ArgumentNullException"><paramref name="name"/> or <paramref name="stream"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">
     /// <paramref name="name"/> is empty after trimming, the image cannot be decoded, or its
-    /// dimensions are not exactly <see cref="SpriteSheet.SheetWidth"/>×<see cref="SpriteSheet.SheetHeight"/>.
+    /// dimensions do not form a valid 12×8 grid (positive width divisible by <see cref="SpriteSheet.Columns"/> and positive height divisible by <see cref="SpriteSheet.Rows"/>).
     /// </exception>
     /// <exception cref="InvalidOperationException">A sheet named <paramref name="name"/> is already loaded.</exception>
     /// <remarks>The caller remains the owner of <paramref name="stream"/>; it is not disposed here.</remarks>
@@ -267,7 +267,7 @@ public sealed class GameEngine
     /// <exception cref="ArgumentNullException"><paramref name="name"/> or <paramref name="stream"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">
     /// <paramref name="name"/> is empty after trimming, the image cannot be decoded, or its
-    /// dimensions are not exactly <see cref="SpriteSheet.SheetWidth"/>×<see cref="SpriteSheet.SheetHeight"/>.
+    /// dimensions do not form a valid 12×8 grid (positive width divisible by <see cref="SpriteSheet.Columns"/> and positive height divisible by <see cref="SpriteSheet.Rows"/>).
     /// </exception>
     /// <exception cref="InvalidOperationException">A sheet named <paramref name="name"/> is already loaded.</exception>
     /// <remarks>The caller remains the owner of <paramref name="stream"/>; it is not disposed here.</remarks>
@@ -288,7 +288,7 @@ public sealed class GameEngine
     /// <exception cref="ArgumentNullException"><paramref name="name"/> or <paramref name="stream"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">
     /// <paramref name="name"/> is empty after trimming, the image cannot be decoded, or its
-    /// dimensions are not exactly <see cref="SpriteSheet.SheetWidth"/>×<see cref="SpriteSheet.SheetHeight"/>.
+    /// dimensions do not form a valid 12×8 grid (positive width divisible by <see cref="SpriteSheet.Columns"/> and positive height divisible by <see cref="SpriteSheet.Rows"/>).
     /// </exception>
     /// <exception cref="InvalidOperationException">A sheet named <paramref name="name"/> is already loaded.</exception>
     /// <remarks>The caller remains the owner of <paramref name="stream"/>; it is not disposed here.</remarks>
@@ -325,14 +325,17 @@ public sealed class GameEngine
     }
 
     /// <summary>
-    /// Clamps the player's top-left position so the 48×48 sprite stays inside the map bounds:
-    /// <c>x ∈ [0, PixelWidth - 48]</c>, <c>y ∈ [0, PixelHeight - 48]</c>. Called after every
-    /// move while a map is set.
+    /// Clamps the player's top-left position so its sprite stays inside the map bounds. The
+    /// sprite size is resolved from the player's configured spritesheet (see
+    /// <see cref="Character.GetSpriteSize"/>); when no sheet is configured it falls back to the
+    /// 48×48 default. <c>x ∈ [0, PixelWidth - spriteWidth]</c>, <c>y ∈ [0, PixelHeight - spriteHeight]</c>.
+    /// Called after every move while a map is set.
     /// </summary>
     private void ClampPlayerToMap()
     {
-        var maxX = Math.Max(0, Map!.PixelWidth - SpriteSheet.CellSize);
-        var maxY = Math.Max(0, Map!.PixelHeight - SpriteSheet.CellSize);
+        var (spriteWidth, spriteHeight) = Player.Character.GetSpriteSize(_spriteSheetManager);
+        var maxX = Math.Max(0, Map!.PixelWidth - spriteWidth);
+        var maxY = Math.Max(0, Map!.PixelHeight - spriteHeight);
 
         var position = Player.Position;
         Player.Position = new Position(

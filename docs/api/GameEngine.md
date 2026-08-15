@@ -118,8 +118,8 @@ using (var canvas = new SKCanvas(bitmap))
 ### `void LoadSpriteSheet(string name, string path)`
 
 Loads a full character spritesheet from a file path and registers it under `name`. Throws when
-the name is already loaded, the image cannot be decoded, or its dimensions are not exactly
-576×384.
+the name is already loaded, the image cannot be decoded, or its dimensions do not form a
+valid 12×8 grid (positive width divisible by 12 and positive height divisible by 8).
 
 ```csharp
 engine.LoadSpriteSheet("hero", "assets/characters/character_full.png");

@@ -18,7 +18,7 @@ state and calls `Move(direction, 1, dt)` in its update loop.
 ### `const double DefaultBaseSpeed = 96`
 
 The default movement speed in pixels per second of a player created by the parameterless
-constructor (96 px/s, i.e. one 48px tile every half second).
+constructor (96 px/s, i.e. two 48px map tiles every second).
 
 ## Constructors
 

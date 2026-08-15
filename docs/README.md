@@ -70,7 +70,7 @@ using (var canvas = new SKCanvas(bitmap))
 | [Architecture](Architecture.md) | Composition model, camera, spritesheet layout, part ordering. |
 | [api/GameEngine.md](api/GameEngine.md) | Root object: game loop, input, asset loading, camera. |
 | [api/Character.md](api/Character.md) / [api/Player.md](api/Player.md) | In-world state and sprite references. |
-| [api/SpriteSheet.md](api/SpriteSheet.md) | The 576×384 sheet layout and the **1..8 character index** semantics. |
+| [api/SpriteSheet.md](api/SpriteSheet.md) | The 12×8 sheet layout (derived cell size, e.g. 576×384 or 936×864) and the **1..8 character index** semantics. |
 | [api/TileMap.md](api/TileMap.md) / [api/TileSet.md](api/TileSet.md) | Tiled TMX/TSX loading and rendering. |
 | [api/GameConfig.md](api/GameConfig.md) / [api/Key.md](api/Key.md) | Movement key bindings and host key translation. |
 | [api/Position.md](api/Position.md) / [api/Direction.md](api/Direction.md) | Core primitives. |

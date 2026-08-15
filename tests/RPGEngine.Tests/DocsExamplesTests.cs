@@ -1,5 +1,6 @@
 using RPGEngine.Sprites;
 using RPGEngine.Tests.Fixtures;
+using RPGEngine.Tests.Sprites;
 using RPGEngine.Tiled;
 using SkiaSharp;
 using Xunit;
@@ -76,31 +77,52 @@ public class DocsExamplesTests
     // docs/api/SpriteSheet.md: the character index 1..8 semantics.
     // ---------------------------------------------------------------------
     /// <summary>
-    /// Verifies <see cref="SpriteSheet.GetSprite"/> selects one of the 8 characters in a
-    /// 576×384 sheet (both full and part sheets share this layout) and that the returned sprite
-    /// is a 48×48 image the caller owns.
+    /// Verifies <see cref="SpriteSheet.GetSprite"/> selects one of the 8 characters in a sheet
+    /// and that the returned sprite is an independent crop at the sheet's derived cell size
+    /// (48×48 for a standard 576×384 sheet, 78×108 for a 936×864 sheet) which the caller
+    /// owns. Both full and part sheets share this layout.
     /// </summary>
     [Fact]
     public void CharacterIndex_SelectsOneOfEightCharacters()
     {
-        using var sheetStream = FixtureAssets.DecodePngStream(FixtureAssets.FullSheet);
-        var manager = new SpriteSheetManager();
-        var sheet = manager.Load("hero", sheetStream);
-
-        Assert.Equal(8, sheet.CharacterCount);
-
-        // Every 1-based index 1..8 yields an independent 48×48 sprite; the 8 slots are the
-        // sheet's 4×2 character grid, each a 3-frame × 4-direction block.
-        for (var characterIndex = 1; characterIndex <= 8; characterIndex++)
+        // Standard RPG Maker MZ sheet: 576×384 &#8594; 48×48 cells.
+        using (var sheetStream = FixtureAssets.DecodePngStream(FixtureAssets.FullSheet))
         {
-            using var sprite = sheet.GetSprite(characterIndex, Direction.Down, frame: 1);
-            Assert.Equal(48, sprite.Width);
-            Assert.Equal(48, sprite.Height);
+            var manager = new SpriteSheetManager();
+            var sheet = manager.Load("hero", sheetStream);
+
+            Assert.Equal(8, sheet.CharacterCount);
+            Assert.Equal(48, sheet.CellWidth);
+            Assert.Equal(48, sheet.CellHeight);
+
+            // Every 1-based index 1..8 yields an independent sprite at the derived cell size;
+            // the 8 slots are the sheet's 4×2 character grid, each a 3-frame × 4-direction block.
+            for (var characterIndex = 1; characterIndex <= 8; characterIndex++)
+            {
+                using var sprite = sheet.GetSprite(characterIndex, Direction.Down, frame: 1);
+                Assert.Equal(sheet.CellWidth, sprite.Width);
+                Assert.Equal(sheet.CellHeight, sprite.Height);
+            }
+
+            // An index outside 1..8 is rejected.
+            Assert.Throws<ArgumentOutOfRangeException>(() => sheet.GetSprite(0, Direction.Down, 1));
+            Assert.Throws<ArgumentOutOfRangeException>(() => sheet.GetSprite(9, Direction.Down, 1));
         }
 
-        // An index outside 1..8 is rejected.
-        Assert.Throws<ArgumentOutOfRangeException>(() => sheet.GetSprite(0, Direction.Down, 1));
-        Assert.Throws<ArgumentOutOfRangeException>(() => sheet.GetSprite(9, Direction.Down, 1));
+        // A 936×864 sheet derives 78×108 cells.
+        using (var largeStream = new MemoryStream(SpriteSheetTestHelper.CreateSheetPng(936, 864), writable: false))
+        {
+            var manager = new SpriteSheetManager();
+            var sheet = manager.Load("large", largeStream);
+
+            Assert.Equal(8, sheet.CharacterCount);
+            Assert.Equal(78, sheet.CellWidth);
+            Assert.Equal(108, sheet.CellHeight);
+
+            using var sprite = sheet.GetSprite(1, Direction.Down, frame: 1);
+            Assert.Equal(78, sprite.Width);
+            Assert.Equal(108, sprite.Height);
+        }
 
         // SpriteSheetRef pairs a sheet name with the 1-based character index; the range is
         // enforced where the reference is consumed (e.g. at render time).

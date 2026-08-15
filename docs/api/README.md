@@ -48,5 +48,6 @@ documented**. Every page below includes a commented, compilable example; the tes
 
 The most important convention to understand before using the API: a `SpriteSheetRef(Name,
 CharacterIndex)` (and `SpriteSheet.GetSprite(characterIndex, …)`) selects one of the **8
-characters** in a **576×384** sheet. Both full and part sheets use this layout. See
+characters** in a sheet whose cells form the normative **12×8** grid (e.g. 576×384 with 48×48
+cells, or 936×864 with 78×108 cells). Both full and part sheets use this layout. See
 [SpriteSheet.md](SpriteSheet.md) and [SpriteSheetRef.md](SpriteSheetRef.md).

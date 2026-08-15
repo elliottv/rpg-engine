@@ -16,7 +16,8 @@ Player ── Character (Position, Direction, BaseSpeed, SpriteSheets, walk-cycl
 `Player` is a thin wrapper that forwards state access and movement to its `Character`. All of
 the in-world state lives on `Character`:
 
-- `Character.Position` — top-left world pixel position of the 48×48 sprite.
+- `Character.Position` — top-left world pixel position of the sprite (its size is the
+  configured sheet's derived cell size).
 - `Character.Direction` — the facing direction (8 directions: Down/Left/Right/Up plus the four diagonals).
 - `Character.BaseSpeed` — movement speed in pixels per second.
 - `Character.SpriteSheets` — the list of `SpriteSheetRef`s (sheet name + 1..8 character index).
@@ -58,13 +59,13 @@ in this epic.
 (they are created when the map is loaded — there is no global tileset registry). Standalone
 tilesets are loaded through `TileSet.Load` factories when needed.
 
-## Spritesheet layout (576×384, 8 characters)
+## Spritesheet layout (normative 12×8 grid, 8 characters)
 
 Both **full** sheets and **part** sheets use the same normative RPG Maker MZ layout:
 
-- Image size: **576 × 384** pixels.
-- Cell size: **48 × 48** pixels.
-- Grid: **12 columns × 8 rows** of cells.
+- Grid: **12 columns × 8 rows** of cells (the grid is normative; the image size is not).
+- Cell size: **derived from the image** (`width / 12` × `height / 8`). The standard 576 × 384
+  sheet yields 48 × 48 cells; a 936 × 864 sheet yields 78 × 108 cells.
 - Characters: **8** (a 4 × 2 grid), each occupying a 3-cell × 4-row block
   (3 animation frames × 4 directions).
 

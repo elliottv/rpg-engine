@@ -5,7 +5,8 @@ namespace RPGEngine.Tests;
 /// <summary>
 /// Generates RPG Maker MZ spritesheet fixtures for the <see cref="CharacterTests"/>.
 /// Each sheet is identified by a <em>seed</em> so that different sheets (different character
-/// parts) get globally distinct cell colors; within a sheet, every 48×48 cell is uniquely
+/// parts) get globally distinct cell colors; within a sheet, every cell (at the sheet's derived
+/// size) is uniquely
 /// colored by (row, column). This lets pixel-level composition tests tell which part ended up
 /// on top.
 /// </summary>
@@ -51,8 +52,21 @@ internal static class CharacterTestHelper
     /// filled with the unique color from <see cref="CellColor(int, int, int)"/>.
     /// </summary>
     public static byte[] CreateSheetPng(int seed, bool transparent = false)
+        => CreateSheetPng(seed, SheetWidth, SheetHeight, transparent);
+
+    /// <summary>
+    /// Encodes a sheet of the requested dimensions as PNG. The grid is always the normative
+    /// 12×8 layout, so the cell size is derived from the image (e.g. 48×48 for 576×384,
+    /// 78×108 for 936×864). When <paramref name="transparent"/> is <see langword="true"/>
+    /// every cell is fully transparent; otherwise each cell is filled with the unique color from
+    /// <see cref="CellColor(int, int, int)"/> at the derived cell size.
+    /// </summary>
+    public static byte[] CreateSheetPng(int seed, int width, int height, bool transparent = false)
     {
-        using var bitmap = new SKBitmap(SheetWidth, SheetHeight);
+        var cellWidth = width / Columns;
+        var cellHeight = height / Rows;
+
+        using var bitmap = new SKBitmap(width, height);
         using (var canvas = new SKCanvas(bitmap))
         {
             canvas.Clear(SKColors.Transparent);
@@ -65,7 +79,7 @@ internal static class CharacterTestHelper
                     {
                         using var paint = new SKPaint { Color = CellColor(seed, row, col), IsAntialias = false };
                         canvas.DrawRect(
-                            new SKRect(col * CellSize, row * CellSize, (col + 1) * CellSize, (row + 1) * CellSize),
+                            new SKRect(col * cellWidth, row * cellHeight, (col + 1) * cellWidth, (row + 1) * cellHeight),
                             paint);
                     }
                 }
@@ -79,7 +93,11 @@ internal static class CharacterTestHelper
 
     /// <summary>Returns a read-only stream containing a 576×384 sheet encoded as PNG.</summary>
     public static MemoryStream CreateSheetStream(int seed, bool transparent = false)
-        => new(CreateSheetPng(seed, transparent), writable: false);
+        => CreateSheetStream(seed, SheetWidth, SheetHeight, transparent);
+
+    /// <summary>Returns a read-only stream containing a sheet of the requested dimensions encoded as PNG.</summary>
+    public static MemoryStream CreateSheetStream(int seed, int width, int height, bool transparent = false)
+        => new(CreateSheetPng(seed, width, height, transparent), writable: false);
 
     /// <summary>
     /// Computes the sheet cell (row, col) that <c>SpriteSheet.GetSprite</c> crops for the given

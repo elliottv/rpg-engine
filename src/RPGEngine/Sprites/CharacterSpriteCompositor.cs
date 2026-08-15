@@ -10,8 +10,9 @@ namespace RPGEngine.Sprites;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The part composition reproduces the epic's PIXI.js example with 48×48 cells. For the current
-/// animation frame and direction the 48×48 cell of each part is drawn bottom → top in exactly
+/// The part composition reproduces the epic's PIXI.js example. For the current animation
+/// frame and direction the cell of each part (at the sheet's derived cell size, e.g. 48×48
+/// for a 576×384 sheet or 78×108 for a 936×864 sheet) is drawn bottom → top in exactly
 /// this order (missing parts are skipped):
 /// </para>
 /// <list type="number">
@@ -40,7 +41,7 @@ internal sealed class CharacterSpriteCompositor
     /// <paramref name="screenPosition"/>.
     /// </summary>
     /// <param name="canvas">The canvas to draw onto.</param>
-    /// <param name="screenPosition">The top-left screen position of the 48×48 sprite.</param>
+    /// <param name="screenPosition">The top-left screen position of the sprite (its size is the sheet's derived cell size).</param>
     /// <param name="spriteSheetRefs">The spritesheet references to use (sheet name + character index).</param>
     /// <param name="direction">The direction the character faces.</param>
     /// <param name="frame">The animation frame (0..2).</param>
@@ -178,7 +179,7 @@ internal sealed class CharacterSpriteCompositor
         DrawCell(canvas, screenPosition, part.Value, direction, frame);
     }
 
-    /// <summary>Draws the 48×48 cell selected by the part's own character index.</summary>
+    /// <summary>Draws the cell selected by the part's own character index at its native size.</summary>
     private static void DrawCell(
         SKCanvas canvas,
         Position screenPosition,
@@ -187,7 +188,7 @@ internal sealed class CharacterSpriteCompositor
         int frame)
     {
         // GetSprite validates the index/frame again defensively and returns an independent
-        // 48×48 image that the caller owns.
+        // image at the sheet's derived cell size that the caller owns.
         using var sprite = part.Sheet.GetSprite(part.Ref.CharacterIndex, direction, frame);
         canvas.DrawImage(sprite, new SKPoint((float)screenPosition.X, (float)screenPosition.Y));
     }
