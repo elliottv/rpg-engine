@@ -155,6 +155,27 @@ using var stream = new MemoryStream(await http.GetByteArrayAsync("assets/charact
 engine.LoadPartSpriteSheet("villager_body", stream, CharacterPartType.Body);
 ```
 
+### `Task LoadSpriteSheetAsync(string name, Stream stream)`
+
+The asynchronous counterpart of `LoadSpriteSheet(string, Stream)` for streams that only support
+asynchronous reads (e.g. certain network/browser streams). The caller remains the owner of the
+stream.
+
+```csharp
+using var stream = new MemoryStream(await http.GetByteArrayAsync("assets/character_full.png"));
+await engine.LoadSpriteSheetAsync("hero", stream);
+```
+
+### `Task LoadPartSpriteSheetAsync(string name, Stream stream, CharacterPartType partType)`
+
+The asynchronous counterpart of `LoadPartSpriteSheet(string, Stream, CharacterPartType)` for
+streams that only support asynchronous reads. The caller remains the owner of the stream.
+
+```csharp
+using var stream = new MemoryStream(await http.GetByteArrayAsync("assets/character_part_body.png"));
+await engine.LoadPartSpriteSheetAsync("villager_body", stream, CharacterPartType.Body);
+```
+
 ## Full example ("hello world")
 
 ```csharp

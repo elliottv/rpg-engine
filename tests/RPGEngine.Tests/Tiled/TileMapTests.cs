@@ -298,6 +298,114 @@ public class TileMapTests
     }
 
     // ---------------------------------------------------------------------
+    // Async loading (story 22): TileSet.LoadAsync / TileMap.LoadAsync must
+    // never perform a synchronous read of the caller's stream, so they are
+    // exercised against a non-seekable, read-async-only stream and an async
+    // fetcher that is genuinely awaited.
+    // ---------------------------------------------------------------------
+    /// <summary>Verifies TileSet.LoadAsync parses a TSX from a non-seekable stream and resolves the image through the async fetcher (the fetched image is used).</summary>
+    [Fact]
+    public async Task TileSet_LoadAsyncFromStreamWithFetcher_ResolvesImageUri()
+    {
+        using var fixture = TiledTestFixture.Create2x2(new[] { Ground });
+        var baseUri = new Uri("https://example.com/maps/tiles.tsx");
+        using var stream = new AsyncOnlyStream(new MemoryStream(File.ReadAllBytes(fixture.TilesetPath), writable: false));
+
+        var tileSet = await TileSet.LoadAsync(stream, baseUri, CreateAsyncFetcher(fixture));
+
+        Assert.Equal("test_tiles", tileSet.Name);
+        Assert.Equal(48, tileSet.TileWidth);
+        Assert.Equal(48, tileSet.TileHeight);
+
+        // The image was fetched asynchronously from https://example.com/maps/tiles.png and the
+        // fetched bytes are the ones actually decoded: the cropped tile is the fixture's solid
+        // red, so its centre pixel is opaque.
+        using var tileImage = tileSet.GetTileImage(0);
+        Assert.Equal(48, tileImage.Width);
+        Assert.Equal(48, tileImage.Height);
+
+        using var bitmap = new SKBitmap(tileImage.Width, tileImage.Height);
+        using (var canvas = new SKCanvas(bitmap))
+        {
+            canvas.Clear(SKColors.Transparent);
+            canvas.DrawImage(tileImage, new SKPoint(0, 0));
+        }
+
+        Assert.NotEqual(0, bitmap.GetPixel(24, 24).Alpha);
+    }
+
+    /// <summary>Verifies TileSet.LoadAsync propagates an exception thrown by the async fetcher for a missing asset.</summary>
+    [Fact]
+    public async Task TileSet_LoadAsync_PropagatesFetcherException_ForMissingAsset()
+    {
+        using var fixture = TiledTestFixture.Create2x2(new[] { Ground });
+        var baseUri = new Uri("https://example.com/maps/tiles.tsx");
+        using var stream = new AsyncOnlyStream(new MemoryStream(File.ReadAllBytes(fixture.TilesetPath), writable: false));
+
+        // A fetcher that throws for the image (the only asset a standalone tileset fetches).
+        TiledAssetFetcherAsync fetcher = async uri => uri.Segments[^1] == "tiles.png"
+            ? throw new KeyNotFoundException($"Asset not found: {uri}")
+            : await CreateAsyncFetcher(fixture)(uri);
+
+        await Assert.ThrowsAsync<KeyNotFoundException>(() => TileSet.LoadAsync(stream, baseUri, fetcher));
+    }
+
+    /// <summary>Verifies TileMap.LoadAsync loads a TMX from a non-seekable stream, resolving the external TSX and its image exclusively through the async fetcher.</summary>
+    [Fact]
+    public async Task TileMap_LoadAsyncFromStreamWithFetcher_LoadsExternalTileset()
+    {
+        using var fixture = TiledTestFixture.Create2x2(new[] { Ground });
+        var baseUri = new Uri("https://example.com/maps/map.tmx");
+        using var stream = new AsyncOnlyStream(new MemoryStream(File.ReadAllBytes(fixture.MapPath), writable: false));
+
+        var map = await TileMap.LoadAsync(stream, baseUri, CreateAsyncFetcher(fixture));
+
+        Assert.Equal(2, map.Width);
+        Assert.Equal(2, map.Height);
+        Assert.Equal(48, map.TileWidth);
+        Assert.Equal(48, map.TileHeight);
+
+        Assert.Equal(1u, map.GetTileId("ground", 0, 0));
+        Assert.Equal(TileFlags.FlippedHorizontally, map.GetTileFlags("ground", 0, 1));
+    }
+
+    /// <summary>Verifies a map loaded through the async fetcher renders its tiles correctly.</summary>
+    [Fact]
+    public async Task TileMap_LoadAsyncFromStreamWithFetcher_Renders()
+    {
+        using var fixture = TiledTestFixture.Create2x2(new[] { Ground });
+        var baseUri = new Uri("https://example.com/maps/map.tmx");
+        using var stream = new AsyncOnlyStream(new MemoryStream(File.ReadAllBytes(fixture.MapPath), writable: false));
+
+        var map = await TileMap.LoadAsync(stream, baseUri, CreateAsyncFetcher(fixture));
+
+        using var bitmap = RenderMap(map);
+
+        // Tile at (0,0) is solid red and opaque.
+        Assert.NotEqual(0, bitmap.GetPixel(24, 24).Alpha);
+        // Empty cell at (1,0) stays transparent.
+        Assert.Equal(0, bitmap.GetPixel(72, 24).Alpha);
+    }
+
+    /// <summary>Verifies the async fetcher is genuinely awaited and that a fetcher throwing for a missing asset propagates the exception.</summary>
+    [Fact]
+    public async Task TileMap_LoadAsync_PropagatesFetcherException_ForMissingAsset()
+    {
+        using var fixture = TiledTestFixture.Create2x2(new[] { Ground });
+        var baseUri = new Uri("https://example.com/maps/map.tmx");
+        using var stream = new AsyncOnlyStream(new MemoryStream(File.ReadAllBytes(fixture.MapPath), writable: false));
+
+        // The fetcher only serves the map and TSX but throws for the PNG image. The original
+        // exception type must propagate unwrapped, which proves the loader awaited the returned
+        // task instead of blocking on it.
+        TiledAssetFetcherAsync fetcher = async uri => uri.Segments[^1] == "tiles.png"
+            ? throw new KeyNotFoundException($"Asset not found: {uri}")
+            : await CreateAsyncFetcher(fixture)(uri);
+
+        await Assert.ThrowsAsync<KeyNotFoundException>(() => TileMap.LoadAsync(stream, baseUri, fetcher));
+    }
+
+    // ---------------------------------------------------------------------
     // TileSet.GetTileImage: crops the tile from the decoded tileset image.
     // ---------------------------------------------------------------------
     /// <summary>Verifies TileSet.GetTileImage returns a cropped tile image from the decoded tileset image.</summary>
@@ -371,6 +479,29 @@ public class TileMapTests
         return uri => assets.TryGetValue(uri.Segments[^1], out var bytes)
             ? bytes
             : throw new KeyNotFoundException($"Unexpected asset URI: {uri}");
+    }
+
+    /// <summary>
+    /// Builds an async fetcher that serves the fixture's map, tileset and image bytes under a
+    /// fake HTTP base URI, with a short await before returning so the async path is genuinely
+    /// exercised (the loader must await the returned task).
+    /// </summary>
+    private static TiledAssetFetcherAsync CreateAsyncFetcher(TiledTestFixture fixture)
+    {
+        var assets = new Dictionary<string, byte[]>(StringComparer.Ordinal)
+        {
+            ["map.tmx"] = File.ReadAllBytes(fixture.MapPath),
+            ["tiles.tsx"] = File.ReadAllBytes(fixture.TilesetPath),
+            ["tiles.png"] = File.ReadAllBytes(fixture.ImagePath),
+        };
+
+        return async uri =>
+        {
+            await Task.Delay(1); // prove the fetcher is genuinely awaited (a real async hop).
+            return assets.TryGetValue(uri.Segments[^1], out var bytes)
+                ? bytes
+                : throw new KeyNotFoundException($"Unexpected asset URI: {uri}");
+        };
     }
 
     private static SKBitmap RenderMap(TileMap map)

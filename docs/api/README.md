@@ -42,6 +42,7 @@ documented**. Every page below includes a commented, compilable example; the tes
 | `TileMapLayer` | class | [TileMapLayer.md](TileMapLayer.md) |
 | `TileFlags` | enum (`[Flags]`) | [TileFlags.md](TileFlags.md) |
 | `TiledAssetFetcher` | delegate | [TiledAssetFetcher.md](TiledAssetFetcher.md) |
+| `TiledAssetFetcherAsync` | delegate (async) | [TiledAssetFetcherAsync.md](TiledAssetFetcherAsync.md) |
 
 ## The character index 1..8
 

@@ -246,6 +246,61 @@ public class GameEngineTests
     }
 
     // ---------------------------------------------------------------------
+    // Async loading (story 22): the engine's LoadSpriteSheetAsync /
+    // LoadPartSpriteSheetAsync delegate to the sprite sheet manager and must
+    // work with streams that only support asynchronous reads.
+    // ---------------------------------------------------------------------
+    /// <summary>Verifies LoadSpriteSheetAsync registers a sheet so a SpriteSheetRef renders non-empty pixels.</summary>
+    [Fact]
+    public async Task LoadSpriteSheetAsync_AndSpriteSheetRef_RendersNonEmpty()
+    {
+        var engine = new GameEngine();
+        using (var stream = new AsyncOnlyStream(CharacterTestHelper.CreateSheetStream(0)))
+        {
+            await engine.LoadSpriteSheetAsync("hero", stream);
+        }
+        engine.Player.SpriteSheets.Add(new SpriteSheetRef("hero", CharacterIndex: 1));
+
+        using var bitmap = Render(engine, CellSize, CellSize);
+        Assert.NotEqual(0, bitmap.GetPixel(24, 24).Alpha);
+    }
+
+    /// <summary>Verifies LoadPartSpriteSheetAsync registers part sheets that compose into a complete character.</summary>
+    [Fact]
+    public async Task LoadPartSpriteSheetAsync_ComposesParts()
+    {
+        var engine = new GameEngine();
+
+        // body (opaque) + hair2 (opaque) + head (fully transparent, name without '$'). The
+        // transparent head lets the hair2 layer show through when facing up, proving the parts
+        // were actually composed instead of a single sheet being drawn alone.
+        using (var bodyStream = new AsyncOnlyStream(CharacterTestHelper.CreateSheetStream(1)))
+        {
+            await engine.LoadPartSpriteSheetAsync("body", bodyStream, CharacterPartType.Body);
+        }
+        using (var hairStream = new AsyncOnlyStream(CharacterTestHelper.CreateSheetStream(3)))
+        {
+            await engine.LoadPartSpriteSheetAsync("hair2", hairStream, CharacterPartType.Hair2);
+        }
+        using (var headStream = new AsyncOnlyStream(CharacterTestHelper.CreateSheetStream(4, transparent: true)))
+        {
+            await engine.LoadPartSpriteSheetAsync("head", headStream, CharacterPartType.Head);
+        }
+
+        engine.Player.SpriteSheets.Add(new SpriteSheetRef("body", CharacterIndex: 1));
+        engine.Player.SpriteSheets.Add(new SpriteSheetRef("hair2", CharacterIndex: 1));
+        engine.Player.SpriteSheets.Add(new SpriteSheetRef("head", CharacterIndex: 1));
+
+        // Facing up: the per-direction adjustment draws hair2 over the body; the transparent
+        // head keeps it visible, so the rendered centre pixel is the hair2 colour.
+        engine.Player.Character.Move(Direction.Up, speedFactor: 0);
+
+        using var bitmap = Render(engine, CellSize, CellSize);
+        var expected = CharacterTestHelper.SpriteColor(seed: 3, characterIndex: 1, Direction.Up, StandingFrame);
+        Assert.Equal(expected, bitmap.GetPixel(CellSize / 2, CellSize / 2));
+    }
+
+    // ---------------------------------------------------------------------
     // Additional coverage (story 21): 8-direction vector-combined movement.
     // The movement model is no longer last-pressed-wins: holding W+D moves
     // diagonally, opposite keys cancel, and releasing one key of a held

@@ -226,6 +226,76 @@ public class SpriteSheetTests
     }
 
     // ---------------------------------------------------------------------
+    // Async loading (story 22): LoadAsync / LoadPartAsync must never perform a
+    // synchronous read of the caller's stream, so they are exercised against a
+    // non-seekable, read-async-only stream.
+    // ---------------------------------------------------------------------
+    /// <summary>Verifies LoadAsync loads a full sheet from a non-seekable, read-async-only stream (proves no synchronous read of the caller's stream).</summary>
+    [Fact]
+    public async Task LoadAsync_SucceedsFromAsyncOnlyStream()
+    {
+        var manager = new SpriteSheetManager();
+        using var stream = new AsyncOnlyStream(SpriteSheetTestHelper.CreateSheetStream());
+
+        var sheet = await manager.LoadAsync("hero", stream);
+
+        Assert.Equal("hero", sheet.Name);
+        Assert.Equal(SpriteSheetType.Full, sheet.Type);
+        Assert.Null(sheet.PartType);
+
+        using var sprite = sheet.GetSprite(1, Direction.Down, 0);
+        AssertCell(sprite, row: 0, col: 0);
+    }
+
+    /// <summary>Verifies LoadPartAsync round-trips every character part type.</summary>
+    [Theory]
+    [InlineData(CharacterPartType.Body)]
+    [InlineData(CharacterPartType.Armour)]
+    [InlineData(CharacterPartType.Face)]
+    [InlineData(CharacterPartType.FaceHair)]
+    [InlineData(CharacterPartType.Hair1)]
+    [InlineData(CharacterPartType.Hair2)]
+    [InlineData(CharacterPartType.Head)]
+    public async Task LoadPartAsync_RoundTripsPartType(CharacterPartType partType)
+    {
+        var manager = new SpriteSheetManager();
+        using var stream = new AsyncOnlyStream(SpriteSheetTestHelper.CreateSheetStream());
+
+        var sheet = await manager.LoadPartAsync("part", stream, partType);
+
+        Assert.Equal(SpriteSheetType.Part, sheet.Type);
+        Assert.Equal(partType, sheet.PartType);
+    }
+
+    /// <summary>Verifies the async path keeps the duplicate-name failure mode (InvalidOperationException) and fails without touching the stream.</summary>
+    [Fact]
+    public async Task LoadAsync_DuplicateName_ThrowsInvalidOperationException()
+    {
+        var manager = new SpriteSheetManager();
+        using (var stream = new AsyncOnlyStream(SpriteSheetTestHelper.CreateSheetStream()))
+        {
+            await manager.LoadAsync("hero", stream);
+        }
+
+        using var duplicate = new AsyncOnlyStream(SpriteSheetTestHelper.CreateSheetStream());
+        await Assert.ThrowsAsync<InvalidOperationException>(() => manager.LoadAsync("hero", duplicate));
+    }
+
+    /// <summary>Verifies the async path keeps the invalid-dimensions failure mode (ArgumentException).</summary>
+    [Theory]
+    [InlineData(144, 192)] // the single-character '$' sheet variant (out of scope)
+    [InlineData(100, 100)]
+    public async Task LoadAsync_ThrowsArgumentException_ForInvalidDimensions(int width, int height)
+    {
+        var manager = new SpriteSheetManager();
+        using var stream = new AsyncOnlyStream(new MemoryStream(
+            SpriteSheetTestHelper.CreateSheetPng(width, height),
+            writable: false));
+
+        await Assert.ThrowsAsync<ArgumentException>(() => manager.LoadAsync("bad", stream));
+    }
+
+    // ---------------------------------------------------------------------
     // Helpers
     // ---------------------------------------------------------------------
 

@@ -79,6 +79,43 @@ public sealed class SpriteSheetManager
     }
 
     /// <summary>
+    /// Asynchronously loads the <em>full</em> character spritesheet from <paramref name="stream"/>
+    /// and registers it under <paramref name="name"/>. This is the asynchronous counterpart of
+    /// <see cref="Load(string, Stream)"/> for streams that only support asynchronous reads
+    /// (e.g. certain network/browser streams).
+    /// </summary>
+    /// <param name="name">The unique name used to reference the sheet (trimmed).</param>
+    /// <param name="stream">A stream containing the encoded image (PNG or other SkiaSharp-supported format).</param>
+    /// <returns>A task that resolves to the loaded <see cref="SpriteSheet"/>.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="name"/> or <paramref name="stream"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="name"/> is empty after trimming, the image cannot be decoded, or its
+    /// dimensions are not exactly <see cref="SpriteSheet.SheetWidth"/>×<see cref="SpriteSheet.SheetHeight"/>.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">A sheet named <paramref name="name"/> is already loaded.</exception>
+    /// <remarks>
+    /// The name is validated and its availability checked <em>before</em> the stream is touched,
+    /// so a bad name fails without reading <paramref name="stream"/>. The stream is then copied
+    /// into an in-memory buffer asynchronously and decoded from that seekable buffer with the
+    /// same <see cref="Decode"/> helper as the synchronous overloads, so no synchronous read is
+    /// performed on the caller's stream. The caller remains the owner of <paramref name="stream"/>;
+    /// it is not disposed here.
+    /// </remarks>
+    public async Task<SpriteSheet> LoadAsync(string name, Stream stream)
+    {
+        ArgumentNullException.ThrowIfNull(stream);
+
+        var trimmedName = ValidateName(name);
+        EnsureNameAvailable(trimmedName);
+
+        using var buffer = new MemoryStream();
+        await stream.CopyToAsync(buffer).ConfigureAwait(false);
+        buffer.Position = 0;
+
+        return Register(trimmedName, SpriteSheetType.Full, null, Decode(buffer, trimmedName, "<stream>"));
+    }
+
+    /// <summary>
     /// Loads the <em>part</em> spritesheet of layer <paramref name="partType"/> at
     /// <paramref name="path"/> and registers it under <paramref name="name"/>.
     /// </summary>
@@ -128,6 +165,43 @@ public sealed class SpriteSheetManager
         EnsureNameAvailable(trimmedName);
 
         return Register(trimmedName, SpriteSheetType.Part, partType, Decode(stream, trimmedName, "<stream>"));
+    }
+
+    /// <summary>
+    /// Asynchronously loads the <em>part</em> spritesheet of layer <paramref name="partType"/>
+    /// from <paramref name="stream"/> and registers it under <paramref name="name"/>. This is
+    /// the asynchronous counterpart of <see cref="LoadPart(string, Stream, CharacterPartType)"/>
+    /// for streams that only support asynchronous reads (e.g. certain network/browser streams).
+    /// </summary>
+    /// <param name="name">The unique name used to reference the sheet (trimmed).</param>
+    /// <param name="stream">A stream containing the encoded image (PNG or other SkiaSharp-supported format).</param>
+    /// <param name="partType">The character layer the sheet provides.</param>
+    /// <returns>A task that resolves to the loaded <see cref="SpriteSheet"/>.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="name"/> or <paramref name="stream"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="name"/> is empty after trimming, the image cannot be decoded, or its
+    /// dimensions are not exactly <see cref="SpriteSheet.SheetWidth"/>×<see cref="SpriteSheet.SheetHeight"/>.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">A sheet named <paramref name="name"/> is already loaded.</exception>
+    /// <remarks>
+    /// The name is validated and its availability checked <em>before</em> the stream is touched,
+    /// so a bad name fails without reading <paramref name="stream"/>. The stream is then copied
+    /// into an in-memory buffer asynchronously and decoded from that seekable buffer with the
+    /// same <see cref="Decode"/> helper as the synchronous overloads. The caller remains the
+    /// owner of <paramref name="stream"/>; it is not disposed here.
+    /// </remarks>
+    public async Task<SpriteSheet> LoadPartAsync(string name, Stream stream, CharacterPartType partType)
+    {
+        ArgumentNullException.ThrowIfNull(stream);
+
+        var trimmedName = ValidateName(name);
+        EnsureNameAvailable(trimmedName);
+
+        using var buffer = new MemoryStream();
+        await stream.CopyToAsync(buffer).ConfigureAwait(false);
+        buffer.Position = 0;
+
+        return Register(trimmedName, SpriteSheetType.Part, partType, Decode(buffer, trimmedName, "<stream>"));
     }
 
     /// <summary>
