@@ -81,7 +81,9 @@ public sealed class SpriteSheet
     /// the character <paramref name="characterIndex"/> (1-based) within the sheet.
     /// </summary>
     /// <param name="characterIndex">The 1-based index (1..8) of the character in the sheet.</param>
-    /// <param name="direction">The direction (down/left/right/up) the sprite faces.</param>
+    /// <param name="direction">The direction the sprite faces. Cardinal directions map to
+    /// their own sheet row; diagonal directions map to the side-view row of their horizontal
+    /// component (see <see cref="DirectionExtensions.RowIndex"/>).</param>
     /// <param name="frame">The animation frame (0..2).</param>
     /// <returns>
     /// An <see cref="SKImage"/> cropped from the decoded source. The caller owns and disposes it.
@@ -92,7 +94,7 @@ public sealed class SpriteSheet
     /// <remarks>
     /// Character <c>i</c> is located at <c>charCol = (i - 1) % 4</c>, <c>charRow = (i - 1) / 4</c>;
     /// its cell <c>(frame, direction)</c> is at column <c>charCol * 3 + frame</c> and row
-    /// <c>charRow * 4 + (int)direction</c>.
+    /// <c>charRow * 4 + direction.RowIndex()</c>.
     /// <para>
     /// The returned image is an independent 48×48 raster crop of the decoded source, produced
     /// with nearest-neighbour sampling (a 1:1 pixel copy, never a re-encode). We deliberately
@@ -122,7 +124,7 @@ public sealed class SpriteSheet
         var charCol = (characterIndex - 1) % CharactersPerRow;
         var charRow = (characterIndex - 1) / CharactersPerRow;
         var col = (charCol * FramesPerCharacter) + frame;
-        var row = (charRow * DirectionsPerCharacter) + (int)direction;
+        var row = (charRow * DirectionsPerCharacter) + direction.RowIndex();
 
         var source = new SKRectI(
             col * CellSize,

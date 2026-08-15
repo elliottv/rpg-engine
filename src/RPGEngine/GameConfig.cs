@@ -112,6 +112,68 @@ public sealed class GameConfig
         null;
 
     /// <summary>
+    /// Returns the movement direction to use for the given set of currently pressed keys, or
+    /// <see langword="null"/> when no movement should happen.
+    /// </summary>
+    /// <param name="pressedKeys">The keys currently held down (e.g. the engine's pressed-keys set).</param>
+    /// <returns>
+    /// The movement direction, or <see langword="null"/> when no key is bound to a movement
+    /// direction or the bound directions cancel out (e.g. Up+Down or Left+Right held together).
+    /// </returns>
+    /// <remarks>
+    /// Every pressed key bound to a movement direction (via <see cref="GetDirection(Key)"/>)
+    /// contributes its unit delta; the deltas are summed, normalized and quantized to the nearest
+    /// of the eight <see cref="Direction"/> values by dot product against each direction's unit
+    /// delta. This is what makes diagonal movement work: <c>W</c>+<c>D</c> resolves to
+    /// <see cref="Direction.UpRight"/>, while <c>W</c>+<c>A</c>+<c>D</c> resolves to
+    /// <see cref="Direction.Up"/> because A and D cancel. The configuration is read at input time
+    /// and never cached, so rebinding takes effect immediately.
+    /// </remarks>
+    public Direction? GetMovementDirection(IEnumerable<Key> pressedKeys)
+    {
+        ArgumentNullException.ThrowIfNull(pressedKeys);
+
+        var sum = new Vector2(0, 0);
+        var hasBoundKey = false;
+
+        foreach (var key in pressedKeys)
+        {
+            var direction = GetDirection(key);
+            if (direction.HasValue)
+            {
+                sum += direction.Value.Delta();
+                hasBoundKey = true;
+            }
+        }
+
+        if (!hasBoundKey || (sum.X == 0 && sum.Y == 0))
+        {
+            return null;
+        }
+
+        // Normalize the combined vector, then pick the direction whose unit delta is closest
+        // (largest dot product). For key input the sum always lands exactly on one of the eight
+        // directions, but the dot product makes the quantization robust for arbitrary vectors.
+        var length = Math.Sqrt((sum.X * sum.X) + (sum.Y * sum.Y));
+        var normalized = new Vector2(sum.X / length, sum.Y / length);
+
+        Direction? best = null;
+        var bestDot = double.NegativeInfinity;
+        foreach (var direction in Enum.GetValues<Direction>())
+        {
+            var delta = direction.Delta();
+            var dot = (normalized.X * delta.X) + (normalized.Y * delta.Y);
+            if (dot > bestDot)
+            {
+                bestDot = dot;
+                best = direction;
+            }
+        }
+
+        return best;
+    }
+
+    /// <summary>
     /// Throws <see cref="ArgumentException"/> when <paramref name="key"/> is
     /// already bound to a movement direction other than
     /// <paramref name="direction"/>.

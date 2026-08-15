@@ -29,11 +29,18 @@ public sealed class Character
     /// <summary>The middle column of the 3-frame walk cycle: the standing frame in RPG Maker MZ.</summary>
     private const int StandingFrame = 1;
 
+    /// <summary>The number of frame steps in one complete walk cycle: <c>0 &#8594; 1 &#8594; 2 &#8594; 1</c>.</summary>
+    private const int FramesPerCycle = 4;
+
     private readonly CharacterSpriteCompositor _compositor = new();
     private readonly List<SpriteSheetRef> _spriteSheets = [];
 
     private Position _lastUpdatePosition;
     private int _animationFrame = StandingFrame;
+
+    // Accumulated animation time in seconds, used to advance the walk cycle at a rate scaled by
+    // BaseSpeed and AnimationCycleSpeed (see Update). The remainder below a whole frame is kept.
+    private double _animationAccumulator;
 
     // The walk cycle is a bounce: 0 → 1 → 2 → 1 → 0 → ... Starting from the standing frame (1)
     // the first step goes toward 0, then the bounce alternates direction at each end.
@@ -49,6 +56,20 @@ public sealed class Character
     public double BaseSpeed { get; set; }
 
     /// <summary>
+    /// Gets or sets the movement speed (px/s) at which the walk cycle completes exactly one full
+    /// cycle per second. Defaults to 96, matching <see cref="Player.DefaultBaseSpeed"/>.
+    /// </summary>
+    /// <remarks>
+    /// The walk cycle is the bounce <c>0 &#8594; 1 &#8594; 2 &#8594; 1</c>, i.e.
+    /// <see cref="FramesPerCycle"/> frame steps. The time per frame is
+    /// <c>secondsPerFrame = AnimationCycleSpeed / (BaseSpeed * FramesPerCycle)</c>, so at
+    /// <c>BaseSpeed == AnimationCycleSpeed == 96</c> one frame lasts 0.25 s (4 frames/s =
+    /// 1 cycle/s). Doubling the movement speed doubles the cycle rate; halving it halves it.
+    /// Raising this property (the reference speed) slows the animation relative to movement speed.
+    /// </remarks>
+    public double AnimationCycleSpeed { get; set; } = 96;
+
+    /// <summary>
     /// Gets the mutable list of spritesheet references used to render the character. Each entry
     /// pairs a loaded sheet name with the 1-based character index (1..8) within that sheet.
     /// The order of the entries is irrelevant for part sheets: they are composed in the fixed
@@ -58,7 +79,8 @@ public sealed class Character
 
     /// <summary>
     /// Gets the current walk-cycle animation frame (0..2). The middle frame (1) is the standing
-    /// frame. This accessor is internal so tests can verify animation advancement.
+    /// frame. The frame advances on a time/speed basis (see <see cref="Update(double)"/>). This
+    /// accessor is internal so tests can verify animation advancement.
     /// </summary>
     internal int AnimationFrame => _animationFrame;
 
@@ -99,26 +121,42 @@ public sealed class Character
     public void Move(double speedFactor = 1, double dt = 1) => Move(Direction, speedFactor, dt);
 
     /// <summary>
-    /// Advances the walk-cycle animation when the character moved since the previous update,
-    /// otherwise snaps the animation back to the standing frame. Called by the engine's update
-    /// loop once per frame.
+    /// Advances the walk-cycle animation based on elapsed time and movement speed. If the
+    /// character moved since the previous update, the animation accumulator is advanced by
+    /// <paramref name="dt"/> and the number of whole frames due (scaled by
+    /// <see cref="BaseSpeed"/> and <see cref="AnimationCycleSpeed"/>) are stepped, keeping the
+    /// remainder for the next update. If the character did not move, the animation snaps back to
+    /// the standing frame and the accumulator is reset. Called by the engine's update loop once
+    /// per frame.
     /// </summary>
-    /// <param name="dt">The elapsed time in seconds. Animation timing tuning is out of scope for
-    /// this story, so <paramref name="dt"/> is accepted for the engine-loop contract but does not
-    /// affect the frame advancement (one frame per update while moving).</param>
+    /// <param name="dt">The elapsed time in seconds.</param>
     internal void Update(double dt)
     {
         var moved = Position != _lastUpdatePosition;
         _lastUpdatePosition = Position;
 
-        if (moved)
+        if (!moved || BaseSpeed <= 0)
         {
-            AdvanceFrame();
-        }
-        else
-        {
+            // Standing still (or the defensive case of a zero/negative movement speed, which
+            // cannot actually happen): show the standing frame and drop any partially accumulated
+            // animation time so the cycle restarts cleanly on the next move.
             _animationFrame = StandingFrame;
             _frameStep = -1;
+            _animationAccumulator = 0;
+            return;
+        }
+
+        _animationAccumulator += dt;
+
+        // secondsPerFrame = AnimationCycleSpeed / (BaseSpeed * FramesPerCycle). At
+        // BaseSpeed == AnimationCycleSpeed == 96 this is 0.25 s/frame, i.e. 4 frames/s = 1 cycle/s.
+        var secondsPerFrame = AnimationCycleSpeed / (BaseSpeed * FramesPerCycle);
+        var framesToAdvance = (int)Math.Floor(_animationAccumulator / secondsPerFrame);
+        _animationAccumulator -= framesToAdvance * secondsPerFrame;
+
+        for (var i = 0; i < framesToAdvance; i++)
+        {
+            AdvanceFrame();
         }
     }
 
