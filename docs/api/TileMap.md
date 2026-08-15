@@ -9,6 +9,10 @@ Namespace: `RPGEngine.Tiled` — a tile map loaded from a Tiled `.tmx` file (and
   are not registered anywhere globally. Loading a map never touches the engine's tilesets.
 - Tile coordinates are 0-based. Layer data is stored row-major. Only the orthogonal map layout
   is supported by this epic.
+- Rendering happens in **two passes**: the layers **below** the player (every layer whose
+  `TileMapLayer.AbovePlayer` is `false`) are drawn first, and the layers **above** the player
+  (those declaring the Tiled `above_player` custom property set to `true`) are drawn afterwards,
+  so those tiles appear in front of the player.
 
 ## Properties
 

@@ -12,8 +12,13 @@ corresponding flip flags are stored in a parallel list.
 | `Name` | Gets the name of the layer (as declared in the map). |
 | `Visible` | Gets whether the layer is visible (shown) in the map. |
 | `Opacity` | Gets the opacity of the layer, from 0 (fully transparent) to 1 (fully opaque). |
+| `AbovePlayer` | Gets whether the layer is rendered **above** the player (declared by the Tiled `above_player` boolean custom property set to `true`). |
 | `Width` / `Height` | Get the size of the layer in tiles. |
 | `TileIds` | Gets the tile IDs in row-major order (0 = empty cell). |
+
+`AbovePlayer` is `true` when the layer declares a custom boolean property named `above_player`
+with value `true` (Tiled convention, case-sensitive). When the property is absent, is not a
+boolean, or is `false`, it is `false` and the layer is rendered below the player.
 
 ## Methods
 
@@ -43,6 +48,7 @@ var ground = map.Layers[0];
 Console.WriteLine(ground.Name);           // "ground"
 Console.WriteLine(ground.Visible);        // True
 Console.WriteLine(ground.Opacity);        // 1
+Console.WriteLine(ground.AbovePlayer);    // False
 Console.WriteLine(ground.Width);          // 16
 Console.WriteLine(ground.Height);         // 12
 Console.WriteLine(ground.TileIds.Count);  // 192
