@@ -367,6 +367,57 @@ public class CharacterTests
     }
 
     // ---------------------------------------------------------------------
+    // Acceptance (story 23): a character using a 936×864 sheet (78×108 cells)
+    // renders a 78×108 sprite at its position; part composition works on the
+    // derived cell size.
+    // ---------------------------------------------------------------------
+    /// <summary>Verifies a character with a single full 936×864 sheet renders a 78×108 sprite at its position.</summary>
+    [Fact]
+    public void Draw_LargeFullSheet_Renders78x108SpriteAtPosition()
+    {
+        var manager = new SpriteSheetManager();
+        using (var stream = CharacterTestHelper.CreateSheetStream(seed: 0, width: 936, height: 864))
+        {
+            manager.Load("hero", stream);
+        }
+
+        var character = new Character();
+        character.SpriteSheets.Add(new SpriteSheetRef("hero", CharacterIndex: 1));
+        character.Move(Direction.Down, speedFactor: 0);
+
+        using var bitmap = Render(character, manager, width: 78, height: 108);
+
+        var expected = CharacterTestHelper.SpriteColor(seed: 0, characterIndex: 1, Direction.Down, StandingFrame);
+        AssertPixel(bitmap, expected, width: 78, height: 108);
+    }
+
+    /// <summary>Verifies 936×864 part sheets still compose on the derived 78×108 cell size (hair2 on top when facing up).</summary>
+    [Fact]
+    public void Draw_LargePartSheets_ComposeOnDerivedCellSize()
+    {
+        var manager = new SpriteSheetManager();
+        using (var bodyStream = CharacterTestHelper.CreateSheetStream(seed: 1, width: 936, height: 864))
+        {
+            manager.LoadPart("body", bodyStream, CharacterPartType.Body);
+        }
+        using (var hairStream = CharacterTestHelper.CreateSheetStream(seed: 3, width: 936, height: 864))
+        {
+            manager.LoadPart("hair2", hairStream, CharacterPartType.Hair2);
+        }
+
+        var character = new Character();
+        character.SpriteSheets.Add(new SpriteSheetRef("body", CharacterIndex: 1));
+        character.SpriteSheets.Add(new SpriteSheetRef("hair2", CharacterIndex: 1));
+
+        // Facing up: the per-direction adjustment draws hair2 over the body on the 78×108 sprite.
+        character.Move(Direction.Up, speedFactor: 0);
+        using var bitmap = Render(character, manager, width: 78, height: 108);
+
+        var expected = CharacterTestHelper.SpriteColor(seed: 3, characterIndex: 1, Direction.Up, StandingFrame); // hair2
+        AssertPixel(bitmap, expected, width: 78, height: 108);
+    }
+
+    // ---------------------------------------------------------------------
     // Additional coverage: a character with no sprite sheets draws nothing.
     // ---------------------------------------------------------------------
     /// <summary>Verifies a character with an empty SpriteSheets list draws nothing (no exception, transparent output).</summary>
@@ -423,10 +474,14 @@ public class CharacterTests
         return manager;
     }
 
-    /// <summary>Renders the character into a fresh 48×48 bitmap at the origin.</summary>
-    private static SKBitmap Render(Character character, SpriteSheetManager manager)
+    /// <summary>Renders the character into a fresh bitmap of the requested size at the origin.</summary>
+    private static SKBitmap Render(
+        Character character,
+        SpriteSheetManager manager,
+        int width = CharacterTestHelper.CellSize,
+        int height = CharacterTestHelper.CellSize)
     {
-        var bitmap = new SKBitmap(CharacterTestHelper.CellSize, CharacterTestHelper.CellSize);
+        var bitmap = new SKBitmap(width, height);
         using (var canvas = new SKCanvas(bitmap))
         {
             canvas.Clear(SKColors.Transparent);
@@ -437,10 +492,14 @@ public class CharacterTests
     }
 
     /// <summary>Asserts the centre and both corners of the sprite have the expected color.</summary>
-    private static void AssertPixel(SKBitmap bitmap, SKColor expected)
+    private static void AssertPixel(
+        SKBitmap bitmap,
+        SKColor expected,
+        int width = CharacterTestHelper.CellSize,
+        int height = CharacterTestHelper.CellSize)
     {
-        Assert.Equal(expected, bitmap.GetPixel(24, 24));
+        Assert.Equal(expected, bitmap.GetPixel(width / 2, height / 2));
         Assert.Equal(expected, bitmap.GetPixel(0, 0));
-        Assert.Equal(expected, bitmap.GetPixel(47, 47));
+        Assert.Equal(expected, bitmap.GetPixel(width - 1, height - 1));
     }
 }
