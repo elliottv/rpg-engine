@@ -45,6 +45,31 @@ var map = TileMap.Load(
     uri => httpClient.GetByteArrayAsync(uri).GetAwaiter().GetResult());
 ```
 
+### `static Task<TileMap> LoadAsync(Stream stream, Uri baseUri, TiledAssetFetcherAsync fetcher)`
+
+The asynchronous counterpart of `Load(Stream, Uri, TiledAssetFetcher)` for streams and asset
+fetchers that only support asynchronous I/O (e.g. certain network/browser streams). No
+synchronous read is performed on the caller's stream: the TMX content is read with
+`StreamReader.ReadToEndAsync()` and every external asset is fetched with `await fetcher(...)`.
+
+DotTiled 1.0.0 only exposes synchronous external-tileset resolvers, so the async path
+pre-fetches the external asset graph (the map's external `.tsx` tilesets and the images they
+reference, plus any embedded `<tileset><image>` images) asynchronously into an in-memory cache
+and then reuses the existing synchronous parsing/decoding against that cache, so no blocking
+I/O remains. This is a pragmatic bridge until DotTiled exposes asynchronous resolvers; the
+TMX/TSX format remains the source of truth.
+
+```csharp
+// e.g. an HttpClient shared by the host application.
+using var http = new HttpClient();
+
+using var stream = File.OpenRead("assets/map.tmx");
+var map = await TileMap.LoadAsync(
+    stream,
+    new Uri("https://example.com/assets/map.tmx"),
+    uri => http.GetByteArrayAsync(uri));
+```
+
 ### `uint GetTileId(string layerName, int x, int y)`
 
 Returns the global tile ID of the tile at `(x, y)` in the layer named `layerName`, with all flip

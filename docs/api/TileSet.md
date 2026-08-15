@@ -45,6 +45,25 @@ var tileset = TileSet.Load(
     uri => httpClient.GetByteArrayAsync(uri).GetAwaiter().GetResult());
 ```
 
+### `static Task<TileSet> LoadAsync(Stream stream, Uri baseUri, TiledAssetFetcherAsync fetcher)`
+
+The asynchronous counterpart of `Load(Stream, Uri, TiledAssetFetcher)` for streams and asset
+fetchers that only support asynchronous I/O (e.g. certain network/browser streams). The TSX
+content is read with `StreamReader.ReadToEndAsync()` and the image is fetched with
+`await fetcher(...)`, so no synchronous read is performed on the caller's stream. The caller
+remains the owner of the stream.
+
+```csharp
+// e.g. an HttpClient shared by the host application.
+using var http = new HttpClient();
+
+using var stream = File.OpenRead("assets/tiles.tsx");
+var tileset = await TileSet.LoadAsync(
+    stream,
+    new Uri("https://example.com/assets/tiles.tsx"),
+    uri => http.GetByteArrayAsync(uri));
+```
+
 ### `SKImage GetTileImage(int localTileId)`
 
 Returns the image of the tile with the given 0-based `localTileId`, cropped from the tileset

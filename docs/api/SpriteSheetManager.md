@@ -48,6 +48,32 @@ var body = manager.LoadPart("body", "assets/characters/character_part_body.png",
 Loads the part spritesheet of layer `partType` from a stream. The caller remains the owner of
 the stream.
 
+### `Task<SpriteSheet> LoadAsync(string name, Stream stream)`
+
+The asynchronous counterpart of `Load(string, Stream)` for streams that only support
+asynchronous reads (e.g. certain network/browser streams). The name is validated and its
+availability checked before the stream is touched, so a bad name fails without reading it; the
+stream is then copied into memory asynchronously and decoded from that seekable buffer. The
+caller remains the owner of the stream.
+
+```csharp
+// e.g. an HttpClient shared by the host application.
+using var http = new HttpClient();
+using var stream = new MemoryStream(await http.GetByteArrayAsync("assets/character_full.png"));
+var sheet = await manager.LoadAsync("hero", stream);
+```
+
+### `Task<SpriteSheet> LoadPartAsync(string name, Stream stream, CharacterPartType partType)`
+
+The asynchronous counterpart of `LoadPart(string, Stream, CharacterPartType)` for streams that
+only support asynchronous reads. Same validation/availability-first behaviour and ownership
+rules as `LoadAsync`.
+
+```csharp
+using var stream = new MemoryStream(await http.GetByteArrayAsync("assets/character_part_body.png"));
+var body = await manager.LoadPartAsync("body", stream, CharacterPartType.Body);
+```
+
 ### `SpriteSheet Get(string name)`
 
 Returns the sheet registered under `name`. Throws `KeyNotFoundException` when no such sheet is
