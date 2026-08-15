@@ -28,6 +28,15 @@ public sealed class TileMapLayer
     public int Height { get; }
 
     /// <summary>
+    /// Gets whether the layer is rendered <em>above</em> the player. A layer declares this by
+    /// setting a custom boolean property named <c>above_player</c> to <see langword="true"/>
+    /// (Tiled convention). When the property is absent, is not a boolean, or is
+    /// <see langword="false"/>, this is <see langword="false"/> and the layer is rendered
+    /// below the player.
+    /// </summary>
+    public bool AbovePlayer { get; }
+
+    /// <summary>
     /// Gets the tile IDs of the layer in row-major order. A value of 0 means the cell is empty;
     /// all other values are global tile IDs with the flip bits masked off.
     /// </summary>
@@ -45,7 +54,8 @@ public sealed class TileMapLayer
         IReadOnlyList<uint> tileIds,
         IReadOnlyList<TileFlags> tileFlags,
         int width,
-        int height)
+        int height,
+        bool abovePlayer)
     {
         Name = name;
         Visible = visible;
@@ -54,6 +64,7 @@ public sealed class TileMapLayer
         _tileFlags = tileFlags;
         Width = width;
         Height = height;
+        AbovePlayer = abovePlayer;
     }
 
     /// <summary>
@@ -67,7 +78,8 @@ public sealed class TileMapLayer
 
     /// <summary>
     /// Builds a <see cref="TileMapLayer"/> from a DotTiled <see cref="TileLayer"/>. The raw GIDs
-    /// (which may carry flip bits) are split into masked tile IDs and <see cref="TileFlags"/>.
+    /// (which may carry flip bits) are split into masked tile IDs and <see cref="TileFlags"/>,
+    /// and the layer's custom properties are consulted for the <c>above_player</c> flag.
     /// </summary>
     internal static TileMapLayer FromDotTiled(TileLayer layer)
     {
@@ -88,7 +100,7 @@ public sealed class TileMapLayer
             if (rawIds.Length != count)
             {
                 throw new InvalidOperationException(
-                    $"Tile layer '{layer.Name}' declares {count} cells ({width}×{height}) but its data contains {rawIds.Length} values.");
+                    $"Tile layer '{layer.Name}' declares {count} cells ({width}\u00d7{height}) but its data contains {rawIds.Length} values.");
             }
 
             ids = new uint[count];
@@ -106,7 +118,10 @@ public sealed class TileMapLayer
             flags = new TileFlags[count];
         }
 
-        return new TileMapLayer(layer.Name, layer.Visible, layer.Opacity, ids, flags, width, height);
+        var abovePlayer = layer.Properties.Any(p =>
+            p.Name == "above_player" && p is BoolProperty boolProperty && boolProperty.Value);
+
+        return new TileMapLayer(layer.Name, layer.Visible, layer.Opacity, ids, flags, width, height, abovePlayer);
     }
 
     private int Index(int x, int y)
@@ -115,7 +130,7 @@ public sealed class TileMapLayer
         {
             throw new ArgumentOutOfRangeException(
                 y < 0 || y >= Height ? nameof(y) : nameof(x),
-                $"Coordinates ({x}, {y}) are outside the bounds of layer '{Name}' ({Width}×{Height}).");
+                $"Coordinates ({x}, {y}) are outside the bounds of layer '{Name}' ({Width}\u00d7{Height}).");
         }
 
         return (y * Width) + x;
