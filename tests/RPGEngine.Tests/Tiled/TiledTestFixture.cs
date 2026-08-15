@@ -4,12 +4,24 @@ using SkiaSharp;
 
 namespace RPGEngine.Tests.Tiled;
 
+/// <summary>A single custom property to be written into a generated layer's <c>&lt;properties&gt;</c> block.</summary>
+/// <param name="Name">The property name (e.g. <c>above_player</c>).</param>
+/// <param name="Type">The Tiled property type (e.g. <c>bool</c>, <c>string</c>, <c>int</c>).</param>
+/// <param name="Value">The property value as a string (e.g. <c>true</c>).</param>
+internal sealed record LayerProperty(string Name, string Type, string Value);
+
 /// <summary>Specifies a tile layer to be written into a generated TMX fixture.</summary>
 /// <param name="Name">The layer name.</param>
 /// <param name="Gids">The raw tile GIDs in row-major order (flip bits allowed).</param>
 /// <param name="Visible">Whether the layer is visible.</param>
 /// <param name="Opacity">The layer opacity, from 0 to 1.</param>
-internal sealed record TileLayerSpec(string Name, uint[] Gids, bool Visible = true, float Opacity = 1f);
+/// <param name="Properties">Optional custom properties emitted inside the layer.</param>
+internal sealed record TileLayerSpec(
+    string Name,
+    uint[] Gids,
+    bool Visible = true,
+    float Opacity = 1f,
+    IReadOnlyList<LayerProperty>? Properties = null);
 
 /// <summary>The visual pattern painted into the generated 48×48 tile PNG.</summary>
 internal enum TilePattern
@@ -29,6 +41,20 @@ internal enum TilePattern
 /// an external single-tile TSX referencing it, and a TMX referencing the TSX. Everything is
 /// cleaned up on <see cref="Dispose"/>.
 /// </summary>
+/// <remarks>
+/// <para>
+/// By default the fixture generates a single 48×48 tile image (see <see cref="TilePattern"/>).
+/// Passing a list of tile colors to the constructor generates a tileset with one tile per color
+/// (the image is laid out in a single row, each tile solid in its color), which lets tests
+/// distinguish two tile GIDs by color (e.g. a below-player layer in red and an
+/// <c>above_player</c> layer in green).
+/// </para>
+/// <para>
+/// Each layer may declare custom properties via <see cref="TileLayerSpec.Properties"/>; these
+/// are emitted as a <c>&lt;properties&gt;</c> block inside the <c>&lt;layer&gt;</c> element,
+/// matching the Tiled format.
+/// </para>
+/// </remarks>
 internal sealed class TiledTestFixture : IDisposable
 {
     public const int TileSize = 48;
@@ -50,7 +76,12 @@ internal sealed class TiledTestFixture : IDisposable
     /// <summary>Gets the path to the generated tileset PNG image.</summary>
     public string ImagePath { get; }
 
-    public TiledTestFixture(int width, int height, IReadOnlyList<TileLayerSpec> layers, TilePattern pattern = TilePattern.Solid)
+    public TiledTestFixture(
+        int width,
+        int height,
+        IReadOnlyList<TileLayerSpec> layers,
+        TilePattern pattern = TilePattern.Solid,
+        IReadOnlyList<SKColor>? tileColors = null)
     {
         Width = width;
         Height = height;
@@ -61,8 +92,8 @@ internal sealed class TiledTestFixture : IDisposable
         TilesetPath = Path.Combine(_root, "tiles.tsx");
         MapPath = Path.Combine(_root, "map.tmx");
 
-        CreateTileImage(ImagePath, pattern);
-        File.WriteAllText(TilesetPath, TilesetXml);
+        CreateTileImage(ImagePath, pattern, tileColors);
+        File.WriteAllText(TilesetPath, TilesetXml(tileColors));
         File.WriteAllText(MapPath, MapXml(layers));
     }
 
@@ -82,10 +113,29 @@ internal sealed class TiledTestFixture : IDisposable
         }
     }
 
-    private static void CreateTileImage(string path, TilePattern pattern)
+    private static void CreateTileImage(string path, TilePattern pattern, IReadOnlyList<SKColor>? tileColors)
     {
-        using var bitmap = new SKBitmap(TileSize, TileSize);
-        using (var canvas = new SKCanvas(bitmap))
+        if (tileColors is { Count: > 0 })
+        {
+            // Multi-tile solid-color image: one 48×48 tile per color, laid out in a single row.
+            using var bitmap = new SKBitmap(TileSize * tileColors.Count, TileSize);
+            using (var canvas = new SKCanvas(bitmap))
+            {
+                canvas.Clear(SKColors.Transparent);
+                using var paint = new SKPaint { IsAntialias = false };
+                for (var i = 0; i < tileColors.Count; i++)
+                {
+                    paint.Color = tileColors[i];
+                    canvas.DrawRect(new SKRect(i * TileSize, 0, (i + 1) * TileSize, TileSize), paint);
+                }
+            }
+
+            EncodePng(bitmap, path);
+            return;
+        }
+
+        using var singleBitmap = new SKBitmap(TileSize, TileSize);
+        using (var canvas = new SKCanvas(singleBitmap))
         {
             canvas.Clear(SKColors.Transparent);
             using var paint = new SKPaint { Color = SKColors.Red, IsAntialias = false };
@@ -102,18 +152,30 @@ internal sealed class TiledTestFixture : IDisposable
             }
         }
 
+        EncodePng(singleBitmap, path);
+    }
+
+    /// <summary>Encodes <paramref name="bitmap"/> as a PNG file at <paramref name="path"/>.</summary>
+    private static void EncodePng(SKBitmap bitmap, string path)
+    {
         using var image = SKImage.FromBitmap(bitmap);
         using var data = image.Encode(SKEncodedImageFormat.Png, 100);
         using var stream = File.Create(path);
         data.SaveTo(stream);
     }
 
-    private string TilesetXml => $"""
-        <?xml version="1.0" encoding="UTF-8"?>
-        <tileset version="1.10" tiledversion="1.10.2" name="test_tiles" tilewidth="{TileSize}" tileheight="{TileSize}" tilecount="1" columns="1">
-          <image source="tiles.png" width="{TileSize}" height="{TileSize}"/>
-        </tileset>
-        """;
+    private string TilesetXml(IReadOnlyList<SKColor>? tileColors)
+    {
+        var tileCount = tileColors?.Count ?? 1;
+        var columns = tileCount;
+        var imageWidth = TileSize * columns;
+        return $"""
+            <?xml version="1.0" encoding="UTF-8"?>
+            <tileset version="1.10" tiledversion="1.10.2" name="test_tiles" tilewidth="{TileSize}" tileheight="{TileSize}" tilecount="{tileCount}" columns="{columns}">
+              <image source="tiles.png" width="{imageWidth}" height="{TileSize}"/>
+            </tileset>
+            """;
+    }
 
     private string MapXml(IReadOnlyList<TileLayerSpec> layers)
     {
@@ -128,6 +190,19 @@ internal sealed class TiledTestFixture : IDisposable
             var layer = layers[i];
             sb.AppendLine(
                 $"""  <layer id="{i + 1}" name="{layer.Name}" width="{Width}" height="{Height}" visible="{(layer.Visible ? 1 : 0)}" opacity="{layer.Opacity.ToString(CultureInfo.InvariantCulture)}">""");
+
+            if (layer.Properties is { Count: > 0 })
+            {
+                sb.AppendLine("    <properties>");
+                foreach (var property in layer.Properties)
+                {
+                    sb.AppendLine(
+                        $"      <property name=\"{property.Name}\" type=\"{property.Type}\" value=\"{property.Value}\"/>");
+                }
+
+                sb.AppendLine("    </properties>");
+            }
+
             sb.AppendLine("    <data encoding=\"csv\">");
             for (var y = 0; y < Height; y++)
             {
