@@ -16,7 +16,9 @@ registry and the pressed-keys state, and exposes the game-loop entry points `Upd
   SkiaSharp GL view or a WebAssembly `SKSurface` created from a `GRContext`), the drawing is
   hardware accelerated. The engine has **zero platform-specific dependencies**.
 - The camera is internal: `Render` follows the player and clamps the viewport inside the map.
-- Movement input uses *last-pressed wins* priority (see [Architecture](../Architecture.md)).
+- Movement input combines every held bound key into a single 8-direction vector: opposite keys
+  cancel (`W`+`S` or `A`+`D`), and a diagonal pair combines into a diagonal (`W`+`D` → up-right)
+  at the same speed as cardinal movement (see [Architecture](../Architecture.md)).
 - Tile sets are not loaded through the engine: a `TileMap` owns the tilesets its layers
   reference. Standalone tilesets are loaded directly through the `TileSet.Load` factories.
 
@@ -77,9 +79,10 @@ engine.Config.UpKey = Key.Up; // rebind movement up to the up-arrow key
 ### `void Input(Key key, bool isPressed)`
 
 Reports a key event to the engine. `true` presses the key; `false` releases it. The engine keeps
-a set of currently pressed keys and derives the movement direction in `Update` via `GameConfig`.
-Host applications translate their framework's key events to a `Key` value before calling this
-method.
+a set of currently pressed keys and derives the movement direction in `Update` via
+`GameConfig.GetMovementDirection`, which combines all held bound keys into one of the eight
+directions. Host applications translate their framework's key events to a `Key` value before
+calling this method.
 
 ```csharp
 engine.Input(Key.D, isPressed: true);   // key-down

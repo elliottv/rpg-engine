@@ -246,24 +246,69 @@ public class GameEngineTests
     }
 
     // ---------------------------------------------------------------------
-    // Additional coverage: the documented last-pressed-wins priority.
+    // Additional coverage (story 21): 8-direction vector-combined movement.
+    // The movement model is no longer last-pressed-wins: holding W+D moves
+    // diagonally, opposite keys cancel, and releasing one key of a held
+    // diagonal pair reverts to the remaining cardinal direction.
     // ---------------------------------------------------------------------
-    /// <summary>Verifies that when two movement keys are held the most recently pressed one wins, and releasing it reverts to the other.</summary>
+    /// <summary>Verifies holding W+D for one second at 96 px/s moves diagonally up-right (~±67.88 px per axis) and sets Direction to UpRight; releasing D then moves straight up.</summary>
     [Fact]
-    public void Update_LastPressedKeyWins()
+    public void Update_HoldingDiagonalPair_MovesDiagonallyAndRevertsOnRelease()
+    {
+        var engine = new GameEngine();
+        engine.Player.Character.BaseSpeed = 96;
+        engine.Player.Position = new Position(200, 200);
+
+        engine.Input(Key.W, true);
+        engine.Input(Key.D, true);
+        for (var frame = 0; frame < 60; frame++)
+        {
+            engine.Update(FrameDt);
+        }
+
+        // UpRight = (+√½, -√½); one second at 96 px/s → (±96·√½) ≈ (±67.88) per axis.
+        var component = 96 * Math.Sqrt(0.5);
+        Assert.Equal(200 + component, engine.Player.Position.X, precision: 6);
+        Assert.Equal(200 - component, engine.Player.Position.Y, precision: 6);
+        Assert.Equal(Direction.UpRight, engine.Player.Direction);
+
+        // Releasing D reverts to the remaining cardinal direction (straight up).
+        var xAfterDiagonal = engine.Player.Position.X;
+        engine.Input(Key.D, false);
+        engine.Update(FrameDt);
+        Assert.True(engine.Player.Position.Y < 200 - component);
+        Assert.Equal(xAfterDiagonal, engine.Player.Position.X, precision: 6);
+        Assert.Equal(Direction.Up, engine.Player.Direction);
+    }
+
+    /// <summary>Verifies holding opposite keys (W+S) produces no movement.</summary>
+    [Fact]
+    public void Update_OppositeKeysCancel_ProducesNoMovement()
     {
         var engine = new GameEngine();
         engine.Player.Position = new Position(100, 100);
 
-        engine.Input(Key.W, true); // up
-        engine.Input(Key.D, true); // right — most recently pressed
+        engine.Input(Key.W, true);
+        engine.Input(Key.S, true);
         engine.Update(FrameDt);
-        Assert.True(engine.Player.Position.X > 100);
-        Assert.Equal(100, engine.Player.Position.Y, precision: 6);
 
-        // Releasing right reverts to up (still held).
-        engine.Input(Key.D, false);
+        Assert.Equal(new Position(100, 100), engine.Player.Position);
+    }
+
+    /// <summary>Verifies diagonal resolution respects config rebinding (Z+D → UpRight after UpKey = Z).</summary>
+    [Fact]
+    public void Update_DiagonalResolution_RespectsConfigRebinding()
+    {
+        var engine = new GameEngine();
+        engine.Config.UpKey = Key.Z;
+        engine.Player.Position = new Position(100, 100);
+
+        engine.Input(Key.Z, true);
+        engine.Input(Key.D, true);
         engine.Update(FrameDt);
+
+        Assert.Equal(Direction.UpRight, engine.Player.Direction);
+        Assert.True(engine.Player.Position.X > 100);
         Assert.True(engine.Player.Position.Y < 100);
     }
 

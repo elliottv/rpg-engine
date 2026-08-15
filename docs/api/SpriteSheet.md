@@ -58,7 +58,9 @@ Returns the 48×48 sprite at `(direction, frame)` for the character `characterIn
 `ArgumentOutOfRangeException` when `characterIndex` is outside 1..8 or `frame` is outside 0..2.
 
 Character `i` is located at `charCol = (i - 1) % 4`, `charRow = (i - 1) / 4`; its cell
-`(frame, direction)` is at column `charCol * 3 + frame` and row `charRow * 4 + (int)direction`.
+`(frame, direction)` is at column `charCol * 3 + frame` and row `charRow * 4 + direction.RowIndex()`.
+Row selection uses `DirectionExtensions.RowIndex`, so diagonal directions (which have no dedicated
+sheet row) fall back to the side-view row of their horizontal component.
 
 ```csharp
 using var sprite = sheet.GetSprite(characterIndex: 1, Direction.Down, frame: 1);

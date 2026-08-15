@@ -202,7 +202,7 @@ public class DocsExamplesTests
         Assert.Equal(5, distance, precision: 10);
     }
 
-    /// <summary>Verifies the Direction extension examples (deltas, opposites, rows).</summary>
+    /// <summary>Verifies the Direction extension examples (deltas, opposites, rows, diagonals).</summary>
     [Fact]
     public void Direction_DeltasOppositesAndRows()
     {
@@ -211,6 +211,17 @@ public class DocsExamplesTests
         Assert.Equal(3, Direction.Up.RowIndex()); // RPG Maker MZ row 3
         Assert.True(Direction.Left.IsHorizontal());
         Assert.False(Direction.Left.IsVertical());
+
+        // Diagonal support: normalized delta, diagonal opposite, side-view row fallback and the
+        // IsDiagonal classification.
+        var upRight = Direction.UpRight.Delta();
+        Assert.Equal(Math.Sqrt(0.5), upRight.X, precision: 9);
+        Assert.Equal(-Math.Sqrt(0.5), upRight.Y, precision: 9);
+        Assert.Equal(Direction.DownLeft, Direction.UpRight.Opposite());
+        Assert.Equal(2, Direction.UpRight.RowIndex()); // falls back to the Right (side-view) row
+        Assert.True(Direction.UpRight.IsDiagonal());
+        Assert.False(Direction.UpRight.IsHorizontal());
+        Assert.False(Direction.UpRight.IsVertical());
     }
 
     // ---------------------------------------------------------------------

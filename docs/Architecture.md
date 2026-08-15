@@ -17,7 +17,7 @@ Player ── Character (Position, Direction, BaseSpeed, SpriteSheets, walk-cycl
 the in-world state lives on `Character`:
 
 - `Character.Position` — top-left world pixel position of the 48×48 sprite.
-- `Character.Direction` — the facing direction (Down/Left/Right/Up).
+- `Character.Direction` — the facing direction (8 directions: Down/Left/Right/Up plus the four diagonals).
 - `Character.BaseSpeed` — movement speed in pixels per second.
 - `Character.SpriteSheets` — the list of `SpriteSheetRef`s (sheet name + 1..8 character index).
 - `Character.Update(dt)` — advances the walk-cycle animation (internal).
@@ -76,8 +76,10 @@ charRow = (i - 1) / 4
 ```
 
 Its cell `(frame, direction)` is at column `charCol * 3 + frame` and row
-`charRow * 4 + (int)direction`, where the direction rows are
-`0 = Down`, `1 = Left`, `2 = Right`, `3 = Up`.
+`charRow * 4 + direction.RowIndex()`, where the direction rows are
+`0 = Down`, `1 = Left`, `2 = Right`, `3 = Up`. Diagonal directions have no dedicated row and
+fall back to their horizontal component's row (`DownLeft`/`UpLeft` → 1, `DownRight`/`UpRight`
+→ 2), so a diagonally-facing character renders with the side-view row.
 
 A `SpriteSheetRef(Name, CharacterIndex)` pairs a loaded sheet name with one of the **8
 characters** in that sheet. The index is enforced (1..8) where the reference is consumed — at
@@ -131,8 +133,15 @@ guard.SpriteSheets.Add(new SpriteSheetRef("guard_head", CharacterIndex: 3));
 
 ## Movement and input
 
-Movement input uses **last-pressed wins** priority: when several bound keys are held, the
-direction of the most recently pressed key is used. Horizontal and vertical movement are never
-combined — the player moves along one axis per frame. When no bound key is held the player
-stops and the animation snaps back to the standing frame. The engine reads `GameConfig` at input
-time and never caches a snapshot.
+Movement input combines every held bound key into a single **8-direction vector**: each key that
+is bound to a movement direction (via `GameConfig.GetDirection`) contributes its unit delta, the
+deltas are summed, normalized and quantized to the nearest of the eight `Direction` values.
+Opposite keys cancel (`W`+`S` or `A`+`D`), and a diagonal pair combines into a diagonal
+(`W`+`D` → up-right) at the same speed as cardinal movement (the diagonal deltas are
+normalized, magnitude 1). When no bound key is held the player stops and the animation snaps back
+to the standing frame. The engine reads `GameConfig` at input time and never caches a snapshot.
+
+The walk-cycle animation is **time-based and speed-scaled**: `Character.Update(dt)` advances the
+walk cycle at a rate proportional to `BaseSpeed` and `AnimationCycleSpeed`, so at
+`BaseSpeed == AnimationCycleSpeed == 96` the cycle (`0 → 1 → 2 → 1`) completes exactly
+once per second.

@@ -64,6 +64,23 @@ Direction? up = config.GetDirection(Key.W);   // Direction.Up
 Direction? none = config.GetDirection(Key.Q); // null
 ```
 
+### `Direction? GetMovementDirection(IEnumerable<Key> pressedKeys)`
+
+Returns the movement direction to use for the given set of currently pressed keys, or `null`
+when no movement should happen (no bound key, or the bound directions cancel out, e.g. Up+Down
+or Left+Right held together).
+
+Every pressed key bound to a movement direction contributes its unit delta; the deltas are
+summed, normalized and quantized to the **nearest of the eight `Direction` values** by dot
+product against each direction's unit delta. This is what makes diagonal movement work: `W`+`D`
+resolves to `UpRight`, while `W`+`A`+`D` resolves to `Up` because A and D cancel.
+
+```csharp
+var config = new GameConfig();
+Direction? diagonal = config.GetMovementDirection([Key.W, Key.D]); // UpRight
+Direction? cancelled = config.GetMovementDirection([Key.W, Key.S]); // null
+```
+
 ## Example: rebinding and uniqueness
 
 ```csharp

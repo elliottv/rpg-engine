@@ -30,12 +30,11 @@ namespace RPGEngine;
 /// without breaking this class's API.
 /// </para>
 /// <para>
-/// Movement input uses <em>last-pressed wins</em> priority: when several bound keys are held, the
-/// direction of the most recently pressed key is used (so pressing a new direction takes over
-/// even while another key is still held, and releasing it reverts to the previous still-held
-/// key). Horizontal and vertical movement are never combined — the player moves along one axis
-/// per frame. When no bound key is held the player stops and its animation snaps back to the
-/// standing frame.
+/// Movement input combines every held bound key into a single 8-direction vector: each key that
+/// is bound to a movement direction contributes its unit delta, opposite keys cancel
+/// (<c>W</c>+<c>S</c> or <c>A</c>+<c>D</c>), and the resulting direction can be diagonal
+/// (<c>W</c>+<c>D</c> resolves to up-right). When no bound key is held the player stops and its
+/// animation snaps back to the standing frame.
 /// </para>
 /// <para>
 /// Tile sets are not loaded through the engine: a <see cref="TileMap"/> owns the tilesets that
@@ -48,7 +47,6 @@ public sealed class GameEngine
     private readonly SpriteSheetManager _spriteSheetManager = new();
     private readonly List<Character> _characters = [];
     private readonly HashSet<Key> _pressedKeys = [];
-    private readonly List<Key> _pressedKeyOrder = [];
 
     /// <summary>
     /// Initializes a new instance of the <see cref="GameEngine"/> class with default state: a
@@ -102,15 +100,11 @@ public sealed class GameEngine
     {
         if (isPressed)
         {
-            if (_pressedKeys.Add(key))
-            {
-                // Remember the press order so Update can resolve "last-pressed wins".
-                _pressedKeyOrder.Add(key);
-            }
+            _pressedKeys.Add(key);
         }
-        else if (_pressedKeys.Remove(key))
+        else
         {
-            _pressedKeyOrder.Remove(key);
+            _pressedKeys.Remove(key);
         }
     }
 
@@ -122,7 +116,7 @@ public sealed class GameEngine
     /// <param name="dt">The elapsed time in seconds since the previous frame.</param>
     public void Update(double dt)
     {
-        var direction = GetActiveDirection();
+        var direction = Config.GetMovementDirection(_pressedKeys);
         if (direction.HasValue)
         {
             Player.Move(direction.Value, speedFactor: 1, dt);
@@ -288,25 +282,6 @@ public sealed class GameEngine
         var desiredY = Player.Position.Y - (canvasHeight / 2.0);
 
         return new Position(Math.Clamp(desiredX, 0, maxX), Math.Clamp(desiredY, 0, maxY));
-    }
-
-    /// <summary>
-    /// Returns the movement direction to use this frame, or <see langword="null"/> when no bound
-    /// key is currently pressed. Uses last-pressed-wins priority: the most recently pressed key
-    /// (that is still held and is bound to a movement direction) wins.
-    /// </summary>
-    private Direction? GetActiveDirection()
-    {
-        for (var i = _pressedKeyOrder.Count - 1; i >= 0; i--)
-        {
-            var direction = Config.GetDirection(_pressedKeyOrder[i]);
-            if (direction.HasValue)
-            {
-                return direction;
-            }
-        }
-
-        return null;
     }
 
     /// <summary>
