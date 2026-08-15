@@ -36,7 +36,7 @@ public sealed class SpriteSheetManager
     /// <exception cref="ArgumentNullException"><paramref name="name"/> or <paramref name="path"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">
     /// <paramref name="name"/> is empty after trimming, the image cannot be decoded, or its
-    /// dimensions are not exactly <see cref="SpriteSheet.SheetWidth"/>&#215;<see cref="SpriteSheet.SheetHeight"/>.
+    /// dimensions are not exactly <see cref="SpriteSheet.SheetWidth"/>×<see cref="SpriteSheet.SheetHeight"/>.
     /// </exception>
     /// <exception cref="InvalidOperationException">A sheet named <paramref name="name"/> is already loaded.</exception>
     public SpriteSheet Load(string name, string path)
@@ -60,7 +60,7 @@ public sealed class SpriteSheetManager
     /// <exception cref="ArgumentNullException"><paramref name="name"/> or <paramref name="stream"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">
     /// <paramref name="name"/> is empty after trimming, the image cannot be decoded, or its
-    /// dimensions are not exactly <see cref="SpriteSheet.SheetWidth"/>&#215;<see cref="SpriteSheet.SheetHeight"/>.
+    /// dimensions are not exactly <see cref="SpriteSheet.SheetWidth"/>×<see cref="SpriteSheet.SheetHeight"/>.
     /// </exception>
     /// <exception cref="InvalidOperationException">A sheet named <paramref name="name"/> is already loaded.</exception>
     /// <remarks>
@@ -90,7 +90,7 @@ public sealed class SpriteSheetManager
     /// <exception cref="ArgumentNullException"><paramref name="name"/> or <paramref name="stream"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">
     /// <paramref name="name"/> is empty after trimming, the image cannot be decoded, or its
-    /// dimensions are not exactly <see cref="SpriteSheet.SheetWidth"/>&#215;<see cref="SpriteSheet.SheetHeight"/>.
+    /// dimensions are not exactly <see cref="SpriteSheet.SheetWidth"/>×<see cref="SpriteSheet.SheetHeight"/>.
     /// </exception>
     /// <exception cref="InvalidOperationException">A sheet named <paramref name="name"/> is already loaded.</exception>
     /// <remarks>
@@ -126,7 +126,7 @@ public sealed class SpriteSheetManager
     /// <exception cref="ArgumentNullException"><paramref name="name"/> or <paramref name="path"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">
     /// <paramref name="name"/> is empty after trimming, the image cannot be decoded, or its
-    /// dimensions are not exactly <see cref="SpriteSheet.SheetWidth"/>&#215;<see cref="SpriteSheet.SheetHeight"/>.
+    /// dimensions are not exactly <see cref="SpriteSheet.SheetWidth"/>×<see cref="SpriteSheet.SheetHeight"/>.
     /// </exception>
     /// <exception cref="InvalidOperationException">A sheet named <paramref name="name"/> is already loaded.</exception>
     public SpriteSheet LoadPart(string name, string path, CharacterPartType partType)
@@ -151,7 +151,7 @@ public sealed class SpriteSheetManager
     /// <exception cref="ArgumentNullException"><paramref name="name"/> or <paramref name="stream"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">
     /// <paramref name="name"/> is empty after trimming, the image cannot be decoded, or its
-    /// dimensions are not exactly <see cref="SpriteSheet.SheetWidth"/>&#215;<see cref="SpriteSheet.SheetHeight"/>.
+    /// dimensions are not exactly <see cref="SpriteSheet.SheetWidth"/>×<see cref="SpriteSheet.SheetHeight"/>.
     /// </exception>
     /// <exception cref="InvalidOperationException">A sheet named <paramref name="name"/> is already loaded.</exception>
     /// <remarks>
@@ -180,7 +180,7 @@ public sealed class SpriteSheetManager
     /// <exception cref="ArgumentNullException"><paramref name="name"/> or <paramref name="stream"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">
     /// <paramref name="name"/> is empty after trimming, the image cannot be decoded, or its
-    /// dimensions are not exactly <see cref="SpriteSheet.SheetWidth"/>&#215;<see cref="SpriteSheet.SheetHeight"/>.
+    /// dimensions are not exactly <see cref="SpriteSheet.SheetWidth"/>×<see cref="SpriteSheet.SheetHeight"/>.
     /// </exception>
     /// <exception cref="InvalidOperationException">A sheet named <paramref name="name"/> is already loaded.</exception>
     /// <remarks>
