@@ -124,7 +124,7 @@ public class DocsExamplesTests
     [Fact]
     public void CharacterIndex_SelectsOneOfEightCharacters()
     {
-        // Standard RPG Maker MZ sheet: 576×384 → 48×48 cells.
+        // Standard RPG Maker MZ sheet: 576×384 &#8594; 48×48 cells.
         using (var sheetStream = FixtureAssets.DecodePngStream(FixtureAssets.FullSheet))
         {
             var manager = new SpriteSheetManager();
