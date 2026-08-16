@@ -37,6 +37,13 @@ public sealed class TileMapLayer
     public bool AbovePlayer { get; }
 
     /// <summary>
+    /// Gets the layer's custom properties (from the layer's <c>&lt;properties&gt;</c> block), in
+    /// file order. The Tiled <c>above_player</c> flag, when present, appears here too; the flag
+    /// is additionally surfaced as <see cref="AbovePlayer"/>.
+    /// </summary>
+    public IReadOnlyList<MapProperty> Properties { get; }
+
+    /// <summary>
     /// Gets the tile IDs of the layer in row-major order. A value of 0 means the cell is empty;
     /// all other values are global tile IDs with the flip bits masked off.
     /// </summary>
@@ -55,7 +62,8 @@ public sealed class TileMapLayer
         IReadOnlyList<TileFlags> tileFlags,
         int width,
         int height,
-        bool abovePlayer)
+        bool abovePlayer,
+        IReadOnlyList<MapProperty> properties)
     {
         Name = name;
         Visible = visible;
@@ -65,6 +73,7 @@ public sealed class TileMapLayer
         Width = width;
         Height = height;
         AbovePlayer = abovePlayer;
+        Properties = properties;
     }
 
     /// <summary>
@@ -79,7 +88,8 @@ public sealed class TileMapLayer
     /// <summary>
     /// Builds a <see cref="TileMapLayer"/> from a DotTiled <see cref="TileLayer"/>. The raw GIDs
     /// (which may carry flip bits) are split into masked tile IDs and <see cref="TileFlags"/>,
-    /// and the layer's custom properties are consulted for the <c>above_player</c> flag.
+    /// and the layer's custom properties are consulted for the <c>above_player</c> flag and
+    /// exposed through <see cref="Properties"/>.
     /// </summary>
     internal static TileMapLayer FromDotTiled(TileLayer layer)
     {
@@ -118,10 +128,20 @@ public sealed class TileMapLayer
             flags = new TileFlags[count];
         }
 
+        var properties = layer.Properties.Select(MapProperty.Create).ToArray();
         var abovePlayer = layer.Properties.Any(p =>
             p.Name == "above_player" && p is BoolProperty boolProperty && boolProperty.Value);
 
-        return new TileMapLayer(layer.Name, layer.Visible, layer.Opacity, ids, flags, width, height, abovePlayer);
+        return new TileMapLayer(
+            layer.Name,
+            layer.Visible,
+            layer.Opacity,
+            ids,
+            flags,
+            width,
+            height,
+            abovePlayer,
+            properties);
     }
 
     private int Index(int x, int y)

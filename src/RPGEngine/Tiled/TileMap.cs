@@ -40,7 +40,9 @@ public sealed class TileMap
         int tileWidth,
         int tileHeight,
         IReadOnlyList<TileSet> tileSets,
-        IReadOnlyList<TileMapLayer> layers)
+        IReadOnlyList<TileMapLayer> layers,
+        IReadOnlyList<MapProperty> properties,
+        IReadOnlyList<TileMapObjectLayer> objectLayers)
     {
         Width = width;
         Height = height;
@@ -48,6 +50,8 @@ public sealed class TileMap
         TileHeight = tileHeight;
         _tileSets = tileSets.OrderBy(t => t.FirstGid).ToArray();
         Layers = layers;
+        Properties = properties;
+        ObjectLayers = objectLayers;
 
         _layersByName = new Dictionary<string, TileMapLayer>(StringComparer.Ordinal);
         foreach (var layer in layers)
@@ -76,9 +80,46 @@ public sealed class TileMap
 
     /// <summary>
     /// Gets the tile layers of the map, in the order they appear in the file (bottom → top).
-    /// Only tile layers are represented; object, image and group layers are ignored for now.
+    /// Only tile layers are represented here; object layers are exposed through
+    /// <see cref="ObjectLayers"/>, and image and group layers are ignored for now.
     /// </summary>
     public IReadOnlyList<TileMapLayer> Layers { get; }
+
+    /// <summary>
+    /// Gets the map's custom properties (from the map's <c>&lt;properties&gt;</c> block), in file
+    /// order. Map properties are typically used for per-map configuration such as ambient light
+    /// or difficulty settings.
+    /// </summary>
+    public IReadOnlyList<MapProperty> Properties { get; }
+
+    /// <summary>
+    /// Gets the object layers of the map, in the order they appear in the file. Only object
+    /// layers are represented here; tile layers are exposed through <see cref="Layers"/> and
+    /// image/group layers are ignored for now.
+    /// </summary>
+    public IReadOnlyList<TileMapObjectLayer> ObjectLayers { get; }
+
+    /// <summary>
+    /// Returns the map property named <paramref name="name"/> using a case-sensitive comparison,
+    /// or <see langword="null"/> when no property with that exact name exists.
+    /// </summary>
+    /// <param name="name">The exact property name to look up.</param>
+    /// <returns>The matching <see cref="MapProperty"/>, or <see langword="null"/> when absent.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="name"/> is <see langword="null"/>.</exception>
+    public MapProperty? GetProperty(string name)
+    {
+        ArgumentNullException.ThrowIfNull(name);
+
+        foreach (var property in Properties)
+        {
+            if (property.Name == name)
+            {
+                return property;
+            }
+        }
+
+        return null;
+    }
 
     /// <summary>
     /// Loads the Tiled map at <paramref name="path"/>, parsing the referenced external tilesets
@@ -385,15 +426,28 @@ public sealed class TileMap
         }
 
         var layers = new List<TileMapLayer>();
+        var objectLayers = new List<TileMapObjectLayer>();
         foreach (var layer in map.Layers)
         {
             if (layer is TileLayer tileLayer)
             {
                 layers.Add(TileMapLayer.FromDotTiled(tileLayer));
             }
+            else if (layer is ObjectLayer objectLayer)
+            {
+                objectLayers.Add(TileMapObjectLayer.FromDotTiled(objectLayer));
+            }
         }
 
-        return new TileMap(map.Width, map.Height, map.TileWidth, map.TileHeight, tileSets, layers);
+        return new TileMap(
+            map.Width,
+            map.Height,
+            map.TileWidth,
+            map.TileHeight,
+            tileSets,
+            layers,
+            map.Properties.Select(MapProperty.Create).ToArray(),
+            objectLayers);
     }
 
     private static TileSet CreateFileSystemTileSet(Tileset dotTiledTileset, string mapDirectory)
