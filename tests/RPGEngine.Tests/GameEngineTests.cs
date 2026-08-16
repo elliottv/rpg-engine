@@ -151,26 +151,30 @@ public class GameEngineTests
         // NPC drawn at screen (96,96).
         Assert.Equal(CharacterTestHelper.SpriteColor(2, 2, Direction.Down, StandingFrame), bitmap.GetPixel(120, 120));
 
-        // Replacing the map changes the output: a 2×2 (96×96) map leaves (200,200) transparent.
+        // Replacing the map changes the output: the 2×2 (96×96) map is now centered on the
+        // 240×240 canvas (origin -72,-72), so the player/NPC move to screen (72,72)/(168,168)
+        // and the pixel at (200,100) is outside the map and every sprite: it is black (the black
+        // background around a smaller map), instead of the red tile of the 10×10 map.
         using (var smallFixture = CreateFilledMapFixture(2, 2))
         {
             engine.Map = TileMap.Load(smallFixture.MapPath);
             using var replaced = Render(engine, canvasSize, canvasSize);
-            Assert.Equal(0, replaced.GetPixel(200, 200).Alpha);
+            Assert.Equal(SKColors.Black, replaced.GetPixel(200, 100));
             Assert.NotEqual(0, bitmap.GetPixel(200, 200).Alpha);
         }
 
-        // Removing the NPC removes its pixels; re-adding restores them.
+        // Removing the NPC removes its pixels; re-adding restores them. On the centered 2×2
+        // map the NPC (world 96,96) is at screen (168,168); its centre pixel is (192,192).
         engine.Characters.Remove(npc);
         using (var withoutNpc = Render(engine, canvasSize, canvasSize))
         {
-            Assert.NotEqual(CharacterTestHelper.SpriteColor(2, 2, Direction.Down, StandingFrame), withoutNpc.GetPixel(120, 120));
+            Assert.NotEqual(CharacterTestHelper.SpriteColor(2, 2, Direction.Down, StandingFrame), withoutNpc.GetPixel(192, 192));
         }
 
         engine.Characters.Add(npc);
         using (var withNpc = Render(engine, canvasSize, canvasSize))
         {
-            Assert.Equal(CharacterTestHelper.SpriteColor(2, 2, Direction.Down, StandingFrame), withNpc.GetPixel(120, 120));
+            Assert.Equal(CharacterTestHelper.SpriteColor(2, 2, Direction.Down, StandingFrame), withNpc.GetPixel(192, 192));
         }
     }
 
@@ -422,6 +426,113 @@ public class GameEngineTests
         using var bitmap = Render(engine, canvasSize, canvasSize);
         var expected = CharacterTestHelper.SpriteColor(seed: 1, characterIndex: 1, Direction.Down, StandingFrame);
         Assert.Equal(expected, bitmap.GetPixel(162 + 39, 132 + 54));
+    }
+
+    // ---------------------------------------------------------------------
+    // Story 24: map centering + black background, and above_player layers.
+    // When a map is smaller than the canvas the camera origin becomes negative so the
+    // map is centered, and Render clears the surrounding area to black. Tile layers
+    // declaring the Tiled above_player property are drawn after the player.
+    // ---------------------------------------------------------------------
+    /// <summary>Verifies a map smaller than the canvas is centered (negative origin) and the surrounding pixels are black.</summary>
+    [Fact]
+    public void Camera_MapSmallerThanCanvas_CentersMapWithBlackBackground()
+    {
+        const int canvasSize = 240;
+        using var fixture = CreateFilledMapFixture(2, 2); // 96×96 px
+        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        engine.Player.Position = new Position(0, 0);
+
+        // offset = (240 - 96) / 2 = 72 on each axis; the origin is the negative offset.
+        Assert.Equal(new Position(-72, -72), engine.ComputeCameraOrigin(canvasSize, canvasSize));
+
+        using var bitmap = Render(engine, canvasSize, canvasSize);
+
+        // The centered 96×96 map occupies (72..168, 72..168); its centre (120,120) is a tile.
+        Assert.NotEqual(0, bitmap.GetPixel(120, 120).Alpha);
+
+        // Every pixel outside the map is black (alpha 255, RGB 0).
+        var black = new SKColor(0, 0, 0, 255);
+        Assert.Equal(black, bitmap.GetPixel(10, 10));
+        Assert.Equal(black, bitmap.GetPixel(230, 10));
+        Assert.Equal(black, bitmap.GetPixel(10, 230));
+        Assert.Equal(black, bitmap.GetPixel(230, 230));
+        Assert.Equal(black, bitmap.GetPixel(20, 120));  // left of the map
+        Assert.Equal(black, bitmap.GetPixel(220, 120)); // right of the map
+        Assert.Equal(black, bitmap.GetPixel(120, 20));  // above the map
+        Assert.Equal(black, bitmap.GetPixel(120, 220)); // below the map
+    }
+
+    /// <summary>Verifies a map that fills (or exceeds) the canvas keeps the previous follow + clamp camera behavior (offset == 0).</summary>
+    [Fact]
+    public void Camera_MapFillsCanvas_KeepsFollowAndClampBehavior()
+    {
+        const int canvasSize = 240;
+        using var fixture = CreateFilledMapFixture(10, 10); // 480×480 px
+        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+
+        // Top-left: origin (0,0).
+        engine.Player.Position = new Position(0, 0);
+        Assert.Equal(new Position(0, 0), engine.ComputeCameraOrigin(canvasSize, canvasSize));
+
+        // Bottom-right: origin clamped to PixelSize - canvasSize.
+        engine.Player.Position = new Position(480 - CellSize, 480 - CellSize);
+        Assert.Equal(new Position(240, 240), engine.ComputeCameraOrigin(canvasSize, canvasSize));
+
+        // Middle: origin = player - canvas/2 (follow, no clamping).
+        engine.Player.Position = new Position(216, 216);
+        Assert.Equal(new Position(96, 96), engine.ComputeCameraOrigin(canvasSize, canvasSize));
+    }
+
+    /// <summary>Verifies a tile on an above_player layer is drawn on top of the player, and without the flag the player is on top.</summary>
+    [Fact]
+    public void Render_AbovePlayerLayer_TileDrawsOverPlayer()
+    {
+        const int canvasSize = 96; // a 2×2 map exactly fills the canvas, so the origin is (0,0)
+        var ground = FilledLayer(2, 2);
+        var colors = new[] { SKColors.Red, SKColors.Green };
+
+        // With the flag: the green tile at (0,0) overlaps the player and is drawn on top.
+        using (var fixture = new TiledTestFixture(
+            2,
+            2,
+            new[]
+            {
+                ground,
+                new TileLayerSpec(
+                    "above",
+                    new uint[] { 2, 0, 0, 0 },
+                    Properties: new[] { new LayerProperty("above_player", "bool", "true") }),
+            },
+            tileColors: colors))
+        {
+            var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+            ConfigurePlayerSprite(engine, seed: 1);
+            engine.Player.Position = new Position(0, 0);
+
+            using var bitmap = Render(engine, canvasSize, canvasSize);
+            Assert.Equal(new SKColor(0, 128, 0, 255), bitmap.GetPixel(24, 24));
+        }
+
+        // Without the flag: the green tile is part of the below-player pass and the player is on top.
+        using (var fixture = new TiledTestFixture(
+            2,
+            2,
+            new[]
+            {
+                ground,
+                new TileLayerSpec("above", new uint[] { 2, 0, 0, 0 }),
+            },
+            tileColors: colors))
+        {
+            var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+            ConfigurePlayerSprite(engine, seed: 1);
+            engine.Player.Position = new Position(0, 0);
+
+            using var bitmap = Render(engine, canvasSize, canvasSize);
+            var expected = CharacterTestHelper.SpriteColor(seed: 1, characterIndex: 1, Direction.Down, StandingFrame);
+            Assert.Equal(expected, bitmap.GetPixel(24, 24));
+        }
     }
 
     // ---------------------------------------------------------------------

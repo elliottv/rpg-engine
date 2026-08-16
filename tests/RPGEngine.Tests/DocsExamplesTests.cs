@@ -1,6 +1,7 @@
 using RPGEngine.Sprites;
 using RPGEngine.Tests.Fixtures;
 using RPGEngine.Tests.Sprites;
+using RPGEngine.Tests.Tiled;
 using RPGEngine.Tiled;
 using SkiaSharp;
 using Xunit;
@@ -71,6 +72,44 @@ public class DocsExamplesTests
         }
 
         Assert.NotEqual(0, bitmap.GetPixel(320, 240).Alpha);
+    }
+
+    // ---------------------------------------------------------------------
+    // docs/api/GameEngine.md: the Render example. When a map is smaller than the
+    // canvas it is centered and the area around it is black (story 24).
+    // ---------------------------------------------------------------------
+    /// <summary>
+    /// Verifies the Render example's black background: a map smaller than the canvas is
+    /// centered and every pixel outside it is black (alpha 255, RGB 0), with the map's own
+    /// tiles drawn over the black backdrop.
+    /// </summary>
+    [Fact]
+    public void Render_Example_BlackBackgroundAroundSmallMap()
+    {
+        // A 2×2 map (96×96 px) rendered on a 240×240 canvas, mirroring the docs'
+        // Render snippet but with a map smaller than the canvas so the letterboxing is visible.
+        using var fixture = new TiledTestFixture(
+            2,
+            2,
+            new[] { new TileLayerSpec("ground", new uint[] { 1, 1, 1, 1 }) });
+        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+
+        using var bitmap = new SKBitmap(240, 240);
+        using (var canvas = new SKCanvas(bitmap))
+        {
+            canvas.Clear(SKColors.Transparent);
+            engine.Render(canvas, FrameDt);
+        }
+
+        // The centered map occupies (72..168, 72..168); a tile pixel is present at its centre.
+        Assert.NotEqual(0, bitmap.GetPixel(120, 120).Alpha);
+
+        // Outside the centered map the background is black.
+        var black = new SKColor(0, 0, 0, 255);
+        Assert.Equal(black, bitmap.GetPixel(10, 10));
+        Assert.Equal(black, bitmap.GetPixel(230, 230));
+        Assert.Equal(black, bitmap.GetPixel(20, 120));
+        Assert.Equal(black, bitmap.GetPixel(120, 220));
     }
 
     // ---------------------------------------------------------------------

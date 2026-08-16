@@ -190,6 +190,86 @@ public class TileMapTests
     }
 
     // ---------------------------------------------------------------------
+    // Above-player layers (story 24): a layer declaring the Tiled
+    // <property name="above_player" type="bool" value="true"/> custom property is
+    // reported by TileMapLayer.AbovePlayer and rendered by DrawAbovePlayer (after the
+    // player); every other layer is rendered by Draw (below the player).
+    // ---------------------------------------------------------------------
+    /// <summary>Verifies TileMapLayer.AbovePlayer is true for a layer declaring the above_player bool property and false for a layer without it.</summary>
+    [Fact]
+    public void AbovePlayer_ReadsCustomProperty_FromTmx()
+    {
+        var ground = new TileLayerSpec("ground", new uint[] { 1, 1, 1, 1 });
+        var above = new TileLayerSpec(
+            "above",
+            new uint[] { 0, 0, 0, 0 },
+            Properties: new[] { new LayerProperty("above_player", "bool", "true") });
+
+        using var fixture = TiledTestFixture.Create2x2(new[] { ground, above });
+        var map = TileMap.Load(fixture.MapPath);
+
+        Assert.False(map.Layers[0].AbovePlayer);
+        Assert.True(map.Layers[1].AbovePlayer);
+    }
+
+    /// <summary>Verifies a layer without the property (or with it set to false, or with a non-bool property of that name) reports AbovePlayer == false.</summary>
+    [Fact]
+    public void AbovePlayer_AbsentFalseOrNonBool_ReportsFalse()
+    {
+        var absent = new TileLayerSpec("absent", new uint[] { 1, 1, 1, 1 });
+        var falseValue = new TileLayerSpec(
+            "false_value",
+            new uint[] { 0, 0, 0, 0 },
+            Properties: new[] { new LayerProperty("above_player", "bool", "false") });
+        var nonBool = new TileLayerSpec(
+            "non_bool",
+            new uint[] { 0, 0, 0, 0 },
+            Properties: new[] { new LayerProperty("above_player", "string", "true") });
+
+        using var fixture = TiledTestFixture.Create2x2(new[] { absent, falseValue, nonBool });
+        var map = TileMap.Load(fixture.MapPath);
+
+        Assert.False(map.Layers[0].AbovePlayer);
+        Assert.False(map.Layers[1].AbovePlayer);
+        Assert.False(map.Layers[2].AbovePlayer);
+    }
+
+    /// <summary>Verifies Draw renders only the below-player layer and DrawAbovePlayer only the above-player layer, at pixel level with two distinct tile colors.</summary>
+    [Fact]
+    public void Draw_And_DrawAbovePlayer_RenderSeparatePasses()
+    {
+        var ground = new TileLayerSpec("ground", new uint[] { 1, 1, 1, 1 }); // all red
+        var above = new TileLayerSpec(
+            "above",
+            new uint[] { 2, 2, 2, 2 }, // all green
+            Properties: new[] { new LayerProperty("above_player", "bool", "true") });
+
+        using var fixture = new TiledTestFixture(
+            2,
+            2,
+            new[] { ground, above },
+            tileColors: new[] { SKColors.Red, SKColors.Green });
+        var map = TileMap.Load(fixture.MapPath);
+
+        Assert.False(map.Layers[0].AbovePlayer);
+        Assert.True(map.Layers[1].AbovePlayer);
+
+        // The below-player pass draws only the ground (red) layer.
+        using (var bitmap = RenderMap(map, draw: map.Draw))
+        {
+            Assert.Equal(new SKColor(255, 0, 0, 255), bitmap.GetPixel(24, 24));
+            Assert.Equal(new SKColor(255, 0, 0, 255), bitmap.GetPixel(72, 72));
+        }
+
+        // The above-player pass draws only the above (green) layer.
+        using (var bitmap = RenderMap(map, draw: map.DrawAbovePlayer))
+        {
+            Assert.Equal(new SKColor(0, 128, 0, 255), bitmap.GetPixel(24, 24));
+            Assert.Equal(new SKColor(0, 128, 0, 255), bitmap.GetPixel(72, 72));
+        }
+    }
+
+    // ---------------------------------------------------------------------
     // TileSet factories (replacing the removed TileSetManager): standalone
     // tilesets are loaded directly, from the file system or from a stream
     // resolved over HTTP (the WebAssembly-compatible path).
@@ -504,13 +584,13 @@ public class TileMapTests
         };
     }
 
-    private static SKBitmap RenderMap(TileMap map)
+    private static SKBitmap RenderMap(TileMap map, Action<SKCanvas, SKRect>? draw = null)
     {
         var size = Math.Max(map.PixelWidth, map.PixelHeight);
         var bitmap = new SKBitmap(size, size);
         var canvas = new SKCanvas(bitmap);
         canvas.Clear(SKColors.Transparent);
-        map.Draw(canvas, new SKRect(0, 0, size, size));
+        (draw ?? map.Draw)(canvas, new SKRect(0, 0, size, size));
         canvas.Dispose();
         return bitmap;
     }

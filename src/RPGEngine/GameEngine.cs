@@ -26,8 +26,17 @@ namespace RPGEngine;
 /// </para>
 /// <para>
 /// The camera is internal to the engine: <see cref="Render"/> follows the player and clamps the
-/// viewport inside the map. If a public camera API becomes necessary later it can be extracted
-/// without breaking this class's API.
+/// viewport inside the map. When the map is smaller than the canvas on an axis it is centered
+/// in that axis and the area around it is filled with black (the map background), so the map is
+/// never letterboxed with transparent or leftover pixels. If a public camera API becomes
+/// necessary later it can be extracted without breaking this class's API.
+/// </para>
+/// <para>
+/// When a map is set, <see cref="Render"/> clears the whole canvas to black first, then draws
+/// the map's below-player layers, then every NPC, then the player, and finally the map's
+/// <c>above_player</c> layers (tile layers declaring the Tiled <c>above_player</c> custom
+/// property) so those tiles appear on top of the player. Without a map the canvas is left
+/// untouched and only the characters are drawn.
 /// </para>
 /// <para>
 /// Movement input combines every held bound key into a single 8-direction vector: each key that
@@ -135,10 +144,13 @@ public sealed class GameEngine
     }
 
     /// <summary>
-    /// Draws one frame onto <paramref name="canvas"/>: the visible part of the map (when a map is
-    /// set), then every NPC, then the player on top. The camera follows the player and is clamped
-    /// so the viewport stays inside the map; the canvas size is read from the canvas clip bounds
-    /// so the view adapts to the current surface size automatically.
+    /// Draws one frame onto <paramref name="canvas"/>. When a map is set the canvas is cleared to
+    /// black first (the black background behind/around a map smaller than the canvas), then the
+    /// map's below-player layers are drawn, then every NPC, then the player on top, and finally
+    /// the map's <c>above_player</c> layers so those tiles appear above the player. The camera
+    /// follows the player, centers a map smaller than the canvas, and is clamped so the viewport
+    /// stays inside the map; the canvas size is read from the canvas clip bounds so the view
+    /// adapts to the current surface size automatically.
     /// </summary>
     /// <param name="canvas">The canvas to draw onto (CPU or GPU backed; see the class remarks).</param>
     /// <param name="dt">The elapsed time in seconds since the previous frame (reserved for future animation timing).</param>
@@ -151,9 +163,24 @@ public sealed class GameEngine
         var canvasHeight = Math.Max(0, (int)Math.Ceiling(bounds.Height));
 
         var origin = ComputeCameraOrigin(canvasWidth, canvasHeight);
+        var viewport = new SKRect(
+            (float)origin.X,
+            (float)origin.Y,
+            (float)(origin.X + canvasWidth),
+            (float)(origin.Y + canvasHeight));
+
+        // When a map is set the whole canvas is cleared to black first: this is the black
+        // background behind/around a map that is smaller than the canvas. Without a map the
+        // canvas is left untouched (characters only), so hosts keep full control of the backdrop.
+        if (Map is not null)
+        {
+            canvas.Clear(SKColors.Black);
+        }
 
         // Draw everything in world coordinates and let the translate apply the camera: the map
         // draws its tiles at world positions, and each character is drawn at its world position.
+        // Draw order is: below-player map layers -> each NPC -> the player -> above-player map
+        // layers, so tiles marked with the Tiled above_player property appear on top of the player.
         canvas.Save();
         try
         {
@@ -161,11 +188,6 @@ public sealed class GameEngine
 
             if (Map is not null)
             {
-                var viewport = new SKRect(
-                    (float)origin.X,
-                    (float)origin.Y,
-                    (float)(origin.X + canvasWidth),
-                    (float)(origin.Y + canvasHeight));
                 Map.Draw(canvas, viewport);
             }
 
@@ -175,6 +197,11 @@ public sealed class GameEngine
             }
 
             Player.Character.Draw(canvas, Player.Position, dt, _spriteSheetManager);
+
+            if (Map is not null)
+            {
+                Map.DrawAbovePlayer(canvas, viewport);
+            }
         }
         finally
         {
@@ -298,8 +325,10 @@ public sealed class GameEngine
     /// <summary>
     /// Computes the camera origin: the world pixel position that maps to the canvas' top-left
     /// corner. The desired origin centers the player; it is then clamped so the viewport stays
-    /// inside the map (<c>origin ∈ [0, max(0, PixelSize - canvasSize)]</c> per axis). When no
-    /// map is set the origin is <c>(0, 0)</c>.
+    /// inside the map (<c>origin ∈ [0, max(0, PixelSize - canvasSize)]</c> per axis). When the
+    /// map is smaller than the canvas on an axis, half the difference is subtracted so the map is
+    /// centered and the origin becomes negative (<c>origin = clamp(desired, 0, max) - max(0,
+    /// (canvasSize - PixelSize) / 2)</c> per axis). When no map is set the origin is <c>(0, 0)</c>.
     /// </summary>
     /// <param name="canvasWidth">The width of the canvas in pixels.</param>
     /// <param name="canvasHeight">The height of the canvas in pixels.</param>
@@ -315,13 +344,25 @@ public sealed class GameEngine
             return new Position(0, 0);
         }
 
+        // The maximum viewport origin keeps the view inside the map: 0 when the map is smaller
+        // than the canvas on an axis (the map cannot scroll on that axis), otherwise
+        // PixelSize - canvasSize.
         var maxX = Math.Max(0, Map.PixelWidth - canvasWidth);
         var maxY = Math.Max(0, Map.PixelHeight - canvasHeight);
+
+        // When the map is smaller than the canvas on an axis it is centered by shifting the
+        // origin by half the difference, producing a negative origin. When the map fills (or
+        // exceeds) the canvas the offset is 0 and the behavior is exactly the follow + clamp
+        // described above.
+        var offsetX = Math.Max(0, (canvasWidth - Map.PixelWidth) / 2.0);
+        var offsetY = Math.Max(0, (canvasHeight - Map.PixelHeight) / 2.0);
 
         var desiredX = Player.Position.X - (canvasWidth / 2.0);
         var desiredY = Player.Position.Y - (canvasHeight / 2.0);
 
-        return new Position(Math.Clamp(desiredX, 0, maxX), Math.Clamp(desiredY, 0, maxY));
+        return new Position(
+            Math.Clamp(desiredX, 0, maxX) - offsetX,
+            Math.Clamp(desiredY, 0, maxY) - offsetY);
     }
 
     /// <summary>

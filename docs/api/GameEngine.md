@@ -16,6 +16,13 @@ registry and the pressed-keys state, and exposes the game-loop entry points `Upd
   SkiaSharp GL view or a WebAssembly `SKSurface` created from a `GRContext`), the drawing is
   hardware accelerated. The engine has **zero platform-specific dependencies**.
 - The camera is internal: `Render` follows the player and clamps the viewport inside the map.
+  When the map is smaller than the canvas on an axis it is centered and the area around it is
+  filled with black, so the map is never letterboxed with transparent or leftover pixels.
+- When a map is set, `Render` clears the whole canvas to black first, then draws the map's
+  below-player layers, then every NPC, then the player, and finally the map's `above_player`
+  layers (tile layers declaring the Tiled `above_player` custom property) so those tiles appear
+  on top of the player. Without a map the canvas is left untouched and only the characters are
+  drawn.
 - Movement input combines every held bound key into a single 8-direction vector: opposite keys
   cancel (`W`+`S` or `A`+`D`), and a diagonal pair combines into a diagonal (`W`+`D` → up-right)
   at the same speed as cardinal movement (see [Architecture](../Architecture.md)).
@@ -102,9 +109,12 @@ engine.Update(dt: 1.0 / 60);
 
 ### `void Render(SKCanvas canvas, double dt)`
 
-Draws one frame onto the canvas: the visible part of the map (when set), then every NPC, then
-the player on top. The camera follows the player and is clamped so the viewport stays inside the
-map; the canvas size is read from the canvas clip bounds.
+Draws one frame onto the canvas. When a map is set the canvas is cleared to black first (the
+black background behind/around a map smaller than the canvas), then the map's below-player
+layers are drawn, then every NPC, then the player on top, and finally the map's `above_player`
+layers so those tiles appear above the player. The camera follows the player, centers a map
+smaller than the canvas, and is clamped so the viewport stays inside the map; the canvas size is
+read from the canvas clip bounds.
 
 ```csharp
 using var bitmap = new SKBitmap(640, 480);

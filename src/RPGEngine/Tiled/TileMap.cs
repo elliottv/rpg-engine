@@ -20,6 +20,14 @@ namespace RPGEngine.Tiled;
 /// Tile coordinates are 0-based. Layer data is stored row-major. Only the orthogonal map
 /// layout is supported by this story; collision, pathfinding and <c>.tmj</c> are out of scope.
 /// </para>
+/// <para>
+/// Rendering happens in two passes. <see cref="Draw"/> draws the layers below the player
+/// (every layer whose <see cref="TileMapLayer.AbovePlayer"/> is <see langword="false"/>), and
+/// <see cref="DrawAbovePlayer"/> draws the layers above the player (those marked with the
+/// Tiled <c>above_player</c> custom property set to <see langword="true"/>). The engine
+/// renders the below-player pass, then the characters, then the above-player pass so those
+/// tiles appear in front of the player.
+/// </para>
 /// </remarks>
 public sealed class TileMap
 {
@@ -199,14 +207,48 @@ public sealed class TileMap
     public bool IsSolid(int tileX, int tileY) => false;
 
     /// <summary>
-    /// Draws the visible part of the map to <paramref name="canvas"/>. Only tiles intersecting
-    /// <paramref name="viewport"/> are drawn; the viewport is in the same (world) coordinate space
-    /// that tiles are drawn into, so callers that apply a camera transform must pass the
-    /// corresponding viewport rectangle.
+    /// Draws the visible part of the map to <paramref name="canvas"/>, rendering only the
+    /// layers that belong <em>below</em> the player (those whose
+    /// <see cref="TileMapLayer.AbovePlayer"/> is <see langword="false"/>). Only tiles
+    /// intersecting <paramref name="viewport"/> are drawn; the viewport is in the same
+    /// (world) coordinate space that tiles are drawn into, so callers that apply a camera
+    /// transform must pass the corresponding viewport rectangle.
     /// </summary>
     /// <param name="canvas">The canvas to draw onto.</param>
     /// <param name="viewport">The visible world-space rectangle used to cull tiles.</param>
+    /// <remarks>
+    /// This is the first render pass: the engine calls it before drawing the characters, then
+    /// calls <see cref="DrawAbovePlayer"/> afterwards so <c>above_player</c> layers appear on
+    /// top of the player.
+    /// </remarks>
     internal void Draw(SKCanvas canvas, SKRect viewport)
+        => DrawLayers(canvas, viewport, abovePlayerOnly: false);
+
+    /// <summary>
+    /// Draws the visible part of the map to <paramref name="canvas"/>, rendering only the
+    /// layers that belong <em>above</em> the player (those whose
+    /// <see cref="TileMapLayer.AbovePlayer"/> is <see langword="true"/>). The culling,
+    /// opacity and flip handling are identical to <see cref="Draw"/>; only the layer
+    /// selection differs.
+    /// </summary>
+    /// <param name="canvas">The canvas to draw onto.</param>
+    /// <param name="viewport">The visible world-space rectangle used to cull tiles.</param>
+    /// <remarks>
+    /// This is the second render pass: the engine calls it after the NPCs and the player have
+    /// been drawn, so the tiles of <c>above_player</c> layers appear in front of the player.
+    /// </remarks>
+    internal void DrawAbovePlayer(SKCanvas canvas, SKRect viewport)
+        => DrawLayers(canvas, viewport, abovePlayerOnly: true);
+
+    /// <summary>
+    /// Shared implementation of the two map render passes. When
+    /// <paramref name="abovePlayerOnly"/> is <see langword="false"/> only layers below the
+    /// player are drawn (see <see cref="Draw"/>); when <see langword="true"/> only layers
+    /// above the player are drawn (see <see cref="DrawAbovePlayer"/>). In both cases the
+    /// visible layers are culled to <paramref name="viewport"/> and drawn in file order with
+    /// their opacity and flip flags applied.
+    /// </summary>
+    private void DrawLayers(SKCanvas canvas, SKRect viewport, bool abovePlayerOnly)
     {
         var startX = Math.Max(0, (int)MathF.Floor(viewport.Left / TileWidth));
         var endX = Math.Min(Width - 1, (int)MathF.Ceiling(viewport.Right / TileWidth) - 1);
@@ -216,7 +258,7 @@ public sealed class TileMap
         for (var layerIndex = 0; layerIndex < Layers.Count; layerIndex++)
         {
             var layer = Layers[layerIndex];
-            if (!layer.Visible)
+            if (!layer.Visible || layer.AbovePlayer != abovePlayerOnly)
             {
                 continue;
             }
