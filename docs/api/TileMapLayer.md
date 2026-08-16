@@ -44,7 +44,7 @@ var flags = ground.GetTileFlags(0, 0);
 
 ```csharp
 var map = TileMap.Load("assets/map.tmx");
-var ground = map.Layers[0];
+var ground = map.Layers.Single(layer => layer.Name == "ground");
 
 Console.WriteLine(ground.Name);           // "ground"
 Console.WriteLine(ground.Visible);        // True
@@ -54,4 +54,9 @@ Console.WriteLine(ground.Width);          // 16
 Console.WriteLine(ground.Height);         // 12
 Console.WriteLine(ground.TileIds.Count);  // 192
 Console.WriteLine(ground.Properties.Count); // custom properties declared on the layer
+
+// An above_player layer is rendered after the player (e.g. tree canopies).
+var treesAbove = map.Layers.Single(layer => layer.Name == "trees_above");
+Console.WriteLine(treesAbove.AbovePlayer); // True
+Console.WriteLine(treesAbove.Properties.Single(p => p.Name == "above_player").Value); // True
 ```

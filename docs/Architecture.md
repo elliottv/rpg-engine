@@ -59,6 +59,22 @@ in this epic.
 (they are created when the map is loaded — there is no global tileset registry). Standalone
 tilesets are loaded through `TileSet.Load` factories when needed.
 
+The map exposes a read-only view of everything the Tiled file declares:
+
+- `TileMap.Layers` — the **tile layers** only, in file order (bottom → top). Each
+  `TileMapLayer` exposes its `Name`, `Visible`, `Opacity`, `TileIds`/`GetTileId`, the
+  `AbovePlayer` flag (a layer whose `above_player` boolean custom property is `true` is
+  rendered **after** the player) and its own custom `Properties`.
+- `TileMap.Properties` / `TileMap.GetProperty(name)` — the **map's custom properties**,
+  looked up case-sensitively. Properties are typed (`MapPropertyType`: bool/int/float/string/
+  color/file/object/class) and boxed into C# values by `MapProperty`.
+- `TileMap.ObjectLayers` — the **object layers** (and their objects), in file order. Each
+  `TileMapObjectLayer` exposes its `Name`, `Visible`, `Opacity`, `Properties` and `Objects`;
+  each `TileMapObject` exposes its `Id`, `Name`, `Type`, `Position`, `Width`/`Height`, `Shape`
+  (`TileMapObjectShape`) and its own custom `Properties`. Object layers do not render tiles.
+
+The read model wraps DotTiled, so no DotTiled types leak into the public API.
+
 ## Spritesheet layout (normative 12×8 grid, 8 characters)
 
 Both **full** sheets and **part** sheets use the same normative RPG Maker MZ layout:
@@ -143,6 +159,35 @@ normalized, magnitude 1). When no bound key is held the player stops and the ani
 to the standing frame. The engine reads `GameConfig` at input time and never caches a snapshot.
 
 The walk-cycle animation is **time-based and speed-scaled**: `Character.Update(dt)` advances the
-walk cycle at a rate proportional to `BaseSpeed` and `AnimationCycleSpeed`, so at
-`BaseSpeed == AnimationCycleSpeed == 96` the cycle (`0 → 1 → 2 → 1`) completes exactly
-once per second.
+walk cycle at a rate proportional to `BaseSpeed` and `AnimationCycleSpeed`. The walk cycle is the
+bounce `0 → 1 → 2 → 1` (4 frame steps), and the time per frame is
+
+```
+secondsPerFrame = AnimationCycleSpeed / (BaseSpeed * FramesPerCycle)
+```
+
+so at `BaseSpeed == AnimationCycleSpeed == 96` one frame lasts 0.25 s and the cycle completes
+exactly **once per second** (4 frames/s). Doubling `BaseSpeed` doubles the cycle rate; raising
+`AnimationCycleSpeed` (the reference speed) slows the animation relative to movement speed.
+
+## Rendering
+
+`GameEngine.Render(canvas, dt)` draws a single frame in a fixed order:
+
+```
+below-player layers → NPCs → player → above-player layers
+```
+
+- When a `TileMap` is set, the canvas is **cleared to black first** — this is the black
+  background behind and around the map.
+- `TileMap.Draw` renders the layers **below** the player (every layer whose
+  `TileMapLayer.AbovePlayer` is `false`), then each NPC and the player are drawn on top, and
+  finally `TileMap.DrawAbovePlayer` renders the layers whose `above_player` custom property is
+  `true` so those tiles appear **in front of** the player (e.g. tree canopies the player walks
+  under).
+- The camera follows the player and clamps the viewport inside the map. When the map is
+  **smaller than the canvas** on an axis it is **centered** in the canvas and the area around
+  it stays black (`offset = max(0, (canvasSize − mapPixelSize) / 2)`), so a small map is never
+  letterboxed with transparent or leftover pixels. When the map fills (or exceeds) the canvas,
+  the behaviour is the classic follow-and-clamp camera. The canvas size is read from the
+  canvas clip bounds.

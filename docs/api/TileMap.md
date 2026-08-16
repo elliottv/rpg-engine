@@ -124,7 +124,7 @@ var map = TileMap.Load("assets/map.tmx");
 
 Console.WriteLine(map.Width);              // 16
 Console.WriteLine(map.Height);             // 12
-Console.WriteLine(map.Layers.Count);       // 2 ("ground" + "decor")
+Console.WriteLine(map.Layers.Count);       // 3 ("ground" + "decor" + "trees_above")
 Console.WriteLine(map.Layers[0].Name);     // "ground"
 Console.WriteLine(map.GetTileId("ground", 0, 0)); // >= 1 (a grass tile)
 Console.WriteLine(map.IsSolid(1, 1));      // False
