@@ -4,11 +4,11 @@ using SkiaSharp;
 
 namespace RPGEngine.Tests.Tiled;
 
-/// <summary>A single custom property to be written into a generated layer's <c>&lt;properties&gt;</c> block.</summary>
+/// <summary>A single custom property to be written into a generated <c>&lt;properties&gt;</c> block.</summary>
 /// <param name="Name">The property name (e.g. <c>above_player</c>).</param>
 /// <param name="Type">The Tiled property type (e.g. <c>bool</c>, <c>string</c>, <c>int</c>).</param>
 /// <param name="Value">The property value as a string (e.g. <c>true</c>).</param>
-internal sealed record LayerProperty(string Name, string Type, string Value);
+internal sealed record FixtureProperty(string Name, string Type, string Value);
 
 /// <summary>Specifies a tile layer to be written into a generated TMX fixture.</summary>
 /// <param name="Name">The layer name.</param>
@@ -21,7 +21,66 @@ internal sealed record TileLayerSpec(
     uint[] Gids,
     bool Visible = true,
     float Opacity = 1f,
-    IReadOnlyList<LayerProperty>? Properties = null);
+    IReadOnlyList<FixtureProperty>? Properties = null);
+
+/// <summary>The geometric shape of a generated object; controls which marker element is emitted.</summary>
+internal enum FixtureObjectShape
+{
+    /// <summary>A plain <c>&lt;object&gt;</c> (no marker; the Tiled default shape).</summary>
+    Rectangle,
+
+    /// <summary>An <c>&lt;ellipse/&gt;</c> marker.</summary>
+    Ellipse,
+
+    /// <summary>A <c>&lt;point/&gt;</c> marker.</summary>
+    Point,
+
+    /// <summary>A <c>&lt;polygon&gt;</c> marker.</summary>
+    Polygon,
+
+    /// <summary>A <c>&lt;polyline&gt;</c> marker.</summary>
+    Polyline,
+
+    /// <summary>A <c>gid</c> attribute (a tile object).</summary>
+    Tile,
+
+    /// <summary>A <c>&lt;text&gt;</c> marker.</summary>
+    Text,
+}
+
+/// <summary>Specifies a single object to be written into a generated object layer.</summary>
+/// <param name="Id">The object ID (must be unique within the map).</param>
+/// <param name="Name">The object name.</param>
+/// <param name="Type">The object "class"/type string.</param>
+/// <param name="X">The object's X position in pixels.</param>
+/// <param name="Y">The object's Y position in pixels.</param>
+/// <param name="Width">The object's width in pixels.</param>
+/// <param name="Height">The object's height in pixels.</param>
+/// <param name="Shape">The object's geometric shape.</param>
+/// <param name="Properties">Optional custom properties emitted inside the object.</param>
+internal sealed record ObjectSpec(
+    uint Id,
+    string Name,
+    string Type,
+    float X,
+    float Y,
+    float Width,
+    float Height,
+    FixtureObjectShape Shape,
+    IReadOnlyList<FixtureProperty>? Properties = null);
+
+/// <summary>Specifies an object layer to be written into a generated TMX fixture.</summary>
+/// <param name="Name">The layer name.</param>
+/// <param name="Objects">The objects of the layer, in file order.</param>
+/// <param name="Visible">Whether the layer is visible.</param>
+/// <param name="Opacity">The layer opacity, from 0 to 1.</param>
+/// <param name="Properties">Optional custom properties emitted inside the layer.</param>
+internal sealed record ObjectLayerSpec(
+    string Name,
+    IReadOnlyList<ObjectSpec> Objects,
+    bool Visible = true,
+    float Opacity = 1f,
+    IReadOnlyList<FixtureProperty>? Properties = null);
 
 /// <summary>The visual pattern painted into the generated 48×48 tile PNG.</summary>
 internal enum TilePattern
@@ -50,8 +109,10 @@ internal enum TilePattern
 /// <c>above_player</c> layer in green).
 /// </para>
 /// <para>
-/// Each layer may declare custom properties via <see cref="TileLayerSpec.Properties"/>; these
-/// are emitted as a <c>&lt;properties&gt;</c> block inside the <c>&lt;layer&gt;</c> element,
+/// Each tile layer may declare custom properties via <see cref="TileLayerSpec.Properties"/>, the
+/// map may declare its own via the <c>mapProperties</c> constructor argument, and object layers
+/// (with per-object custom properties) can be added via the <c>objectLayers</c> argument; these
+/// are emitted as <c>&lt;properties&gt;</c> blocks and <c>&lt;objectgroup&gt;</c> elements
 /// matching the Tiled format.
 /// </para>
 /// </remarks>
@@ -81,7 +142,9 @@ internal sealed class TiledTestFixture : IDisposable
         int height,
         IReadOnlyList<TileLayerSpec> layers,
         TilePattern pattern = TilePattern.Solid,
-        IReadOnlyList<SKColor>? tileColors = null)
+        IReadOnlyList<SKColor>? tileColors = null,
+        IReadOnlyList<FixtureProperty>? mapProperties = null,
+        IReadOnlyList<ObjectLayerSpec>? objectLayers = null)
     {
         Width = width;
         Height = height;
@@ -94,12 +157,16 @@ internal sealed class TiledTestFixture : IDisposable
 
         CreateTileImage(ImagePath, pattern, tileColors);
         File.WriteAllText(TilesetPath, TilesetXml(tileColors));
-        File.WriteAllText(MapPath, MapXml(layers));
+        File.WriteAllText(MapPath, MapXml(layers, mapProperties, objectLayers));
     }
 
     /// <summary>Creates the standard 2×2 fixture used by most tests.</summary>
-    public static TiledTestFixture Create2x2(IReadOnlyList<TileLayerSpec> layers, TilePattern pattern = TilePattern.Solid)
-        => new(2, 2, layers, pattern);
+    public static TiledTestFixture Create2x2(
+        IReadOnlyList<TileLayerSpec> layers,
+        TilePattern pattern = TilePattern.Solid,
+        IReadOnlyList<FixtureProperty>? mapProperties = null,
+        IReadOnlyList<ObjectLayerSpec>? objectLayers = null)
+        => new(2, 2, layers, pattern, mapProperties: mapProperties, objectLayers: objectLayers);
 
     public void Dispose()
     {
@@ -177,13 +244,23 @@ internal sealed class TiledTestFixture : IDisposable
             """;
     }
 
-    private string MapXml(IReadOnlyList<TileLayerSpec> layers)
+    private string MapXml(
+        IReadOnlyList<TileLayerSpec> layers,
+        IReadOnlyList<FixtureProperty>? mapProperties,
+        IReadOnlyList<ObjectLayerSpec>? objectLayers)
     {
         var sb = new StringBuilder();
         sb.AppendLine("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
+
+        var objectCount = objectLayers?.Sum(layer => layer.Objects.Count) ?? 0;
+        var nextObjectId = Math.Max(1, objectCount + 1); // object IDs are 1-based
+        var nextLayerId = layers.Count + (objectLayers?.Count ?? 0) + 1;
+
         sb.AppendLine(
-            $"""<map version="1.10" tiledversion="1.10.2" orientation="orthogonal" renderorder="right-down" width="{Width}" height="{Height}" tilewidth="{TileSize}" tileheight="{TileSize}" infinite="0" nextlayerid="{layers.Count + 1}" nextobjectid="1">""");
+            $"""<map version="1.10" tiledversion="1.10.2" orientation="orthogonal" renderorder="right-down" width="{Width}" height="{Height}" tilewidth="{TileSize}" tileheight="{TileSize}" infinite="0" nextlayerid="{nextLayerId}" nextobjectid="{nextObjectId}">""");
         sb.AppendLine("  <tileset firstgid=\"1\" source=\"tiles.tsx\"/>");
+
+        AppendProperties(sb, "  ", mapProperties);
 
         for (var i = 0; i < layers.Count; i++)
         {
@@ -191,17 +268,7 @@ internal sealed class TiledTestFixture : IDisposable
             sb.AppendLine(
                 $"""  <layer id="{i + 1}" name="{layer.Name}" width="{Width}" height="{Height}" visible="{(layer.Visible ? 1 : 0)}" opacity="{layer.Opacity.ToString(CultureInfo.InvariantCulture)}">""");
 
-            if (layer.Properties is { Count: > 0 })
-            {
-                sb.AppendLine("    <properties>");
-                foreach (var property in layer.Properties)
-                {
-                    sb.AppendLine(
-                        $"      <property name=\"{property.Name}\" type=\"{property.Type}\" value=\"{property.Value}\"/>");
-                }
-
-                sb.AppendLine("    </properties>");
-            }
+            AppendProperties(sb, "    ", layer.Properties);
 
             sb.AppendLine("    <data encoding=\"csv\">");
             for (var y = 0; y < Height; y++)
@@ -217,7 +284,78 @@ internal sealed class TiledTestFixture : IDisposable
             sb.AppendLine("  </layer>");
         }
 
+        if (objectLayers is { Count: > 0 })
+        {
+            var layerId = layers.Count + 1;
+            foreach (var objectLayer in objectLayers)
+            {
+                sb.AppendLine(
+                    $"""  <objectgroup id="{layerId}" name="{objectLayer.Name}" visible="{(objectLayer.Visible ? 1 : 0)}" opacity="{objectLayer.Opacity.ToString(CultureInfo.InvariantCulture)}">""");
+
+                AppendProperties(sb, "    ", objectLayer.Properties);
+
+                foreach (var obj in objectLayer.Objects)
+                {
+                    AppendObject(sb, obj);
+                }
+
+                sb.AppendLine("  </objectgroup>");
+                layerId++;
+            }
+        }
+
         sb.AppendLine("</map>");
         return sb.ToString();
+    }
+
+    /// <summary>Appends a <c>&lt;properties&gt;</c> block for <paramref name="properties"/> (nothing when empty).</summary>
+    private static void AppendProperties(StringBuilder sb, string indent, IReadOnlyList<FixtureProperty>? properties)
+    {
+        if (properties is { Count: > 0 })
+        {
+            sb.AppendLine(indent + "<properties>");
+            foreach (var property in properties)
+            {
+                sb.AppendLine(
+                    indent + $"  <property name=\"{property.Name}\" type=\"{property.Type}\" value=\"{property.Value}\"/>");
+            }
+
+            sb.AppendLine(indent + "</properties>");
+        }
+    }
+
+    /// <summary>Appends a single <c>&lt;object&gt;</c> element (with its properties and shape marker).</summary>
+    private static void AppendObject(StringBuilder sb, ObjectSpec obj)
+    {
+        // A tile object is declared with a gid attribute (instead of a marker element).
+        var gidAttribute = obj.Shape == FixtureObjectShape.Tile ? " gid=\"1\"" : string.Empty;
+        sb.AppendLine(
+            $"    <object id=\"{obj.Id}\" name=\"{obj.Name}\" type=\"{obj.Type}\" x=\"{obj.X.ToString(CultureInfo.InvariantCulture)}\" y=\"{obj.Y.ToString(CultureInfo.InvariantCulture)}\" width=\"{obj.Width.ToString(CultureInfo.InvariantCulture)}\" height=\"{obj.Height.ToString(CultureInfo.InvariantCulture)}\"{gidAttribute}>");
+
+        AppendProperties(sb, "      ", obj.Properties);
+
+        switch (obj.Shape)
+        {
+            case FixtureObjectShape.Ellipse:
+                sb.AppendLine("      <ellipse/>");
+                break;
+            case FixtureObjectShape.Point:
+                sb.AppendLine("      <point/>");
+                break;
+            case FixtureObjectShape.Polygon:
+                sb.AppendLine("      <polygon points=\"0,0 16,0 16,16 0,16\"/>");
+                break;
+            case FixtureObjectShape.Polyline:
+                sb.AppendLine("      <polyline points=\"0,0 16,16\"/>");
+                break;
+            case FixtureObjectShape.Text:
+                sb.AppendLine("      <text>Object text</text>");
+                break;
+            default:
+                // A plain <object> is a rectangle; a tile object carries only the gid attribute.
+                break;
+        }
+
+        sb.AppendLine("    </object>");
     }
 }
