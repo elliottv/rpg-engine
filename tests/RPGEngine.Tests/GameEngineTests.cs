@@ -325,7 +325,7 @@ public class GameEngineTests
             engine.Update(FrameDt);
         }
 
-        // UpRight = (+½√2, -½√2); one second at 96 px/s → (±96·√½) ≈ (±67.88) per axis.
+        // UpRight = (+√½, -√½); one second at 96 px/s → (±96·√½) ≈ (±67.88) per axis.
         var component = 96 * Math.Sqrt(0.5);
         Assert.Equal(200 + component, engine.Player.Position.X, precision: 6);
         Assert.Equal(200 - component, engine.Player.Position.Y, precision: 6);
