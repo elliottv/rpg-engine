@@ -13,6 +13,7 @@ corresponding flip flags are stored in a parallel list.
 | `Visible` | Gets whether the layer is visible (shown) in the map. |
 | `Opacity` | Gets the opacity of the layer, from 0 (fully transparent) to 1 (fully opaque). |
 | `AbovePlayer` | Gets whether the layer is rendered **above** the player (declared by the Tiled `above_player` boolean custom property set to `true`). |
+| `Properties` | Gets the layer's custom properties, in file order (includes `above_player` when declared). |
 | `Width` / `Height` | Get the size of the layer in tiles. |
 | `TileIds` | Gets the tile IDs in row-major order (0 = empty cell). |
 
@@ -52,4 +53,5 @@ Console.WriteLine(ground.AbovePlayer);    // False
 Console.WriteLine(ground.Width);          // 16
 Console.WriteLine(ground.Height);         // 12
 Console.WriteLine(ground.TileIds.Count);  // 192
+Console.WriteLine(ground.Properties.Count); // custom properties declared on the layer
 ```
