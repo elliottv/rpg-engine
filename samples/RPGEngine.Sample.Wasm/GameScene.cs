@@ -5,16 +5,20 @@ using SkiaSharp;
 namespace RPGEngine.Sample.Wasm;
 
 /// <summary>
-/// Builds the canonical sample scene for the WebAssembly host through the file-system-free
-/// (stream/URL) entry points of the engine: the map is loaded with
-/// <see cref="TileMap.Load(Stream, Uri, TiledAssetFetcher)"/> and every spritesheet is loaded
-/// with the <c>LoadSpriteSheet(name, stream)</c> / <c>LoadPartSpriteSheet(name, stream, type)</c>
-/// overloads. This proves the engine's rendering code paths work unchanged on WebAssembly.
+/// Builds the canonical sample scene for the WebAssembly host through the **async**
+/// file-system-free entry points of the engine (story 26): the map is loaded with
+/// <see cref="TileMap.LoadAsync(Stream, Uri, TiledAssetFetcherAsync)"/> using a
+/// <see cref="TiledAssetFetcherAsync"/>, and every spritesheet is loaded with
+/// <see cref="GameEngine.LoadSpriteSheetAsync"/> / <see cref="GameEngine.LoadPartSpriteSheetAsync"/>.
+/// This proves the WebAssembly host can use the async loading API (which never performs a
+/// blocking synchronous read of the caller's stream) and that the rendering code paths work
+/// unchanged on WebAssembly.
 /// </summary>
 /// <remarks>
 /// The committed PNG fixtures are stored as base64 text (<c>.png.b64</c>); the asset fetcher
 /// below fetches the text over HTTP and decodes it to the real PNG bytes, so the same committed
-/// bytes feed both hosts.
+/// bytes feed both hosts. The HTTP fetches are awaited end-to-end, so nothing blocks the
+/// single-threaded WebAssembly runtime.
 /// </remarks>
 public sealed class GameScene
 {
@@ -39,45 +43,48 @@ public sealed class GameScene
 
     /// <summary>
     /// Loads the scene from the committed fixture assets using <paramref name="http"/> to fetch
-    /// them over HTTP from <c>wwwroot/assets</c>.
+    /// them over HTTP from <c>wwwroot/assets</c>, exclusively through the engine's async loading
+    /// entry points (<c>TileMap.LoadAsync</c>, <c>LoadSpriteSheetAsync</c> and
+    /// <c>LoadPartSpriteSheetAsync</c>).
     /// </summary>
     /// <param name="http">The <see cref="HttpClient"/> configured with the host base address.</param>
     /// <param name="baseUrl">The URL of the <c>assets/</c> directory (e.g. <c>assets/</c>).</param>
     public static async Task<GameScene> LoadAsync(HttpClient http, string baseUrl)
     {
-        // A synchronous fetcher delegate used by TileMap.Load for the external TSX and its image.
-        // The underlying HttpClient calls are completed before the map is built, so there is no
-        // sync-over-async on the single-threaded WebAssembly runtime.
-        var mapXml = await http.GetStringAsync(baseUrl + "map.tmx").ConfigureAwait(false);
-        var tilesetXml = await http.GetStringAsync(baseUrl + "tiles.tsx").ConfigureAwait(false);
-        var tilesPng = DecodeBase64Png(await http.GetStringAsync(baseUrl + "tiles.png.b64").ConfigureAwait(false));
-
-        byte[] Fetcher(Uri uri)
+        // An async fetcher delegate used by TileMap.LoadAsync for the external TSX and its image.
+        // Every fetch is awaited, so no sync-over-async occurs on the WebAssembly runtime.
+        TiledAssetFetcherAsync fetcher = async uri =>
         {
             var name = uri.AbsolutePath.Split('/').LastOrDefault() ?? string.Empty;
             return name switch
             {
-                "tiles.tsx" => System.Text.Encoding.UTF8.GetBytes(tilesetXml),
-                "tiles.png" => tilesPng,
+                "tiles.tsx" => System.Text.Encoding.UTF8.GetBytes(await http.GetStringAsync(baseUrl + "tiles.tsx").ConfigureAwait(false)),
+                "tiles.png" => DecodeBase64Png(await http.GetStringAsync(baseUrl + "tiles.png.b64").ConfigureAwait(false)),
                 _ => throw new FileNotFoundException($"Unexpected asset URI '{uri}'."),
             };
-        }
+        };
 
-        using var mapStream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(mapXml), writable: false);
+        using var mapStream = new MemoryStream(
+            await http.GetByteArrayAsync(baseUrl + "map.tmx").ConfigureAwait(false),
+            writable: false);
+
         var engine = new GameEngine
         {
-            Map = TileMap.Load(mapStream, new Uri("https://local/"+baseUrl+"map.tmx"), Fetcher),
+            Map = await TileMap.LoadAsync(
+                mapStream,
+                new Uri("https://local/" + baseUrl + "map.tmx"),
+                fetcher).ConfigureAwait(false),
         };
 
         // Player: a single full sheet, character slot 1.
-        await LoadSpriteSheetAsync(http, baseUrl, engine, "hero", "characters/character_full.png.b64").ConfigureAwait(false);
+        await engine.LoadSpriteSheetAsync("hero", await FetchPngStreamAsync(http, baseUrl, "characters/character_full.png.b64").ConfigureAwait(false)).ConfigureAwait(false);
         engine.Player.Position = PlayerPosition;
         engine.Player.SpriteSheets.Add(new SpriteSheetRef("hero", CharacterIndex: 1));
 
         // NPC 1 "villager": body + face + hair1 part sheets, character slot 2.
-        await LoadPartSheetAsync(http, baseUrl, engine, "villager_body", "characters/character_part_body.png.b64", CharacterPartType.Body).ConfigureAwait(false);
-        await LoadPartSheetAsync(http, baseUrl, engine, "villager_face", "characters/character_part_face.png.b64", CharacterPartType.Face).ConfigureAwait(false);
-        await LoadPartSheetAsync(http, baseUrl, engine, "villager_hair1", "characters/character_part_hair1.png.b64", CharacterPartType.Hair1).ConfigureAwait(false);
+        await engine.LoadPartSpriteSheetAsync("villager_body", await FetchPngStreamAsync(http, baseUrl, "characters/character_part_body.png.b64").ConfigureAwait(false), CharacterPartType.Body).ConfigureAwait(false);
+        await engine.LoadPartSpriteSheetAsync("villager_face", await FetchPngStreamAsync(http, baseUrl, "characters/character_part_face.png.b64").ConfigureAwait(false), CharacterPartType.Face).ConfigureAwait(false);
+        await engine.LoadPartSpriteSheetAsync("villager_hair1", await FetchPngStreamAsync(http, baseUrl, "characters/character_part_hair1.png.b64").ConfigureAwait(false), CharacterPartType.Hair1).ConfigureAwait(false);
         var villager = new Character
         {
             Position = VillagerPosition,
@@ -89,10 +96,10 @@ public sealed class GameScene
         engine.Characters.Add(villager);
 
         // NPC 2 "guard": body + face + armour + head part sheets, character slot 3.
-        await LoadPartSheetAsync(http, baseUrl, engine, "guard_body", "characters/character_part_body.png.b64", CharacterPartType.Body).ConfigureAwait(false);
-        await LoadPartSheetAsync(http, baseUrl, engine, "guard_face", "characters/character_part_face.png.b64", CharacterPartType.Face).ConfigureAwait(false);
-        await LoadPartSheetAsync(http, baseUrl, engine, "guard_armour", "characters/character_part_armour.png.b64", CharacterPartType.Armour).ConfigureAwait(false);
-        await LoadPartSheetAsync(http, baseUrl, engine, "guard_head", "characters/character_part_head.png.b64", CharacterPartType.Head).ConfigureAwait(false);
+        await engine.LoadPartSpriteSheetAsync("guard_body", await FetchPngStreamAsync(http, baseUrl, "characters/character_part_body.png.b64").ConfigureAwait(false), CharacterPartType.Body).ConfigureAwait(false);
+        await engine.LoadPartSpriteSheetAsync("guard_face", await FetchPngStreamAsync(http, baseUrl, "characters/character_part_face.png.b64").ConfigureAwait(false), CharacterPartType.Face).ConfigureAwait(false);
+        await engine.LoadPartSpriteSheetAsync("guard_armour", await FetchPngStreamAsync(http, baseUrl, "characters/character_part_armour.png.b64").ConfigureAwait(false), CharacterPartType.Armour).ConfigureAwait(false);
+        await engine.LoadPartSpriteSheetAsync("guard_head", await FetchPngStreamAsync(http, baseUrl, "characters/character_part_head.png.b64").ConfigureAwait(false), CharacterPartType.Head).ConfigureAwait(false);
         var guard = new Character
         {
             Position = GuardPosition,
@@ -107,16 +114,14 @@ public sealed class GameScene
         return new GameScene(engine);
     }
 
-    private static async Task LoadSpriteSheetAsync(HttpClient http, string baseUrl, GameEngine engine, string name, string file)
+    /// <summary>
+    /// Fetches a committed <c>.png.b64</c> fixture over HTTP and returns a read-only memory
+    /// stream of the decoded PNG bytes for the engine's stream-based loaders.
+    /// </summary>
+    private static async Task<MemoryStream> FetchPngStreamAsync(HttpClient http, string baseUrl, string file)
     {
-        using var stream = new MemoryStream(DecodeBase64Png(await http.GetStringAsync(baseUrl + file).ConfigureAwait(false)), writable: false);
-        engine.LoadSpriteSheet(name, stream);
-    }
-
-    private static async Task LoadPartSheetAsync(HttpClient http, string baseUrl, GameEngine engine, string name, string file, CharacterPartType partType)
-    {
-        using var stream = new MemoryStream(DecodeBase64Png(await http.GetStringAsync(baseUrl + file).ConfigureAwait(false)), writable: false);
-        engine.LoadPartSpriteSheet(name, stream, partType);
+        var pngBytes = DecodeBase64Png(await http.GetStringAsync(baseUrl + file).ConfigureAwait(false));
+        return new MemoryStream(pngBytes, writable: false);
     }
 
     private static byte[] DecodeBase64Png(string base64) => Convert.FromBase64String(base64);
