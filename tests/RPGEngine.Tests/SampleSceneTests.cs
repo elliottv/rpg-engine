@@ -21,7 +21,7 @@ public class SampleSceneTests
     // Acceptance 4 (automated part): a smoke test asserting Render produces a
     // non-empty frame for the exact scene the samples use.
     // ---------------------------------------------------------------------
-    /// <summary>Verifies the fixture map loads with the committed dimensions and two layers.</summary>
+    /// <summary>Verifies the fixture map loads with the committed dimensions and three layers.</summary>
     [Fact]
     public void FixtureMap_LoadsWithExpectedDimensionsAndLayers()
     {
@@ -35,7 +35,48 @@ public class SampleSceneTests
         Assert.Equal(48, engine.Map.TileHeight);
         Assert.Equal(16 * 48, engine.Map.PixelWidth);
         Assert.Equal(12 * 48, engine.Map.PixelHeight);
-        Assert.Equal(2, engine.Map.Layers.Count); // ground + decor
+        Assert.Equal(3, engine.Map.Layers.Count); // ground + decor + trees_above
+    }
+
+    /// <summary>
+    /// Verifies the extended fixture map (story 26) exposes the documented map custom properties,
+    /// the object layer with its objects (and their properties) and the <c>above_player</c> tile
+    /// layer, so the sample hosts and end-to-end tests exercise the new read-model API.
+    /// </summary>
+    [Fact]
+    public void FixtureMap_ExposesPropertiesObjectLayersAndAbovePlayer()
+    {
+        using var fixtures = FixtureAssets.MaterializeToTempDirectory();
+        var engine = SampleScene.Create(fixtures.Root);
+        var map = engine.Map!;
+
+        // Map custom properties (string, string, bool, int), looked up case-sensitively.
+        Assert.Equal("RPG Engine Fixture Map", map.GetProperty("name")?.Value);
+        Assert.Equal("RPG Engine QA", map.GetProperty("author")?.Value);
+        Assert.Equal(true, map.GetProperty("is_demo")?.Value);
+        Assert.Equal(3, map.GetProperty("difficulty")?.Value);
+        Assert.Null(map.GetProperty("Name")); // case-sensitive lookup
+
+        // The trees_above tile layer declares above_player = true and renders above the player.
+        var treesAbove = map.Layers.Single(layer => layer.Name == "trees_above");
+        Assert.True(treesAbove.AbovePlayer);
+        Assert.True(map.Layers.Where(l => l.AbovePlayer).SequenceEqual(new[] { treesAbove }));
+
+        // The object layer exposes spawn / chest / guard_patrol and their properties.
+        var objects = map.ObjectLayers.Single(layer => layer.Name == "objects");
+        Assert.Equal(3, objects.Objects.Count);
+
+        var spawn = objects.Objects.Single(obj => obj.Name == "spawn");
+        Assert.Equal(TileMapObjectShape.Point, spawn.Shape);
+        Assert.Equal(SampleScene.PlayerPosition, spawn.Position);
+
+        var chest = objects.Objects.Single(obj => obj.Name == "chest");
+        Assert.Equal(true, chest.Properties.Single(p => p.Name == "locked").Value);
+        Assert.Equal(100, chest.Properties.Single(p => p.Name == "coins").Value);
+
+        // The sample scene still renders a non-empty frame with the extended map.
+        using var bitmap = Render(engine, CanvasWidth, CanvasHeight);
+        Assert.NotEqual(0, bitmap.GetPixel(CanvasWidth / 2, CanvasHeight / 2).Alpha);
     }
 
     /// <summary>Verifies rendering the sample scene produces a non-empty frame (map + player + two NPCs).</summary>

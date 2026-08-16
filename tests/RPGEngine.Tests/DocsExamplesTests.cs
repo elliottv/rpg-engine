@@ -124,7 +124,7 @@ public class DocsExamplesTests
     [Fact]
     public void CharacterIndex_SelectsOneOfEightCharacters()
     {
-        // Standard RPG Maker MZ sheet: 576×384 &#8594; 48×48 cells.
+        // Standard RPG Maker MZ sheet: 576×384 → 48×48 cells.
         using (var sheetStream = FixtureAssets.DecodePngStream(FixtureAssets.FullSheet))
         {
             var manager = new SpriteSheetManager();
@@ -204,6 +204,29 @@ public class DocsExamplesTests
         Assert.Contains(new SpriteSheetRef("hero", 1), player.Character.SpriteSheets);
     }
 
+    /// <summary>
+    /// Verifies the <c>AnimationCycleSpeed</c> example (docs/api/Character.md): the walk cycle is
+    /// time-based and speed-scaled, so tuning <c>AnimationCycleSpeed</c> changes the cycle rate
+    /// relative to <c>BaseSpeed</c>.
+    /// </summary>
+    [Fact]
+    public void Character_AnimationCycleSpeed_TunesWalkCycle()
+    {
+        // At BaseSpeed == AnimationCycleSpeed == 96 the 4-frame walk cycle (0 -> 1 -> 2 -> 1)
+        // completes once per second: secondsPerFrame = 96 / (96 * 4) = 0.25 s/frame.
+        var character = new Character { BaseSpeed = 96, AnimationCycleSpeed = 96 };
+        character.Move(Direction.Down, speedFactor: 1, dt: 0.25);
+        character.Update(dt: 0.25);
+        Assert.Equal(0, character.AnimationFrame); // advanced one frame step (1 -> 0)
+
+        // Doubling AnimationCycleSpeed (the reference speed) halves the cycle rate: the same
+        // 0.25 s only accumulates half a frame, so the standing frame (1) is kept.
+        var slow = new Character { BaseSpeed = 96, AnimationCycleSpeed = 192 };
+        slow.Move(Direction.Down, speedFactor: 1, dt: 0.25);
+        slow.Update(dt: 0.25);
+        Assert.Equal(1, slow.AnimationFrame); // still the standing frame
+    }
+
     // ---------------------------------------------------------------------
     // docs/api/GameConfig.md and docs/api/Key.md.
     // ---------------------------------------------------------------------
@@ -226,6 +249,33 @@ public class DocsExamplesTests
         // A key already bound to another direction is rejected and leaves config unchanged.
         Assert.Throws<ArgumentException>(() => config.DownKey = Key.Up);
         Assert.Equal(Key.S, config.DownKey);
+    }
+
+    /// <summary>
+    /// Verifies the <c>GetMovementDirection</c> example (docs/api/GameConfig.md): the held bound
+    /// keys combine into a single 8-direction vector, with opposite keys cancelling.
+    /// </summary>
+    [Fact]
+    public void GameConfig_GetMovementDirection_CombinesHeldKeys()
+    {
+        var config = new GameConfig();
+
+        // A single key maps to its cardinal direction.
+        Assert.Equal(Direction.Up, config.GetMovementDirection([Key.W]));
+
+        // Two perpendicular keys combine into a diagonal.
+        Assert.Equal(Direction.UpRight, config.GetMovementDirection([Key.W, Key.D]));
+
+        // Opposite keys cancel: no movement.
+        Assert.Null(config.GetMovementDirection([Key.W, Key.S]));
+        Assert.Null(config.GetMovementDirection([Key.A, Key.D]));
+
+        // W + A + D: A and D cancel, leaving straight Up.
+        Assert.Equal(Direction.Up, config.GetMovementDirection([Key.W, Key.A, Key.D]));
+
+        // No bound keys (or only unmapped keys) produce no movement.
+        Assert.Null(config.GetMovementDirection(Array.Empty<Key>()));
+        Assert.Null(config.GetMovementDirection([Key.Space]));
     }
 
     /// <summary>Verifies hosts translate their framework key events to the engine <see cref="Key"/> values.</summary>
@@ -330,6 +380,35 @@ public class DocsExamplesTests
         Assert.Throws<ArgumentOutOfRangeException>(() => byPath.GetTileImage(localTileId: 4));
     }
 
+    /// <summary>
+    /// Verifies the <c>TileSet.LoadAsync</c> example (docs/api/TileSet.md): a TSX loaded from an
+    /// async-only stream with the image resolved through a <see cref="TiledAssetFetcherAsync"/>.
+    /// </summary>
+    [Fact]
+    public async Task TileSet_LoadsStandaloneAsync()
+    {
+        using var fixtures = FixtureAssets.MaterializeToTempDirectory();
+
+        var tsxBytes = File.ReadAllText(fixtures.PathOf(FixtureAssets.TilesetFile));
+        using var stream = new AsyncOnlyStream(
+            new MemoryStream(System.Text.Encoding.UTF8.GetBytes(tsxBytes), writable: false));
+
+        // A TiledAssetFetcherAsync mirrors what HttpClient.GetByteArrayAsync would do: the image
+        // source declared by the TSX is resolved relative to the TSX URI and awaited.
+        TiledAssetFetcherAsync fetcher = async uri =>
+        {
+            await Task.Delay(1);
+            Assert.EndsWith(FixtureAssets.TilesImage, uri.AbsolutePath, StringComparison.Ordinal);
+            return FixtureAssets.DecodePng(FixtureAssets.TilesImage);
+        };
+
+        var tileset = await TileSet.LoadAsync(stream, new Uri("file:///fixtures/tiles.tsx"), fetcher);
+
+        Assert.Equal("rpg_fixture_tiles", tileset.Name);
+        Assert.Equal(48, tileset.TileWidth);
+        Assert.Equal(48, tileset.TileHeight);
+    }
+
     /// <summary>Verifies the TileMap examples: file-based and stream-based loading, layers and tile lookup.</summary>
     [Fact]
     public void TileMap_LoadsAndQueries()
@@ -340,8 +419,11 @@ public class DocsExamplesTests
         var map = TileMap.Load(fixtures.PathOf(FixtureAssets.MapFile));
         Assert.Equal(16, map.Width);
         Assert.Equal(12, map.Height);
-        Assert.Equal(2, map.Layers.Count);
+        Assert.Equal(3, map.Layers.Count); // ground + decor + trees_above
         Assert.Equal("ground", map.Layers[0].Name);
+        Assert.Equal("decor", map.Layers[1].Name);
+        Assert.Equal("trees_above", map.Layers[2].Name);
+        Assert.True(map.Layers[2].AbovePlayer); // the committed above_player layer
         Assert.True(map.GetTileId("ground", 0, 0) >= 1); // a grass tile
         Assert.False(map.IsSolid(1, 1));
 
@@ -423,6 +505,53 @@ public class DocsExamplesTests
         Assert.Equal(new Position(0, 0), spawn.Position);
     }
 
+    /// <summary>
+    /// Verifies the committed fixture map (docs/api/TileMap.md, docs/api/TileMapObject.md and
+    /// docs/api/TileMapLayer.md): map custom properties, the object layer with its objects and
+    /// their properties, and the <c>trees_above</c> <c>above_player</c> tile layer.
+    /// </summary>
+    [Fact]
+    public void TileMap_CommittedFixture_ReadsPropertiesAndObjectLayers()
+    {
+        using var fixtures = FixtureAssets.MaterializeToTempDirectory();
+        var map = TileMap.Load(fixtures.PathOf(FixtureAssets.MapFile));
+
+        // Map custom properties: two strings, a bool flag and an int.
+        Assert.Equal("RPG Engine Fixture Map", map.GetProperty("name")?.Value);
+        Assert.Equal("RPG Engine QA", map.GetProperty("author")?.Value);
+        Assert.Equal(true, map.GetProperty("is_demo")?.Value);
+        Assert.Equal(3, map.GetProperty("difficulty")?.Value);
+        Assert.Null(map.GetProperty("missing"));
+
+        // The above_player tile layer (a "trees above" layer using the tree tile).
+        var treesAbove = map.Layers.Single(layer => layer.Name == "trees_above");
+        Assert.True(treesAbove.AbovePlayer);
+        var aboveProperty = treesAbove.Properties.Single(p => p.Name == "above_player");
+        Assert.Equal(MapPropertyType.Bool, aboveProperty.Type);
+        Assert.Equal(true, aboveProperty.Value);
+
+        // The object layer exposes its objects and their custom properties.
+        var objects = map.ObjectLayers.Single(layer => layer.Name == "objects");
+        Assert.Equal(3, objects.Objects.Count);
+
+        var spawn = objects.Objects.Single(obj => obj.Name == "spawn");
+        Assert.Equal("spawn", spawn.Type);
+        Assert.Equal(TileMapObjectShape.Point, spawn.Shape);
+        Assert.Equal(new Position(288, 288), spawn.Position);
+        Assert.Equal("down", spawn.Properties.Single(p => p.Name == "facing").Value);
+
+        var chest = objects.Objects.Single(obj => obj.Name == "chest");
+        Assert.Equal("treasure", chest.Type);
+        Assert.Equal(TileMapObjectShape.Rectangle, chest.Shape);
+        Assert.Equal(new Position(48, 96), chest.Position);
+        Assert.Equal(true, chest.Properties.Single(p => p.Name == "locked").Value);
+        Assert.Equal(100, chest.Properties.Single(p => p.Name == "coins").Value);
+
+        var guardPatrol = objects.Objects.Single(obj => obj.Name == "guard_patrol");
+        Assert.Equal(TileMapObjectShape.Polyline, guardPatrol.Shape);
+        Assert.Equal(48, guardPatrol.Properties.Single(p => p.Name == "speed").Value);
+    }
+
     // ---------------------------------------------------------------------
     // docs/api/TileMapLayer.md and docs/api/TileFlags.md.
     // ---------------------------------------------------------------------
@@ -442,6 +571,11 @@ public class DocsExamplesTests
 
         var gid = ground.GetTileId(0, 0);
         Assert.True((gid & (uint)TileFlags.Mask) == gid, "Tile IDs stored by the engine have flip bits masked off.");
+
+        // The committed trees_above layer declares the above_player bool property (story 24/26).
+        var treesAbove = map.Layers.Single(layer => layer.Name == "trees_above");
+        Assert.True(treesAbove.AbovePlayer);
+        Assert.Contains(treesAbove.Properties, p => p.Name == "above_player" && p.Type == MapPropertyType.Bool);
     }
 
     // ---------------------------------------------------------------------
@@ -535,6 +669,36 @@ public class DocsExamplesTests
         Assert.NotEqual(0, bitmap.GetPixel(24, 24).Alpha);
     }
 
+    /// <summary>
+    /// Verifies the async part-sheet loading examples (docs/api/SpriteSheetManager.md and
+    /// docs/api/GameEngine.md): <c>SpriteSheetManager.LoadPartAsync</c> and
+    /// <c>GameEngine.LoadPartSpriteSheetAsync</c> from async-only streams.
+    /// </summary>
+    [Fact]
+    public async Task AsyncPartSheetLoading_LoadsAndRegisters()
+    {
+        // SpriteSheetManager.LoadPartAsync.
+        using (var stream = new AsyncOnlyStream(FixtureAssets.DecodePngStream(FixtureAssets.PartBody)))
+        {
+            var manager = new SpriteSheetManager();
+            var body = await manager.LoadPartAsync("body", stream, CharacterPartType.Body);
+
+            Assert.Equal("body", body.Name);
+            Assert.Equal(SpriteSheetType.Part, body.Type);
+            Assert.Equal(CharacterPartType.Body, body.PartType);
+        }
+
+        // GameEngine.LoadPartSpriteSheetAsync: the engine-level delegating overload.
+        var engine = new GameEngine();
+        using (var stream = new AsyncOnlyStream(FixtureAssets.DecodePngStream(FixtureAssets.PartBody)))
+        {
+            await engine.LoadPartSpriteSheetAsync("hero_body", stream, CharacterPartType.Body);
+        }
+
+        engine.Player.SpriteSheets.Add(new SpriteSheetRef("hero_body", CharacterIndex: 1));
+        Assert.Single(engine.Player.SpriteSheets);
+    }
+
     /// <summary>Verifies the async map loading example: TileMap.LoadAsync with a TiledAssetFetcherAsync resolving external assets over HTTP.</summary>
     [Fact]
     public async Task AsyncMapLoading_WithAsyncFetcher()
@@ -566,6 +730,6 @@ public class DocsExamplesTests
 
         Assert.Equal(16, map.Width);
         Assert.Equal(12, map.Height);
-        Assert.Equal(2, map.Layers.Count);
+        Assert.Equal(3, map.Layers.Count); // ground + decor + trees_above
     }
 }
