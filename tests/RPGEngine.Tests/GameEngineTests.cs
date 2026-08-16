@@ -310,7 +310,7 @@ public class GameEngineTests
     // diagonally, opposite keys cancel, and releasing one key of a held
     // diagonal pair reverts to the remaining cardinal direction.
     // ---------------------------------------------------------------------
-    /// <summary>Verifies holding W+D for one second at 96 px/s moves diagonally up-right (±67.88 px per axis) and sets Direction to UpRight; releasing D then moves straight up.</summary>
+    /// <summary>Verifies holding W+D for one second at 96 px/s moves diagonally up-right (~±67.88 px per axis) and sets Direction to UpRight; releasing D then moves straight up.</summary>
     [Fact]
     public void Update_HoldingDiagonalPair_MovesDiagonallyAndRevertsOnRelease()
     {
@@ -325,7 +325,7 @@ public class GameEngineTests
             engine.Update(FrameDt);
         }
 
-        // UpRight = (+½√2, -½√2); one second at 96 px/s → (±96·√2/2) ≈ (±67.88) per axis.
+        // UpRight = (+½√2, -½√2); one second at 96 px/s → (±96·√½) ≈ (±67.88) per axis.
         var component = 96 * Math.Sqrt(0.5);
         Assert.Equal(200 + component, engine.Player.Position.X, precision: 6);
         Assert.Equal(200 - component, engine.Player.Position.Y, precision: 6);
