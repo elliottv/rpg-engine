@@ -203,7 +203,7 @@ public class TileMapTests
         var above = new TileLayerSpec(
             "above",
             new uint[] { 0, 0, 0, 0 },
-            Properties: new[] { new LayerProperty("above_player", "bool", "true") });
+            Properties: new[] { new FixtureProperty("above_player", "bool", "true") });
 
         using var fixture = TiledTestFixture.Create2x2(new[] { ground, above });
         var map = TileMap.Load(fixture.MapPath);
@@ -220,11 +220,11 @@ public class TileMapTests
         var falseValue = new TileLayerSpec(
             "false_value",
             new uint[] { 0, 0, 0, 0 },
-            Properties: new[] { new LayerProperty("above_player", "bool", "false") });
+            Properties: new[] { new FixtureProperty("above_player", "bool", "false") });
         var nonBool = new TileLayerSpec(
             "non_bool",
             new uint[] { 0, 0, 0, 0 },
-            Properties: new[] { new LayerProperty("above_player", "string", "true") });
+            Properties: new[] { new FixtureProperty("above_player", "string", "true") });
 
         using var fixture = TiledTestFixture.Create2x2(new[] { absent, falseValue, nonBool });
         var map = TileMap.Load(fixture.MapPath);
@@ -242,7 +242,7 @@ public class TileMapTests
         var above = new TileLayerSpec(
             "above",
             new uint[] { 2, 2, 2, 2 }, // all green
-            Properties: new[] { new LayerProperty("above_player", "bool", "true") });
+            Properties: new[] { new FixtureProperty("above_player", "bool", "true") });
 
         using var fixture = new TiledTestFixture(
             2,
@@ -267,6 +267,214 @@ public class TileMapTests
             Assert.Equal(new SKColor(0, 128, 0, 255), bitmap.GetPixel(24, 24));
             Assert.Equal(new SKColor(0, 128, 0, 255), bitmap.GetPixel(72, 72));
         }
+    }
+
+    // ---------------------------------------------------------------------
+    // Map custom properties, object layers and layer properties (story 25).
+    // ---------------------------------------------------------------------
+    /// <summary>Verifies a map's custom properties are exposed with their name, type and typed value, and that GetProperty performs a case-sensitive lookup.</summary>
+    [Fact]
+    public void MapProperties_ExposeTypedValues_AndGetPropertyLooksUpCaseSensitively()
+    {
+        var mapProperties = new[]
+        {
+            new FixtureProperty("flag", "bool", "true"),
+            new FixtureProperty("count", "int", "42"),
+            new FixtureProperty("ratio", "float", "1.5"),
+            new FixtureProperty("name", "string", "hello"),
+            new FixtureProperty("tint", "color", "#ff0000"),
+            new FixtureProperty("data", "file", "data.txt"),
+        };
+
+        using var fixture = TiledTestFixture.Create2x2(new[] { Ground }, mapProperties: mapProperties);
+        var map = TileMap.Load(fixture.MapPath);
+
+        // Properties are exposed in file order with the correct type and typed value.
+        Assert.Equal(6, map.Properties.Count);
+        AssertMapProperty(map.Properties[0], "flag", MapPropertyType.Bool, true);
+        AssertMapProperty(map.Properties[1], "count", MapPropertyType.Int, 42);
+        AssertMapProperty(map.Properties[2], "ratio", MapPropertyType.Float, 1.5f);
+        AssertMapProperty(map.Properties[3], "name", MapPropertyType.String, "hello");
+        Assert.Equal(MapPropertyType.Color, map.Properties[4].Type);
+        Assert.Equal(new SKColor(255, 0, 0, 255), Assert.IsType<SKColor>(map.Properties[4].Value));
+        AssertMapProperty(map.Properties[5], "data", MapPropertyType.File, "data.txt");
+
+        // GetProperty returns the value by exact (case-sensitive) name.
+        Assert.Equal(true, map.GetProperty("flag")!.Value);
+        Assert.Equal(42, map.GetProperty("count")!.Value);
+        Assert.Equal("hello", map.GetProperty("name")!.Value);
+        Assert.Null(map.GetProperty("Flag"));
+        Assert.Null(map.GetProperty("missing"));
+    }
+
+    /// <summary>Verifies an object layer exposes its objects (identity, geometry, shape) and the custom properties of both the layer and each object.</summary>
+    [Fact]
+    public void ObjectLayers_ExposeObjects_AndTheirProperties()
+    {
+        var objects = new[]
+        {
+            new ObjectSpec(
+                Id: 1,
+                Name: "player",
+                Type: "hero",
+                X: 10,
+                Y: 20,
+                Width: 32,
+                Height: 48,
+                Shape: FixtureObjectShape.Rectangle,
+                Properties: new[]
+                {
+                    new FixtureProperty("hp", "int", "100"),
+                    new FixtureProperty("alive", "bool", "true"),
+                    new FixtureProperty("label", "string", "player"),
+                }),
+            new ObjectSpec(
+                Id: 2,
+                Name: "door",
+                Type: "prop",
+                X: 100,
+                Y: 200,
+                Width: 48,
+                Height: 48,
+                Shape: FixtureObjectShape.Point),
+        };
+        var objectLayer = new ObjectLayerSpec(
+            "objects",
+            objects,
+            Visible: true,
+            Opacity: 0.75f,
+            Properties: new[] { new FixtureProperty("owner", "string", "level1") });
+
+        using var fixture = TiledTestFixture.Create2x2(new[] { Ground }, objectLayers: new[] { objectLayer });
+        var map = TileMap.Load(fixture.MapPath);
+
+        Assert.Single(map.ObjectLayers);
+        var layer = map.ObjectLayers[0];
+        Assert.Equal("objects", layer.Name);
+        Assert.True(layer.Visible);
+        Assert.Equal(0.75f, layer.Opacity);
+        Assert.Equal(2, layer.Objects.Count);
+
+        // The object layer's own custom properties are exposed.
+        Assert.Equal("owner", layer.Properties[0].Name);
+        Assert.Equal("level1", layer.Properties[0].Value);
+
+        // The first object exposes identity, geometry, shape and custom properties.
+        var player = layer.Objects[0];
+        Assert.Equal(1u, player.Id);
+        Assert.Equal("player", player.Name);
+        Assert.Equal("hero", player.Type);
+        Assert.Equal(new Position(10, 20), player.Position);
+        Assert.Equal(32f, player.Width);
+        Assert.Equal(48f, player.Height);
+        Assert.Equal(TileMapObjectShape.Rectangle, player.Shape);
+        Assert.Equal(3, player.Properties.Count);
+        Assert.Equal(100, player.Properties.Single(p => p.Name == "hp").Value);
+        Assert.Equal(true, player.Properties.Single(p => p.Name == "alive").Value);
+        Assert.Equal("player", player.Properties.Single(p => p.Name == "label").Value);
+
+        // The second object exposes its own identity and geometry.
+        var door = layer.Objects[1];
+        Assert.Equal(2u, door.Id);
+        Assert.Equal("door", door.Name);
+        Assert.Equal(new Position(100, 200), door.Position);
+        Assert.Equal(TileMapObjectShape.Point, door.Shape);
+        Assert.Empty(door.Properties);
+    }
+
+    /// <summary>Verifies every object shape is detected from the Tiled object subtype (a plain object is a rectangle; markers/gid/text produce the others).</summary>
+    [Fact]
+    public void ObjectLayers_DetectObjectShapes()
+    {
+        var objects = new[]
+        {
+            new ObjectSpec(1, "rect", "x", 0, 0, 8, 9, FixtureObjectShape.Rectangle),
+            new ObjectSpec(2, "ellipse", "x", 0, 0, 6, 7, FixtureObjectShape.Ellipse),
+            new ObjectSpec(3, "point", "x", 0, 0, 0, 0, FixtureObjectShape.Point),
+            new ObjectSpec(4, "polygon", "x", 0, 0, 0, 0, FixtureObjectShape.Polygon),
+            new ObjectSpec(5, "polyline", "x", 0, 0, 0, 0, FixtureObjectShape.Polyline),
+            new ObjectSpec(6, "tile", "x", 0, 0, 0, 0, FixtureObjectShape.Tile),
+            new ObjectSpec(7, "text", "x", 0, 0, 50, 20, FixtureObjectShape.Text),
+        };
+
+        using var fixture = TiledTestFixture.Create2x2(
+            new[] { Ground },
+            objectLayers: new[] { new ObjectLayerSpec("objects", objects) });
+        var map = TileMap.Load(fixture.MapPath);
+
+        Assert.Equal(
+            new[]
+            {
+                TileMapObjectShape.Rectangle,
+                TileMapObjectShape.Ellipse,
+                TileMapObjectShape.Point,
+                TileMapObjectShape.Polygon,
+                TileMapObjectShape.Polyline,
+                TileMapObjectShape.Tile,
+                TileMapObjectShape.Text,
+            },
+            map.ObjectLayers[0].Objects.Select(o => o.Shape));
+    }
+
+    /// <summary>Verifies Layers still contains only tile layers when the file also declares object layers (regression).</summary>
+    [Fact]
+    public void Layers_ContainsOnlyTileLayers_NotObjectLayers()
+    {
+        var objectLayer = new ObjectLayerSpec(
+            "objects",
+            new[] { new ObjectSpec(1, "o", "x", 0, 0, 10, 10, FixtureObjectShape.Point) });
+
+        using var fixture = TiledTestFixture.Create2x2(new[] { Ground, Decor }, objectLayers: new[] { objectLayer });
+        var map = TileMap.Load(fixture.MapPath);
+
+        // Object layers must never be mixed into Layers; they are exposed via ObjectLayers.
+        Assert.Equal(2, map.Layers.Count);
+        Assert.Equal(new[] { "ground", "decor" }, map.Layers.Select(l => l.Name));
+        Assert.Single(map.ObjectLayers);
+        Assert.Equal("objects", map.ObjectLayers[0].Name);
+    }
+
+    /// <summary>Verifies maps without custom properties or object layers load with empty lists (regression).</summary>
+    [Fact]
+    public void Maps_WithoutPropertiesOrObjectLayers_LoadWithEmptyLists()
+    {
+        using var fixture = TiledTestFixture.Create2x2(new[] { Ground });
+        var map = TileMap.Load(fixture.MapPath);
+
+        Assert.Empty(map.Properties);
+        Assert.Empty(map.ObjectLayers);
+        Assert.Null(map.GetProperty("anything"));
+    }
+
+    /// <summary>Verifies a tile layer exposes its custom properties, including the above_player flag that also drives the dedicated AbovePlayer member.</summary>
+    [Fact]
+    public void TileMapLayer_ExposesCustomProperties()
+    {
+        var ground = new TileLayerSpec(
+            "ground",
+            new uint[] { 1, 1, 1, 1 },
+            Properties: new[]
+            {
+                new FixtureProperty("above_player", "bool", "true"),
+                new FixtureProperty("owner", "string", "me"),
+            });
+
+        using var fixture = TiledTestFixture.Create2x2(new[] { ground });
+        var map = TileMap.Load(fixture.MapPath);
+
+        var layer = map.Layers[0];
+        Assert.Equal(2, layer.Properties.Count);
+        Assert.True(layer.AbovePlayer); // the dedicated flag still comes from the property
+        AssertMapProperty(layer.Properties[0], "above_player", MapPropertyType.Bool, true);
+        AssertMapProperty(layer.Properties[1], "owner", MapPropertyType.String, "me");
+    }
+
+    /// <summary>Asserts a <see cref="MapProperty"/> matches the expected name, type and boxed value.</summary>
+    private static void AssertMapProperty(MapProperty property, string name, MapPropertyType type, object? value)
+    {
+        Assert.Equal(name, property.Name);
+        Assert.Equal(type, property.Type);
+        Assert.Equal(value, property.Value);
     }
 
     // ---------------------------------------------------------------------
