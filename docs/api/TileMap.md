@@ -22,6 +22,8 @@ Namespace: `RPGEngine.Tiled` — a tile map loaded from a Tiled `.tmx` file (and
 | `TileWidth` / `TileHeight` | Get the size of a single tile in pixels. |
 | `PixelWidth` / `PixelHeight` | Get the total size of the map in pixels. |
 | `Layers` | Gets the tile layers in file order (bottom → top). |
+| `Properties` | Gets the map's custom properties, in file order. |
+| `ObjectLayers` | Gets the object layers (and their objects), in file order. |
 
 ## Methods
 
@@ -74,6 +76,20 @@ var map = await TileMap.LoadAsync(
     uri => http.GetByteArrayAsync(uri));
 ```
 
+### `MapProperty? GetProperty(string name)`
+
+Returns the map property named `name` using a **case-sensitive** comparison, or `null` when no
+property with that exact name exists. The value is boxed according to `MapPropertyType` (e.g. a
+Tiled `bool` property is a C# `bool`, a `color` property is an `SKColor`).
+
+```csharp
+var difficulty = map.GetProperty("difficulty");
+if (difficulty is not null)
+{
+    Console.WriteLine($"{difficulty.Name} = {difficulty.Value}");
+}
+```
+
 ### `uint GetTileId(string layerName, int x, int y)`
 
 Returns the global tile ID of the tile at `(x, y)` in the layer named `layerName`, with all flip
@@ -112,4 +128,19 @@ Console.WriteLine(map.Layers.Count);       // 2 ("ground" + "decor")
 Console.WriteLine(map.Layers[0].Name);     // "ground"
 Console.WriteLine(map.GetTileId("ground", 0, 0)); // >= 1 (a grass tile)
 Console.WriteLine(map.IsSolid(1, 1));      // False
+
+// Map custom properties (looked up case-sensitively; null when absent).
+var difficulty = map.GetProperty("difficulty");
+Console.WriteLine(difficulty?.Value);      // e.g. "hard"
+
+// Object layers expose the map's objects and their custom properties.
+foreach (var layer in map.ObjectLayers)
+{
+    Console.WriteLine(layer.Name);         // e.g. "objects"
+    foreach (var obj in layer.Objects)
+    {
+        Console.WriteLine($"{obj.Name} @ {obj.Position} ({obj.Shape})");
+        Console.WriteLine(obj.Properties.Single(p => p.Name == "coins").Value);
+    }
+}
 ```

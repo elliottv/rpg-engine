@@ -360,6 +360,70 @@ public class DocsExamplesTests
     }
 
     // ---------------------------------------------------------------------
+    // docs/api/TileMap.md: reading map custom properties, object layers and
+    // object properties (story 25).
+    // ---------------------------------------------------------------------
+    /// <summary>Verifies the TileMap custom-properties and object-layer examples: map properties via GetProperty, object layers in file order, and per-object properties.</summary>
+    [Fact]
+    public void TileMap_CustomPropertiesAndObjectLayers()
+    {
+        using var fixture = new TiledTestFixture(
+            2,
+            2,
+            new[] { new TileLayerSpec("ground", new uint[] { 1, 1, 1, 1 }) },
+            mapProperties: new[]
+            {
+                new FixtureProperty("difficulty", "string", "hard"),
+                new FixtureProperty("ambient_light", "float", "0.8"),
+            },
+            objectLayers: new[]
+            {
+                new ObjectLayerSpec(
+                    "objects",
+                    new[]
+                    {
+                        new ObjectSpec(
+                            Id: 1,
+                            Name: "chest",
+                            Type: "treasure",
+                            X: 48,
+                            Y: 96,
+                            Width: 32,
+                            Height: 32,
+                            Shape: FixtureObjectShape.Rectangle,
+                            Properties: new[] { new FixtureProperty("coins", "int", "100") }),
+                        new ObjectSpec(Id: 2, Name: "spawn", Type: "point", X: 0, Y: 0, Width: 0, Height: 0, Shape: FixtureObjectShape.Point),
+                    }),
+            });
+        var map = TileMap.Load(fixture.MapPath);
+
+        // Map custom properties: GetProperty looks up by exact (case-sensitive) name.
+        var difficulty = map.GetProperty("difficulty");
+        Assert.NotNull(difficulty);
+        Assert.Equal(MapPropertyType.String, difficulty.Type);
+        Assert.Equal("hard", Assert.IsType<string>(difficulty.Value));
+        Assert.Null(map.GetProperty("Difficulty"));
+        Assert.Equal(0.8f, Assert.IsType<float>(map.GetProperty("ambient_light")!.Value));
+
+        // Object layers are exposed separately from the tile layers, in file order.
+        Assert.Single(map.ObjectLayers);
+        Assert.Equal("objects", map.ObjectLayers[0].Name);
+        Assert.Single(map.Layers); // only the tile layer
+
+        // Objects expose identity, geometry, shape and their own custom properties.
+        var chest = map.ObjectLayers[0].Objects.Single(o => o.Name == "chest");
+        Assert.Equal(1u, chest.Id);
+        Assert.Equal("treasure", chest.Type);
+        Assert.Equal(new Position(48, 96), chest.Position);
+        Assert.Equal(TileMapObjectShape.Rectangle, chest.Shape);
+        Assert.Equal(100, chest.Properties.Single(p => p.Name == "coins").Value);
+
+        var spawn = map.ObjectLayers[0].Objects.Single(o => o.Name == "spawn");
+        Assert.Equal(TileMapObjectShape.Point, spawn.Shape);
+        Assert.Equal(new Position(0, 0), spawn.Position);
+    }
+
+    // ---------------------------------------------------------------------
     // docs/api/TileMapLayer.md and docs/api/TileFlags.md.
     // ---------------------------------------------------------------------
     /// <summary>Verifies the TileMapLayer and TileFlags examples.</summary>

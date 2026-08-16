@@ -502,7 +502,7 @@ public class GameEngineTests
                 new TileLayerSpec(
                     "above",
                     new uint[] { 2, 0, 0, 0 },
-                    Properties: new[] { new LayerProperty("above_player", "bool", "true") }),
+                    Properties: new[] { new FixtureProperty("above_player", "bool", "true") }),
             },
             tileColors: colors))
         {

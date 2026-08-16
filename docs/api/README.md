@@ -40,6 +40,11 @@ documented**. Every page below includes a commented, compilable example; the tes
 | `TileSet` | class | [TileSet.md](TileSet.md) |
 | `TileMap` | class | [TileMap.md](TileMap.md) |
 | `TileMapLayer` | class | [TileMapLayer.md](TileMapLayer.md) |
+| `MapProperty` | sealed record | [MapProperty.md](MapProperty.md) |
+| `MapPropertyType` | enum | [MapPropertyType.md](MapPropertyType.md) |
+| `TileMapObjectLayer` | class | [TileMapObjectLayer.md](TileMapObjectLayer.md) |
+| `TileMapObject` | class | [TileMapObject.md](TileMapObject.md) |
+| `TileMapObjectShape` | enum | [TileMapObjectShape.md](TileMapObjectShape.md) |
 | `TileFlags` | enum (`[Flags]`) | [TileFlags.md](TileFlags.md) |
 | `TiledAssetFetcher` | delegate | [TiledAssetFetcher.md](TiledAssetFetcher.md) |
 | `TiledAssetFetcherAsync` | delegate (async) | [TiledAssetFetcherAsync.md](TiledAssetFetcherAsync.md) |
