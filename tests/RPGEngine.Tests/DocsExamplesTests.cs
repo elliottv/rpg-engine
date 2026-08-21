@@ -328,6 +328,35 @@ public class DocsExamplesTests
         Assert.Equal(1, slow.AnimationFrame); // still the standing frame
     }
 
+    /// <summary>
+    /// Verifies the <c>StartMoving</c>/<c>StopMoving</c>/<c>IsMoving</c> example
+    /// (docs/api/Character.md): an NPC added to the engine's character list drives itself
+    /// autonomously through the update loop, and <c>StopMoving</c> halts it.
+    /// </summary>
+    [Fact]
+    public void Character_StartMovingStopMoving_DrivesNpcAutonomously()
+    {
+        var engine = new GameEngine();
+        var npc = new Character { BaseSpeed = 2, Position = new Position(3, 4) };
+        npc.SpriteSheets.Add(new SpriteSheetRef("villager", CharacterIndex: 2));
+        engine.Characters.Add(npc);
+
+        npc.StartMoving(Direction.Right); // faces right and begins moving on the next Update
+        Assert.True(npc.IsMoving);
+        Assert.Equal(Direction.Right, npc.Direction);
+        Assert.Equal(new Position(3, 4), npc.Position); // not moved until Update
+
+        engine.Update(dt: 1); // the engine's update loop drives the NPC
+
+        Assert.Equal(new Position(5, 4), npc.Position);
+
+        npc.StopMoving(); // the NPC stops; the walk cycle snaps to the standing frame
+        Assert.False(npc.IsMoving);
+
+        engine.Update(dt: 1);
+        Assert.Equal(new Position(5, 4), npc.Position); // no further movement
+    }
+
     // ---------------------------------------------------------------------
     // docs/api/GameConfig.md and docs/api/Key.md.
     // ---------------------------------------------------------------------
