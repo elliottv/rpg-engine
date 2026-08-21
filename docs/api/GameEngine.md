@@ -34,6 +34,18 @@ registry and the pressed-keys state, and exposes the game-loop entry points `Upd
 - Movement input combines every held bound key into a single 8-direction vector: opposite keys
   cancel (`W`+`S` or `A`+`D`), and a diagonal pair combines into a diagonal (`W`+`D` → up-right)
   at the same speed as cardinal movement (see [Architecture](../Architecture.md)).
+- **Click-to-move** (auto-walk): `Click(surfaceX, surfaceY)` converts a host-surface click on the
+  main canvas (using the canvas size recorded by the most recent `Render`) to a world position,
+  computes an **A*** tile path from the player's tile to the clicked tile over the non-solid
+  tiles, and queues those tiles. Each `Update` then moves the player toward the center of the next
+  waypoint at `BaseSpeed`, popping waypoints as they are reached and calling `Player.Stop()` when
+  the path completes. Clicking a **solid tile** or an **unreachable target** cancels the walk
+  without moving; a click that yields a path **replaces** the current walk even mid-walk.
+- **Input precedence during auto-walk**: a **key press** (`Input(key, true)`) cancels the
+  auto-walk path; a key **release** does not; and while a bound movement key is held the
+  auto-walk does not advance (manual key movement takes priority). A `Click` always replaces the
+  path unless the new target is invalid (solid / no path), in which case it cancels the walk.
+  See [Architecture](../Architecture.md).
 - When a map is set, the player's displacement is resolved with **axis-separated movement**
   against the map's solid tiles (layers declaring the Tiled `is_collision` bool property): each
   axis is applied in turn and reverted when the player's sprite footprint would overlap a solid
@@ -114,20 +126,60 @@ a set of currently pressed keys and derives the movement direction in `Update` v
 directions. Host applications translate their framework's key events to a `Key` value before
 calling this method.
 
+A **key press** (`isPressed: true`) cancels any in-progress auto-walk; a key **release** does
+not. The walk is replaced by the next `Click`, or the player simply stops on the next `Update`
+when no movement key is held.
+
 ```csharp
-engine.Input(Key.D, isPressed: true);   // key-down
+engine.Input(Key.D, isPressed: true);   // key-down (also cancels any auto-walk)
 engine.Update(dt);
 engine.Input(Key.D, isPressed: false);  // key-up
 ```
 
 ### `void Update(double dt)`
 
-Advances the simulation by `dt` seconds: resolves the movement direction from the currently
-pressed keys, moves the player (in tiles, resolving collisions against the map's solid tiles
-with axis-separated movement when a map is set), clamps it inside the map, and advances the
-walk-cycle animation of the player and every NPC.
+Advances the simulation by `dt` seconds. Manual key movement takes priority over auto-walk:
+when a bound movement key is held the player moves in that direction (in tiles, resolving
+collisions against the map's solid tiles with axis-separated movement when a map is set).
+Otherwise, when an auto-walk path is queued (from `Click`), the player walks toward the center
+of the next waypoint tile at `BaseSpeed`, popping waypoints as they are reached and calling
+`Player.Stop()` when the path completes. When there is no key input and no auto-walk target the
+player stops. The player is then clamped inside the map and the walk-cycle animation of the
+player and every NPC advances.
 
 ```csharp
+engine.Update(dt: 1.0 / 60);
+```
+
+
+### `void Click(double surfaceX, double surfaceY)`
+
+Reports a **click on the main game canvas** to the engine, in host-surface (canvas) coordinates
+— the same coordinate space as `SurfaceToWorld`. The engine converts the click to a world
+position using the canvas size recorded by the most recent `Render`, computes an **A*** tile
+path from the player's tile to the clicked tile over the non-solid tiles, and queues it for
+auto-walk (see the class remarks and [Architecture](../Architecture.md)).
+
+- If no `Render` has happened yet (the recorded canvas size is zero) the click is **ignored**.
+- Without a map the click cancels any in-progress auto-walk and does nothing else.
+- The target tile is `floor(world)` of the converted position. Clicking a **solid tile**
+  (`TileMap.IsSolid`) cancels any current auto-walk without moving.
+- Otherwise the engine computes `AStarPathfinder.FindPath(playerTile, targetTile, (x, y) =>
+  !Map.IsSolid(x, y), Map.Width, Map.Height)`. An **empty path** (start == goal, or the target
+  is unreachable) also cancels the walk without moving.
+- A **valid path replaces** the current auto-walk path, even mid-walk: the player changes course
+  toward the new target without stopping first.
+
+```csharp
+// Render at least once so the engine knows the canvas size, then translate a mouse click.
+engine.Render(canvas, dt: 1.0 / 60);
+
+// Click at the canvas position of the tile the host wants the player to walk to.
+double surfaceX = 264; // e.g. a mouse position in canvas pixels
+double surfaceY = 264;
+engine.Click(surfaceX, surfaceY);
+
+// The player now auto-walks along the A* path; drive the loop normally.
 engine.Update(dt: 1.0 / 60);
 ```
 
