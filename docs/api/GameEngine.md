@@ -34,6 +34,10 @@ registry and the pressed-keys state, and exposes the game-loop entry points `Upd
 - Movement input combines every held bound key into a single 8-direction vector: opposite keys
   cancel (`W`+`S` or `A`+`D`), and a diagonal pair combines into a diagonal (`W`+`D` → up-right)
   at the same speed as cardinal movement (see [Architecture](../Architecture.md)).
+- When a map is set, the player's displacement is resolved with **axis-separated movement**
+  against the map's solid tiles (layers declaring the Tiled `is_collision` bool property): each
+  axis is applied in turn and reverted when the player's sprite footprint would overlap a solid
+  tile or leave the map (the map edge is solid). See [Architecture](../Architecture.md).
 - The engine is **`IDisposable`**: it owns the assigned map and disposes it when `Map` is
   replaced or when the engine itself is disposed (a `TileMap` is disposable because it
   prerenders each tile layer into an `SKImage` on load).
@@ -113,7 +117,8 @@ engine.Input(Key.D, isPressed: false);  // key-up
 ### `void Update(double dt)`
 
 Advances the simulation by `dt` seconds: resolves the movement direction from the currently
-pressed keys, moves the player (in tiles), clamps it inside the map, and advances the
+pressed keys, moves the player (in tiles, resolving collisions against the map's solid tiles
+with axis-separated movement when a map is set), clamps it inside the map, and advances the
 walk-cycle animation of the player and every NPC.
 
 ```csharp
