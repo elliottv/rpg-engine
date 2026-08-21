@@ -132,5 +132,8 @@
 
     public void Dispose()
     {
+        // The engine owns the map (a TileMap is IDisposable: it holds the prerendered layer
+        // images), so disposing the engine releases the map too.
+        _engine?.Dispose();
     }
 }

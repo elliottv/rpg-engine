@@ -180,11 +180,20 @@ below-player layers → NPCs → player → above-player layers
 
 - When a `TileMap` is set, the canvas is **cleared to black first** — this is the black
   background behind and around the map.
-- `TileMap.Draw` renders the layers **below** the player (every layer whose
-  `TileMapLayer.AbovePlayer` is `false`), then each NPC and the player are drawn on top, and
-  finally `TileMap.DrawAbovePlayer` renders the layers whose `above_player` custom property is
-  `true` so those tiles appear **in front of** the player (e.g. tree canopies the player walks
-  under).
+- **Tile layers are prerendered once on load.** Each visible, non-empty tile layer is rasterized
+  into its own `SKImage` of the map's pixel size (`TileMap.PixelWidth × PixelHeight`) when the
+  map is loaded: the tiles are drawn at their world pixel positions with the flip transforms
+  applied and the layer opacity baked into the layer alpha. Invisible and empty layers are not
+  prerendered (a `null` slot). A `TileMap` is `IDisposable` and releases these prerendered
+  images; the engine disposes the previous map when `GameEngine.Map` is replaced and when the
+  engine itself is disposed.
+- **Drawing is a per-layer image blit.** `TileMap.Draw` blits the prerendered images of the
+  layers **below** the player (every layer whose `TileMapLayer.AbovePlayer` is `false`), each
+  NPC and the player are drawn on top, and finally `TileMap.DrawAbovePlayer` blits the layers
+  whose `above_player` custom property is `true` so those tiles appear **in front of** the
+  player (e.g. tree canopies the player walks under). Each blit draws the intersection of the
+  viewport with the layer image bounds, so viewport culling is preserved and no per-tile work
+  happens per frame.
 - The camera follows the player and clamps the viewport inside the map. When the map is
   **smaller than the canvas** on an axis it is **centered** in the canvas and the area around
   it stays black (`offset = max(0, (canvasSize − mapPixelSize) / 2)`), so a small map is never

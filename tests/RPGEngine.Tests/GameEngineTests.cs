@@ -536,6 +536,47 @@ public class GameEngineTests
     }
 
     // ---------------------------------------------------------------------
+    // Story 39: the engine owns the assigned map. Replacing GameEngine.Map
+    // disposes the previous map and disposing the engine disposes the current
+    // map; rendering through a disposed map is guarded.
+    // ---------------------------------------------------------------------
+    /// <summary>Verifies replacing GameEngine.Map disposes the previous map without error, and disposing the engine disposes the current map.</summary>
+    [Fact]
+    public void Map_ReplacementAndEngineDispose_DisposeMaps()
+    {
+        using var firstFixture = CreateFilledMapFixture(2, 2);
+        var firstMap = TileMap.Load(firstFixture.MapPath);
+        var engine = new GameEngine { Map = firstMap };
+        Assert.False(firstMap.IsDisposed);
+
+        // Replacing the map disposes the previous map.
+        using var secondFixture = CreateFilledMapFixture(3, 3);
+        var secondMap = TileMap.Load(secondFixture.MapPath);
+        engine.Map = secondMap;
+        Assert.True(firstMap.IsDisposed);
+        Assert.False(secondMap.IsDisposed);
+
+        // Disposing the engine disposes the current map; it is safe to call again.
+        engine.Dispose();
+        Assert.True(secondMap.IsDisposed);
+        engine.Dispose();
+    }
+
+    /// <summary>Verifies rendering through the engine after the map was disposed is guarded (throws ObjectDisposedException).</summary>
+    [Fact]
+    public void Render_AfterMapDisposed_ThrowsObjectDisposedException()
+    {
+        using var fixture = CreateFilledMapFixture(2, 2);
+        var map = TileMap.Load(fixture.MapPath);
+        var engine = new GameEngine { Map = map };
+        map.Dispose(); // e.g. a host that disposed the map it had loaded directly.
+
+        using var bitmap = new SKBitmap(96, 96);
+        using var canvas = new SKCanvas(bitmap);
+        Assert.Throws<ObjectDisposedException>(() => engine.Render(canvas, FrameDt));
+    }
+
+    // ---------------------------------------------------------------------
     // Helpers
     // ---------------------------------------------------------------------
 

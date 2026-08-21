@@ -478,6 +478,91 @@ public class TileMapTests
     }
 
     // ---------------------------------------------------------------------
+    // Story 39: prerendered layer images + viewport culling + IDisposable.
+    // Every visible, non-empty tile layer is rasterized once into a full
+    // pixel-size SKImage at load time; Draw/DrawAbovePlayer blit those images
+    // (culled to the viewport) and a disposed map is guarded.
+    // ---------------------------------------------------------------------
+    /// <summary>Verifies every visible non-empty layer is prerendered into a full pixel-size image, and that invisible and empty layers get a null slot.</summary>
+    [Fact]
+    public void Prerender_VisibleNonEmptyLayers_ProducePixelSizedImages()
+    {
+        var ground = new TileLayerSpec("ground", new uint[] { 1, 1, 1, 1 });
+        var decor = new TileLayerSpec("decor", new uint[4]); // empty layer
+        var hidden = new TileLayerSpec("hidden", new uint[] { 1, 0, 0, 0 }, Visible: false);
+
+        using var fixture = TiledTestFixture.Create2x2(new[] { ground, decor, hidden });
+        var map = TileMap.Load(fixture.MapPath);
+
+        Assert.Equal(3, map.PrerenderedLayerImages.Count);
+
+        // ground is visible and non-empty -> a full map-size image.
+        var groundImage = map.PrerenderedLayerImages[0];
+        Assert.NotNull(groundImage);
+        Assert.Equal(map.PixelWidth, groundImage.Width);
+        Assert.Equal(map.PixelHeight, groundImage.Height);
+
+        // decor is empty -> not prerendered.
+        Assert.Null(map.PrerenderedLayerImages[1]);
+
+        // hidden is invisible -> not prerendered.
+        Assert.Null(map.PrerenderedLayerImages[2]);
+
+        map.Dispose();
+    }
+
+    /// <summary>Verifies a viewport covering only a sub-region of the map draws only that region; pixels outside the viewport stay untouched.</summary>
+    [Fact]
+    public void Draw_WithSubregionViewport_CullsToViewport()
+    {
+        using var fixture = new TiledTestFixture(
+            2,
+            2,
+            new[] { new TileLayerSpec("ground", new uint[] { 1, 1, 1, 1 }) });
+        var map = TileMap.Load(fixture.MapPath);
+
+        // The viewport covers only the top-left tile (0,0,tile,tile) of the 96×96 map.
+        using var bitmap = new SKBitmap(map.PixelWidth, map.PixelHeight);
+        using (var canvas = new SKCanvas(bitmap))
+        {
+            canvas.Clear(SKColors.Transparent);
+            map.Draw(canvas, new SKRect(0, 0, map.TileWidth, map.TileHeight));
+        }
+
+        // Inside the viewport: the top-left tile is drawn (opaque).
+        Assert.NotEqual(0, bitmap.GetPixel(map.TileWidth / 2, map.TileHeight / 2).Alpha);
+
+        // Outside the viewport (the other three tiles): untouched (transparent).
+        Assert.Equal(0, bitmap.GetPixel(map.TileWidth + (map.TileWidth / 2), map.TileHeight / 2).Alpha);
+        Assert.Equal(0, bitmap.GetPixel(map.TileWidth / 2, map.TileHeight + (map.TileHeight / 2)).Alpha);
+        Assert.Equal(0, bitmap.GetPixel(map.TileWidth + (map.TileWidth / 2), map.TileHeight + (map.TileHeight / 2)).Alpha);
+
+        map.Dispose();
+    }
+
+    /// <summary>Verifies Dispose is idempotent and that Draw/DrawAbovePlayer are guarded (throw ObjectDisposedException) after disposal.</summary>
+    [Fact]
+    public void Dispose_IsIdempotent_AndRenderingIsGuarded()
+    {
+        using var fixture = new TiledTestFixture(
+            1,
+            1,
+            new[] { new TileLayerSpec("ground", new uint[] { 1 }) });
+        var map = TileMap.Load(fixture.MapPath);
+
+        map.Dispose();
+        map.Dispose(); // idempotent: the second call must not throw.
+
+        Assert.True(map.IsDisposed);
+
+        using var bitmap = new SKBitmap(map.PixelWidth, map.PixelHeight);
+        using var canvas = new SKCanvas(bitmap);
+        var viewport = new SKRect(0, 0, map.PixelWidth, map.PixelHeight);
+        Assert.Throws<ObjectDisposedException>(() => map.Draw(canvas, viewport));
+        Assert.Throws<ObjectDisposedException>(() => map.DrawAbovePlayer(canvas, viewport));
+    }
+
+    // ---------------------------------------------------------------------
     // TileSet factories (replacing the removed TileSetManager): standalone
     // tilesets are loaded directly, from the file system or from a stream
     // resolved over HTTP (the WebAssembly-compatible path).
