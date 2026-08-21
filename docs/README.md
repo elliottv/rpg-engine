@@ -104,13 +104,19 @@ foreach (var layer in engine.Map?.ObjectLayers ?? [])
 > set to `true` contains **solid** tiles that block the player (see `docs/Architecture.md`); the
 > map edge is solid (characters cannot leave the map), and tiles drawn from non-collision layers
 > never block.
+>
+> **Minimap:** `engine.RenderMinimap(canvas, zoomLevel)` draws the map's prerendered layers plus a
+> green dot for the player and a yellow dot for each NPC onto a separate surface. `zoomLevel`
+> `1.0` fits the whole map (the default); `> 1` zooms in around the player's dot (clamped to the
+> map edges, like the main camera); `0 < zoomLevel < 1` zooms out further. It does not clear its
+> canvas — the host owns the minimap background (see `docs/api/GameEngine.md`).
 
 ### Reading order
 
 | Page | What it covers |
 | --- | --- |
 | [Architecture](Architecture.md) | Composition model, camera, spritesheet layout, part ordering, rendering order and the Tiled read model. |
-| [api/GameEngine.md](api/GameEngine.md) | Root object: game loop, input (8 directions), asset loading (sync + async) and `SpriteSheetExists`, camera, black background / map centering, map ownership (`IDisposable`). |
+| [api/GameEngine.md](api/GameEngine.md) | Root object: game loop, input (8 directions), asset loading (sync + async) and `SpriteSheetExists`, camera, black background / map centering, map ownership (`IDisposable`), and the minimap (`RenderMinimap` — fit/zoom semantics, green player + yellow NPC dots). |
 | [api/Character.md](api/Character.md) / [api/Player.md](api/Player.md) | In-world state, sprite references and the speed-scaled walk-cycle animation (`AnimationCycleSpeed`). |
 | [api/SpriteSheet.md](api/SpriteSheet.md) | The 12×8 sheet layout (derived cell size, e.g. 576×384 or 936×864) and the **1..8 character index** semantics. |
 | [api/SpriteSheetManager.md](api/SpriteSheetManager.md) | Loading full/part sheets by path or stream, including the async `LoadAsync`/`LoadPartAsync` overloads. |

@@ -113,6 +113,60 @@ public class DocsExamplesTests
     }
 
     // ---------------------------------------------------------------------
+    // docs/api/GameEngine.md: the RenderMinimap example. The minimap renders
+    // the map's prerendered layers plus a green player dot and yellow NPC dots
+    // on a separate canvas; zoomLevel 1.0 fits the whole map, > 1 zooms in
+    // around the player's dot (clamped to the map edges).
+    // ---------------------------------------------------------------------
+    /// <summary>
+    /// Verifies the RenderMinimap doc example: the default fit draws the whole map and the dots
+    /// on a separate minimap canvas, and a zoomed render shows the region around the player's
+    /// dot with the green/yellow dots present.
+    /// </summary>
+    [Fact]
+    public void RenderMinimap_Example_DefaultFitAndZoom()
+    {
+        using var fixture = new TiledTestFixture(
+            4, 2,
+            new[] { new TileLayerSpec("ground", new uint[] { 1, 1, 1, 1, 1, 1, 1, 1 }) });
+        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        engine.Player.Position = new Position(0.5, 0.5);
+        engine.Characters.Add(new Character { Position = new Position(3.5, 1.5) });
+
+        // Default fit: the whole map is drawn into the minimap canvas, centered, aspect preserved;
+        // the unused margins stay blank (the host owns the minimap background).
+        using var minimap = new SKBitmap(240, 240);
+        using (var canvas = new SKCanvas(minimap))
+        {
+            canvas.Clear(SKColors.Transparent);
+            engine.RenderMinimap(canvas, zoomLevel: 1.0);
+        }
+
+        // A 4x2 (192x96) map on a 240x240 canvas: baseFit = min(240/192, 240/96) = 1.25, so the
+        // map is scaled to 240x120 and centered vertically (60 px margins); a map pixel and the
+        // dots are present at their scaled positions.
+        Assert.NotEqual(0, minimap.GetPixel(120, 90).Alpha);   // a tile pixel inside the map
+        Assert.Equal(SKColors.Green, minimap.GetPixel(30, 90));  // player dot (0.5,0.5) -> (30,90)
+        Assert.Equal(SKColors.Yellow, minimap.GetPixel(210, 150)); // NPC dot (3.5,1.5) -> (210,150)
+        Assert.Equal(0, minimap.GetPixel(120, 5).Alpha);       // top margin blank
+
+        // Zoomed in: the view is centered on the player's dot and clamps at the map edges.
+        using var zoomed = new SKBitmap(240, 240);
+        using (var canvas = new SKCanvas(zoomed))
+        {
+            canvas.Clear(SKColors.Transparent);
+            engine.RenderMinimap(canvas, zoomLevel: 4.0);
+        }
+
+        // scale = 1.25 * 4 = 5, visible region = 48x48 map px centered on the player at map px
+        // (24,24) and clamped to the top-left corner, so tile (0,0) fills the canvas and the
+        // player's green dot stays centered. (The NPC at (3.5,1.5) is outside this region and its
+        // dot is skipped.)
+        Assert.Equal(SKColors.Green, zoomed.GetPixel(120, 120));
+        Assert.Equal(SKColors.Red, zoomed.GetPixel(40, 40));
+    }
+
+    // ---------------------------------------------------------------------
     // docs/api/SpriteSheet.md: the character index 1..8 semantics.
     // ---------------------------------------------------------------------
     /// <summary>

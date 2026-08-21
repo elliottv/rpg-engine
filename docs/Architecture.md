@@ -310,3 +310,43 @@ below-player layers → NPCs → player → above-player layers
   the area around it stays black (`offset = max(0, (canvasSize − mapPixelSize) / (2*ts))` tiles),
   so a small map is never letterboxed with transparent or leftover pixels. When the map fills
   (or exceeds) the canvas, the behaviour is the classic follow-and-clamp camera.
+
+## Minimap
+
+`GameEngine.RenderMinimap(canvas, zoomLevel)` renders a **minimap** of the current map onto a
+canvas separate from the main game canvas. It is a pure renderer: it never mutates engine state,
+and it reuses the same prerendered layer images the main render path uses.
+
+- **What is drawn.** Every visible tile layer's prerendered `SKImage` — both the below- and the
+  above-player layers, in file order bottom → top, because a minimap shows the full picture (the
+  `above_player` distinction only matters when characters are drawn between the two passes). On
+  top of the map, a **green dot** marks the player and a **yellow dot** marks each NPC in
+  `Characters`, drawn as small filled circles at their world positions converted to map pixels
+  (`Position * tileWidth`) then scaled to the canvas.
+- **Zoom semantics.** `zoomLevel` is relative to the "fit the whole map" view:
+  - `1.0` (the default) fits the entire map into the canvas, centered, with the aspect ratio
+    preserved.
+  - `> 1` zooms in: the map is drawn larger than the canvas and the view pans around the
+    player's dot, clamped to the map edges — the same follow-and-clamp behaviour as the main
+    camera.
+  - `0 < zoomLevel < 1` zooms out further (the map is drawn smaller with larger blank margins).
+  - `<= 0` throws `ArgumentOutOfRangeException`.
+- **Layout.** The base fit scale is
+  `baseFit = min(canvasWidth / Map.PixelWidth, canvasHeight / Map.PixelHeight)` and the effective
+  scale is `scale = baseFit * zoomLevel`, so the aspect ratio is preserved by construction (one
+  scale for both axes). When the whole scaled map fits in the canvas it is centered and drawn
+  entirely; when zoomed in, the visible region is `(canvasWidth / scale, canvasHeight / scale)`
+  map pixels, centered on the player's position in map pixels and clamped inside
+  `(0, 0, PixelWidth, PixelHeight)`. Each layer is blitted with `canvas.DrawImage` where the
+  **source** rect is the visible region ∩ layer bounds (in map pixels) and the **dest** rect is
+  the same region scaled by `scale` and offset by the centering/pan origin. Dots outside the
+  visible region are skipped.
+- **Background.** The method does **not** clear the canvas and never draws into the unused area
+  — "unused space is left blank", and the host owns the minimap background (e.g. a translucent
+  panel behind the minimap).
+
+The minimap's camera is the same follow + clamp + center model as the main camera
+(`ComputeCameraOrigin`), expressed in map pixels instead of tiles: per axis,
+`origin = clamp(playerPx − visibleSize/2, 0, max(0, mapPixelSize − visibleSize)) −
+max(0, (canvasSize − scaledMapSize) / (2*scale))`. The first clamp keeps the view inside the map;
+the subtracted term centers the map when it is smaller than the visible region on that axis.

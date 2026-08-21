@@ -38,6 +38,12 @@ registry and the pressed-keys state, and exposes the game-loop entry points `Upd
   against the map's solid tiles (layers declaring the Tiled `is_collision` bool property): each
   axis is applied in turn and reverted when the player's sprite footprint would overlap a solid
   tile or leave the map (the map edge is solid). See [Architecture](../Architecture.md).
+- A minimap can be rendered on a separate surface with `RenderMinimap`: it draws the map's
+  prerendered tile layers, a green dot for the player and a yellow dot for each NPC.
+  `zoomLevel` `1.0` fits the whole map to the canvas; values above `1` zoom in and pan around
+  the player's dot (clamped to the map edges, like the main camera); values between `0` and `1`
+  zoom out further. The minimap does not clear its canvas and leaves the unused margins blank,
+  so the host owns the minimap background.
 - The engine is **`IDisposable`**: it owns the assigned map and disposes it when `Map` is
   replaced or when the engine itself is disposed (a `TileMap` is disposable because it
   prerenders each tile layer into an `SKImage` on load).
@@ -141,6 +147,51 @@ using (var canvas = new SKCanvas(bitmap))
 {
     canvas.Clear(SKColors.Transparent);
     engine.Render(canvas, dt: 1.0 / 60);
+}
+```
+
+### `void RenderMinimap(SKCanvas canvas, double zoomLevel)`
+
+Draws a **minimap** of the current map onto `canvas`, a surface separate from the main game
+canvas. It renders the map's prerendered tile layers (both below- and above-player layers, in
+file order bottom → top — a minimap shows the full picture), a **green dot** for the player and a
+**yellow dot** for each NPC in `Characters`. The canvas size is read from the canvas clip bounds,
+the same convention as `Render`.
+
+**Zoom semantics** (`zoomLevel`, relative to the "fit the whole map" view):
+
+- `1.0` (the default) **fits the entire map** into the canvas, centered, with the aspect ratio
+  preserved and the unused margins left blank.
+- `> 1` **zooms in**: the map is drawn larger than the canvas and the view pans around the
+  player's dot, clamped to the map edges (like the main camera).
+- `0 < zoomLevel < 1` zooms out further.
+- `<= 0` throws `ArgumentOutOfRangeException`.
+
+The base fit scale is `min(canvasWidth / Map.PixelWidth, canvasHeight / Map.PixelHeight)` and the
+effective scale is `baseFit * zoomLevel`. When the whole scaled map fits, it is centered; when
+zoomed in, the visible region (`canvasWidth / scale` × `canvasHeight / scale` map pixels) is
+centered on the player's position in map pixels (`Player.Position * ts`) and clamped inside the
+map bounds. With no map it is a **no-op** (the canvas is left untouched). The method does **not**
+clear the canvas and never draws into the unused area — the host owns the minimap background — and
+it is a pure render (it never mutates engine state).
+
+```csharp
+// Default fit: the whole map is drawn into the minimap canvas, centered, aspect preserved; the
+// unused margins stay blank (the host owns the minimap background).
+using var minimap = new SKBitmap(240, 240);
+using (var canvas = new SKCanvas(minimap))
+{
+    canvas.Clear(SKColors.Transparent);
+    engine.RenderMinimap(canvas, zoomLevel: 1.0);
+}
+
+// Zoomed in: the view is centered on the player's green dot and clamps at the map edges (like
+// the main camera), so only the region around the player is visible.
+using var zoomed = new SKBitmap(240, 240);
+using (var canvas = new SKCanvas(zoomed))
+{
+    canvas.Clear(SKColors.Transparent);
+    engine.RenderMinimap(canvas, zoomLevel: 4.0);
 }
 ```
 

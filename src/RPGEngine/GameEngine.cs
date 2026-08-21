@@ -71,6 +71,16 @@ namespace RPGEngine;
 /// its layers reference (they are created when the map is loaded). Standalone tilesets can be
 /// loaded directly through the <c>TileSet.Load</c> factories in <c>RPGEngine.Tiled</c>.
 /// </para>
+/// <para>
+/// A minimap can be rendered on a separate surface with <see cref="RenderMinimap"/>: it draws
+/// the map's prerendered tile layers (both below- and above-player layers, in file order
+/// bottom → top, so it shows the full picture), a green dot for the player and a yellow dot
+/// for each NPC in <see cref="Characters"/>. A <c>zoomLevel</c> of <c>1.0</c> fits the whole
+/// map into the minimap canvas; values above <c>1</c> zoom in and the view pans around the
+/// player's dot, clamped to the map edges like the main camera; values between <c>0</c> and
+/// <c>1</c> zoom out further. The minimap does not clear its canvas and leaves the unused
+/// margins blank, so the host owns the minimap background.
+/// </para>
 /// </remarks>
 public sealed class GameEngine : IDisposable
 {
@@ -84,6 +94,10 @@ public sealed class GameEngine : IDisposable
     // further API churn.
     private double _lastCanvasWidth;
     private double _lastCanvasHeight;
+
+    // The radius in canvas pixels of each minimap dot (the green player dot and the yellow NPC
+    // dots). Dots are small markers on top of the minimap map, not full sprites.
+    private const float MinimapDotRadius = 3f;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="GameEngine"/> class with default state: a
@@ -279,6 +293,145 @@ public sealed class GameEngine : IDisposable
         finally
         {
             canvas.Restore();
+        }
+    }
+
+    /// <summary>
+    /// Draws a minimap of the current map onto <paramref name="canvas"/>, a surface separate from
+    /// the main game canvas. It renders the map's prerendered tile layers (both below- and
+    /// above-player layers, in file order bottom → top — a minimap shows the
+    /// full picture), a green dot for the player and a yellow dot for each NPC in
+    /// <see cref="Characters"/>. The canvas size is read from the canvas clip bounds, the same
+    /// convention as <see cref="Render"/>.
+    /// </summary>
+    /// <param name="canvas">The minimap surface to draw onto (separate from the main game canvas).</param>
+    /// <param name="zoomLevel">
+    /// The zoom relative to the &quot;fit the whole map&quot; view: <c>1.0</c> (the default
+    /// callers pass when no zoom is wanted) fits the entire map into the canvas; a value
+    /// greater than <c>1</c> zooms in (the map is drawn larger than the canvas and the view pans
+    /// around the player's dot like the main camera, clamped to the map edges); a value between
+    /// <c>0</c> and <c>1</c> zooms out further. A value of zero or less throws
+    /// <see cref="ArgumentOutOfRangeException"/>.
+    /// </param>
+    /// <exception cref="ArgumentNullException"><paramref name="canvas"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="zoomLevel"/> is zero or negative.</exception>
+    /// <remarks>
+    /// <para>
+    /// When <see cref="Map"/> is <see langword="null"/> this method is a no-op: nothing is drawn
+    /// and the canvas is left untouched.
+    /// </para>
+    /// <para>
+    /// Layout: the base fit scale is
+    /// <c>min(canvasWidth / Map.PixelWidth, canvasHeight / Map.PixelHeight)</c> and the effective
+    /// scale is <c>baseFit * zoomLevel</c>, so the aspect ratio is preserved by construction.
+    /// When the whole (scaled) map fits in the canvas it is centered and drawn entirely; when
+    /// zoomed in, the visible region is <c>(canvasWidth / scale, canvasHeight / scale)</c> map
+    /// pixels, centered on the player's position in map pixels
+    /// (<c>Player.Position * ts</c>) and clamped so it stays inside the map bounds (edge-clamped
+    /// like the main camera).
+    /// </para>
+    /// <para>
+    /// The method does not clear the canvas and does not draw into the unused margins —
+    /// &quot;unused space is left blank&quot; and the host owns the minimap background. It is a
+    /// pure render: it never mutates engine state.
+    /// </para>
+    /// </remarks>
+    public void RenderMinimap(SKCanvas canvas, double zoomLevel)
+    {
+        ArgumentNullException.ThrowIfNull(canvas);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(zoomLevel, 0);
+
+        if (Map is null)
+        {
+            // No map: draw nothing and leave the canvas untouched.
+            return;
+        }
+
+        var bounds = canvas.LocalClipBounds;
+        var canvasWidth = Math.Max(0, bounds.Width);
+        var canvasHeight = Math.Max(0, bounds.Height);
+        if (canvasWidth <= 0 || canvasHeight <= 0)
+        {
+            // A zero-size minimap surface has nothing to draw onto.
+            return;
+        }
+
+        var ts = Map.TileWidth;
+        var mapWidth = Map.PixelWidth;
+        var mapHeight = Map.PixelHeight;
+
+        // The base fit scale fits the whole map into the canvas; the effective scale applies the
+        // zoom. Aspect ratio is preserved by construction (one scale for both axes).
+        var baseFit = Math.Min(canvasWidth / mapWidth, canvasHeight / mapHeight);
+        var scale = baseFit * zoomLevel;
+
+        var scaledWidth = mapWidth * scale;
+        var scaledHeight = mapHeight * scale;
+
+        // The visible region size, in map pixels, that maps to the full canvas.
+        var visibleWidth = canvasWidth / scale;
+        var visibleHeight = canvasHeight / scale;
+
+        // Positions are in tiles, so dots (and the view centre) are scaled by the tile size.
+        var playerPixelX = Player.Position.X * ts;
+        var playerPixelY = Player.Position.Y * ts;
+
+        // The camera origin in map pixels, mirroring the main camera (see ComputeCameraOrigin):
+        // the desired origin centres the player in the visible region, is clamped so the region
+        // stays inside the map, and when the map is smaller than the visible region on an axis
+        // the origin is shifted by half the difference so the map is centered on that axis (the
+        // leftover canvas is left blank).
+        var maxOriginX = Math.Max(0, mapWidth - visibleWidth);
+        var maxOriginY = Math.Max(0, mapHeight - visibleHeight);
+        var centerOffsetX = Math.Max(0, (canvasWidth - scaledWidth) / (2.0 * scale));
+        var centerOffsetY = Math.Max(0, (canvasHeight - scaledHeight) / (2.0 * scale));
+        var originX = Math.Clamp(playerPixelX - (visibleWidth / 2.0), 0, maxOriginX) - centerOffsetX;
+        var originY = Math.Clamp(playerPixelY - (visibleHeight / 2.0), 0, maxOriginY) - centerOffsetY;
+
+        // Draw every prerendered layer image in file order (bottom → top), both below- and
+        // above-player layers, so the minimap shows the full picture. For each layer the source
+        // rect is the visible region intersected with the layer bounds (in map pixels) and the
+        // destination rect is that region mapped to the canvas by the effective scale and the
+        // pan/center origin.
+        using var layerPaint = new SKPaint { IsAntialias = false };
+        for (var layerIndex = 0; layerIndex < Map.Layers.Count; layerIndex++)
+        {
+            var image = Map.PrerenderedLayerImages[layerIndex];
+            if (image is null)
+            {
+                continue;
+            }
+
+            var sourceLeft = Math.Max(originX, 0);
+            var sourceTop = Math.Max(originY, 0);
+            var sourceRight = Math.Min(originX + visibleWidth, mapWidth);
+            var sourceBottom = Math.Min(originY + visibleHeight, mapHeight);
+            if (sourceLeft >= sourceRight || sourceTop >= sourceBottom)
+            {
+                continue;
+            }
+
+            var source = new SKRect(
+                (float)sourceLeft,
+                (float)sourceTop,
+                (float)sourceRight,
+                (float)sourceBottom);
+            var destination = new SKRect(
+                (float)((sourceLeft - originX) * scale),
+                (float)((sourceTop - originY) * scale),
+                (float)((sourceRight - originX) * scale),
+                (float)((sourceBottom - originY) * scale));
+
+            canvas.DrawImage(image, source, destination, layerPaint);
+        }
+
+        // The player dot (green) and each NPC dot (yellow), drawn as small filled circles at
+        // their world positions converted to map pixels then scaled to the canvas. Dots whose
+        // centre lies outside the visible region are skipped.
+        DrawMinimapDot(canvas, playerPixelX, playerPixelY, originX, originY, scale, visibleWidth, visibleHeight, SKColors.Green);
+        foreach (var character in _characters)
+        {
+            DrawMinimapDot(canvas, character.Position.X * ts, character.Position.Y * ts, originX, originY, scale, visibleWidth, visibleHeight, SKColors.Yellow);
         }
     }
 
@@ -517,6 +670,46 @@ public sealed class GameEngine : IDisposable
         return new Position(
             Math.Clamp(desiredX, 0, maxX) - offsetX,
             Math.Clamp(desiredY, 0, maxY) - offsetY);
+    }
+
+    /// <summary>
+    /// Draws a single minimap dot as a small filled circle at the given map-pixel position,
+    /// converted to canvas coordinates with the minimap's scale and pan/center origin. A dot
+    /// whose centre lies outside the visible region (in map pixels) is skipped — it would
+    /// be off-canvas, and "dots outside the visible region are skipped".
+    /// </summary>
+    /// <param name="canvas">The minimap canvas to draw onto.</param>
+    /// <param name="mapPixelX">The dot's X position in map pixels.</param>
+    /// <param name="mapPixelY">The dot's Y position in map pixels.</param>
+    /// <param name="originX">The minimap camera origin X in map pixels (the visible region's left).</param>
+    /// <param name="originY">The minimap camera origin Y in map pixels (the visible region's top).</param>
+    /// <param name="scale">The effective minimap scale (canvas pixels per map pixel).</param>
+    /// <param name="visibleWidth">The visible region width in map pixels.</param>
+    /// <param name="visibleHeight">The visible region height in map pixels.</param>
+    /// <param name="color">The dot color (green for the player, yellow for NPCs).</param>
+    private void DrawMinimapDot(
+        SKCanvas canvas,
+        double mapPixelX,
+        double mapPixelY,
+        double originX,
+        double originY,
+        double scale,
+        double visibleWidth,
+        double visibleHeight,
+        SKColor color)
+    {
+        if (mapPixelX < originX || mapPixelX >= originX + visibleWidth ||
+            mapPixelY < originY || mapPixelY >= originY + visibleHeight)
+        {
+            return;
+        }
+
+        using var paint = new SKPaint { Color = color, IsAntialias = false };
+        canvas.DrawCircle(
+            (float)((mapPixelX - originX) * scale),
+            (float)((mapPixelY - originY) * scale),
+            MinimapDotRadius,
+            paint);
     }
 
     /// <summary>
