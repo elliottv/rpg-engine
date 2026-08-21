@@ -276,6 +276,54 @@ orthogonally adjacent cells are walkable. The heuristic is the **octile distance
 optimal. The open set is a `PriorityQueue` keyed by `f = g + h`, and a tile is re-opened only when
 a strictly better `g` is found.
 
+
+## Click-to-move and auto-walk
+
+Click-to-move wires the three pieces above — the surface↔world camera, `TileMap.IsSolid` and
+`AStarPathfinder` — into one feature: the host passes a click to `GameEngine.Click`, and the
+engine walks the player to the clicked tile.
+
+**The click pipeline** (`GameEngine.Click(surfaceX, surfaceY)`):
+
+1. The host reports a click on the **main** game canvas in host-surface (canvas) pixels, the
+   same coordinate space as `SurfaceToWorld`. The engine converts it with the canvas size
+   recorded by the most recent `Render` (unknown size — no render yet — ⇒ the click is
+   ignored). Without a map the click cancels any in-progress walk and does nothing else.
+2. The target tile is `floor(world)` of the converted position.
+3. If the target tile is solid (`TileMap.IsSolid`) the current auto-walk is **cancelled** and the
+   player does not move.
+4. Otherwise the engine computes
+   `AStarPathfinder.FindPath(playerTile, targetTile, (x, y) => !Map.IsSolid(x, y), Map.Width,
+   Map.Height)`. An empty path (start == goal, or the target is unreachable) also cancels the
+   walk without moving; a non-empty path **replaces** the current auto-walk path, even mid-walk.
+
+**Auto-walk** (inside `GameEngine.Update`): the engine keeps an internal queue of target tile
+waypoints (the A* path). When there is **no manual key movement** this frame and the path is
+non-empty, it moves the player toward the center of the next waypoint tile
+(`(tileX + 0.5, tileY + 0.5)`) at `BaseSpeed` (tile units). When the distance to the waypoint
+center is ≤ the frame's step, the player snaps to the center, the waypoint is popped, and the
+walk continues; when the queue empties, the engine calls `Player.Stop()`. The path is computed
+over walkable tiles (no corner cutting), so the direct movement toward each waypoint center never
+crosses a solid tile and no per-frame collision resolution is needed.
+
+**Input precedence during auto-walk**:
+
+- A **key press** (`Input(key, true)`) cancels the auto-walk path; a key **release** does not.
+- While a bound movement key is held, manual movement takes priority and the auto-walk does not
+  advance (the press has already cleared the path).
+- A `Click` always **replaces** the path (even mid-walk); an invalid click (solid tile or no
+  path) **cancels** it.
+
+**Movement-state events**: `Player` exposes `OnMove` (`EventHandler<PlayerMoveEventArgs>`), fired
+on every movement-state transition — starts moving (idle → moving), stops moving (moving →
+idle, via `Player.Stop()`), and changes direction while moving. It carries
+`PlayerMoveEventArgs.IsMoving` and the current facing `Direction`. The engine raises it for both
+manual key movement and auto-walk through `Player.ReportMovement` (the internal bridge used for
+collision-resolved and auto-walk movement, which cannot go through `Player.Move` because that
+method applies the whole displacement at once). `Player.Stop()` raises it with `IsMoving = false`
+only when the player was moving; the engine calls it when there is no input and no auto-walk
+target.
+
 ## Rendering
 
 `GameEngine.Render(canvas, dt)` draws a single frame in a fixed order:
