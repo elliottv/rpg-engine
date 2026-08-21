@@ -23,6 +23,22 @@ namespace RPGEngine;
 /// throws <see cref="InvalidOperationException"/> at draw time. A <see cref="SpriteSheetRef"/>
 /// whose <see cref="SpriteSheetRef.CharacterIndex"/> is outside 1..8 is rejected when used.
 /// </para>
+/// <para>
+/// A character can be driven in two ways: by the engine's key input (the player, whose movement
+/// the engine resolves in <c>GameEngine.Update</c>) or by this class's autonomous state machine
+/// (<see cref="StartMoving"/>/<see cref="StopMoving"/> and <see cref="IsMoving"/>, suitable
+/// for any character, e.g. NPCs). While <see cref="IsMoving"/> is <see langword="true"/>, every
+/// <see cref="Update(double)"/> moves the character towards its current <see cref="Direction"/>
+/// by <c>BaseSpeed * dt</c> tiles. Autonomous movement is <em>not</em> collision-resolved by the
+/// engine (collision resolution applies to the player only), so hosts that move NPCs with
+/// <see cref="StartMoving"/> are responsible for keeping them in bounds themselves.
+/// </para>
+/// <para>
+/// Do not combine <see cref="StartMoving"/> on the player's character with the engine's
+/// key-driven player movement: <c>GameEngine.Update</c> calls <c>Player.Character.Update(dt)</c>
+/// each frame, so both displacements would add up. <see cref="StartMoving"/>/<see cref="StopMoving"/>
+/// target characters the host drives itself (NPCs in <c>GameEngine.Characters</c>).
+/// </para>
 /// </remarks>
 public sealed class Character
 {
@@ -54,6 +70,20 @@ public sealed class Character
 
     /// <summary>Gets or sets the movement speed of the character in tiles per second.</summary>
     public double BaseSpeed { get; set; }
+
+    /// <summary>
+    /// Gets whether the character is currently moving autonomously (started with
+    /// <see cref="StartMoving"/> and not yet stopped with <see cref="StopMoving"/>).
+    /// </summary>
+    /// <remarks>
+    /// While <see langword="true"/>, every <see cref="Update(double)"/> moves the character
+    /// towards its current <see cref="Direction"/> by <c>BaseSpeed * dt</c> tiles. This is
+    /// independent of the engine's key-driven player movement: it targets characters the host
+    /// drives itself (e.g. NPCs in <c>GameEngine.Characters</c>). Do not combine it with the
+    /// engine's key-driven player movement on the player's character, or the two displacements
+    /// would add up.
+    /// </remarks>
+    public bool IsMoving { get; private set; }
 
     /// <summary>
     /// Gets or sets the movement speed (tiles/s) at which the walk cycle completes exactly one full
@@ -121,17 +151,57 @@ public sealed class Character
     public void Move(double speedFactor = 1, double dt = 1) => Move(Direction, speedFactor, dt);
 
     /// <summary>
-    /// Advances the walk-cycle animation based on elapsed time and movement speed. If the
-    /// character moved since the previous update, the animation accumulator is advanced by
-    /// <paramref name="dt"/> and the number of whole frames due (scaled by
-    /// <see cref="BaseSpeed"/> and <see cref="AnimationCycleSpeed"/>) are stepped, keeping the
-    /// remainder for the next update. If the character did not move, the animation snaps back to
-    /// the standing frame and the accumulator is reset. Called by the engine's update loop once
-    /// per frame.
+    /// Starts autonomous movement: the character faces <paramref name="direction"/> and moves
+    /// towards it on every <see cref="Update(double)"/> until <see cref="StopMoving"/> is
+    /// called.
+    /// </summary>
+    /// <param name="direction">The direction to face and move towards.</param>
+    /// <remarks>
+    /// The character starts moving on the <em>next</em> <see cref="Update(double)"/>: this
+    /// method only sets the facing direction and the <see cref="IsMoving"/> state and never
+    /// changes <see cref="Position"/> itself. The engine's update loop calls
+    /// <see cref="Update(double)"/> on every character each frame, so a started character moves
+    /// automatically. Autonomous movement is not collision-resolved by the engine.
+    /// </remarks>
+    public void StartMoving(Direction direction)
+    {
+        Direction = direction;
+        IsMoving = true;
+    }
+
+    /// <summary>
+    /// Stops autonomous movement started with <see cref="StartMoving"/>. The character stays
+    /// where it is and the walk-cycle animation snaps back to the standing frame on the next
+    /// <see cref="Update(double)"/>.
+    /// </summary>
+    public void StopMoving() => IsMoving = false;
+
+    /// <summary>
+    /// Advances the simulation of the character by <paramref name="dt"/> seconds. When
+    /// <see cref="IsMoving"/> is <see langword="true"/> the character first moves towards its
+    /// current <see cref="Direction"/> by <c>BaseSpeed * dt</c> tiles; the walk-cycle animation
+    /// is then advanced based on elapsed time and movement speed. If the character moved since
+    /// the previous update, the animation accumulator is advanced by <paramref name="dt"/> and
+    /// the number of whole frames due (scaled by <see cref="BaseSpeed"/> and
+    /// <see cref="AnimationCycleSpeed"/>) are stepped, keeping the remainder for the next
+    /// update. If the character did not move, the animation snaps back to the standing frame and
+    /// the accumulator is reset. Called by the engine's update loop once per frame.
     /// </summary>
     /// <param name="dt">The elapsed time in seconds.</param>
+    /// <remarks>
+    /// The existing animation logic detects movement via <c>Position != _lastUpdatePosition</c>,
+    /// so the walk cycle advances while the character is moving (whether driven by
+    /// <see cref="StartMoving"/> or by the engine's key input) and snaps to the standing frame
+    /// once it stops. Autonomous movement applied here is <em>not</em> collision-resolved by the
+    /// engine (collision resolution applies to the player only).
+    /// </remarks>
     internal void Update(double dt)
     {
+        if (IsMoving)
+        {
+            Position += Direction.Delta() * (BaseSpeed * dt);
+        }
+
         var moved = Position != _lastUpdatePosition;
         _lastUpdatePosition = Position;
 
