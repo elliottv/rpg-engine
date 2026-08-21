@@ -186,6 +186,153 @@ public class CharacterTests
     }
 
     // ---------------------------------------------------------------------
+    // Acceptance (story 49): StartMoving / StopMoving / IsMoving autonomous
+    // movement. A started character moves towards its direction on every
+    // Update (exactly like the player while a movement key is held) until it
+    // is stopped; the walk cycle advances while moving and snaps back to the
+    // standing frame once stopped.
+    // ---------------------------------------------------------------------
+    /// <summary>Verifies StartMoving sets the Direction and IsMoving but does not move the position until Update is called.</summary>
+    [Fact]
+    public void StartMoving_SetsDirectionAndIsMoving_DoesNotMoveUntilUpdate()
+    {
+        var character = new Character
+        {
+            Position = new Position(10, 20),
+            Direction = Direction.Down,
+            BaseSpeed = 2,
+        };
+
+        character.StartMoving(Direction.Right);
+
+        // StartMoving only faces the character and flags it as moving; the position is
+        // untouched until the next Update applies the autonomous displacement.
+        Assert.Equal(Direction.Right, character.Direction);
+        Assert.True(character.IsMoving);
+        Assert.Equal(new Position(10, 20), character.Position);
+
+        character.Update(dt: 1);
+
+        Assert.True(character.IsMoving);
+        Assert.NotEqual(new Position(10, 20), character.Position);
+    }
+
+    /// <summary>Verifies StartMoving(Right) then Update(1) at BaseSpeed 2 moves exactly 2 tiles right, and a further Update(0.5) moves 1 more.</summary>
+    [Fact]
+    public void StartMoving_ThenUpdate_MovesExactlyBaseSpeedTimesDt()
+    {
+        var character = new Character { BaseSpeed = 2, Position = new Position(0, 0) };
+
+        character.StartMoving(Direction.Right);
+        character.Update(dt: 1); // 2 tiles right
+
+        Assert.Equal(new Position(2, 0), character.Position);
+
+        character.Update(dt: 0.5); // 1 more tile right
+
+        Assert.Equal(new Position(3, 0), character.Position);
+        Assert.Equal(Direction.Right, character.Direction);
+        Assert.True(character.IsMoving);
+    }
+
+    /// <summary>Verifies StopMoving sets IsMoving to false and subsequent Update calls no longer move the position.</summary>
+    [Fact]
+    public void StopMoving_SetsIsMovingFalse_AndNoFurtherMovement()
+    {
+        var character = new Character { BaseSpeed = 2, Position = new Position(0, 0) };
+
+        character.StartMoving(Direction.Right);
+        character.Update(dt: 1);
+        Assert.Equal(new Position(2, 0), character.Position);
+
+        character.StopMoving();
+        Assert.False(character.IsMoving);
+
+        // The character stays where it is for as long as it is not started again.
+        character.Update(dt: 1);
+        Assert.Equal(new Position(2, 0), character.Position);
+        character.Update(dt: 1);
+        Assert.Equal(new Position(2, 0), character.Position);
+    }
+
+    /// <summary>Verifies changing course: StartMoving(Down) then StartMoving(Left) moves left from the new position and faces left.</summary>
+    [Fact]
+    public void StartMoving_ChangeCourse_MovesFromNewPositionInNewDirection()
+    {
+        var character = new Character { BaseSpeed = 2, Position = new Position(0, 0) };
+
+        character.StartMoving(Direction.Down);
+        character.Update(dt: 1);
+        Assert.Equal(new Position(0, 2), character.Position);
+
+        character.StartMoving(Direction.Left);
+        character.Update(dt: 1);
+
+        // Moved left from (0, 2): 2 tiles left, Y unchanged.
+        Assert.Equal(new Position(-2, 2), character.Position);
+        Assert.Equal(Direction.Left, character.Direction);
+        Assert.True(character.IsMoving);
+    }
+
+    /// <summary>Verifies the walk cycle advances while moving and snaps to the standing frame after StopMoving + Update.</summary>
+    [Fact]
+    public void Update_WhileMoving_AdvancesWalkCycle_AndSnapsToStandingFrameOnStop()
+    {
+        var character = new Character { BaseSpeed = 2, Position = new Position(0, 0) };
+
+        character.StartMoving(Direction.Right);
+        character.Update(dt: 0.25); // 0.5 tiles moved, one 0.25 s frame due
+
+        Assert.Equal(0, character.AnimationFrame);
+
+        character.StopMoving();
+        character.Update(dt: 1);
+
+        Assert.Equal(StandingFrame, character.AnimationFrame);
+    }
+
+    /// <summary>Verifies the BaseSpeed 0 defensive case: StartMoving + Update does not move and the animation stays on the standing frame.</summary>
+    [Fact]
+    public void StartMoving_WithZeroBaseSpeed_DoesNotMoveAndStaysOnStandingFrame()
+    {
+        var character = new Character { BaseSpeed = 0, Position = new Position(4, 4) };
+
+        character.StartMoving(Direction.Right);
+        character.Update(dt: 1);
+
+        Assert.Equal(new Position(4, 4), character.Position);
+        Assert.Equal(StandingFrame, character.AnimationFrame);
+        Assert.True(character.IsMoving);
+    }
+
+    /// <summary>Verifies a fresh character's Update never moves it and StartMoving/StopMoving are idempotent (no throw, IsMoving stays correct).</summary>
+    [Fact]
+    public void FreshCharacter_UpdateNeverMoves_AndStartStopAreIdempotent()
+    {
+        var character = new Character { BaseSpeed = 2, Position = new Position(5, 5) };
+
+        // A fresh character (IsMoving false) never moves on Update.
+        Assert.False(character.IsMoving);
+        character.Update(dt: 1);
+        Assert.Equal(new Position(5, 5), character.Position);
+
+        // StartMoving is idempotent: calling it again while already moving just re-faces.
+        character.StartMoving(Direction.Right);
+        Assert.True(character.IsMoving);
+        Assert.Equal(Direction.Right, character.Direction);
+
+        character.StartMoving(Direction.Left);
+        Assert.True(character.IsMoving);
+        Assert.Equal(Direction.Left, character.Direction);
+
+        // StopMoving is idempotent: calling it twice keeps IsMoving false and never throws.
+        character.StopMoving();
+        Assert.False(character.IsMoving);
+        character.StopMoving();
+        Assert.False(character.IsMoving);
+    }
+
+    // ---------------------------------------------------------------------
     // Acceptance 5a: a single full sheet renders the expected cell for the
     // configured CharacterIndex.
     // ---------------------------------------------------------------------
