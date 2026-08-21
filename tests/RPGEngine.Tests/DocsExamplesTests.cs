@@ -180,9 +180,9 @@ public class DocsExamplesTests
     {
         var character = new Character
         {
-            Position = new Position(96, 96),
+            Position = new Position(2, 2),
             Direction = Direction.Down,
-            BaseSpeed = 96,
+            BaseSpeed = 2,
         };
 
         character.SpriteSheets.Add(new SpriteSheetRef("hero", CharacterIndex: 1));
@@ -212,16 +212,16 @@ public class DocsExamplesTests
     [Fact]
     public void Character_AnimationCycleSpeed_TunesWalkCycle()
     {
-        // At BaseSpeed == AnimationCycleSpeed == 96 the 4-frame walk cycle (0 -> 1 -> 2 -> 1)
-        // completes once per second: secondsPerFrame = 96 / (96 * 4) = 0.25 s/frame.
-        var character = new Character { BaseSpeed = 96, AnimationCycleSpeed = 96 };
+        // At BaseSpeed == AnimationCycleSpeed == 2 (tiles/s) the 4-frame walk cycle
+        // (0 -> 1 -> 2 -> 1) completes once per second: secondsPerFrame = 2 / (2 * 4) = 0.25 s/frame.
+        var character = new Character { BaseSpeed = 2, AnimationCycleSpeed = 2 };
         character.Move(Direction.Down, speedFactor: 1, dt: 0.25);
         character.Update(dt: 0.25);
         Assert.Equal(0, character.AnimationFrame); // advanced one frame step (1 -> 0)
 
         // Doubling AnimationCycleSpeed (the reference speed) halves the cycle rate: the same
         // 0.25 s only accumulates half a frame, so the standing frame (1) is kept.
-        var slow = new Character { BaseSpeed = 96, AnimationCycleSpeed = 192 };
+        var slow = new Character { BaseSpeed = 2, AnimationCycleSpeed = 4 };
         slow.Move(Direction.Down, speedFactor: 1, dt: 0.25);
         slow.Update(dt: 0.25);
         Assert.Equal(1, slow.AnimationFrame); // still the standing frame
@@ -306,8 +306,11 @@ public class DocsExamplesTests
         var moved = position + offset;
         Assert.Equal(new Position(13, 16), moved);
 
-        var tile = moved.ToTile(tileSize: 48);
-        Assert.Equal((0, 0), tile);
+        // Positions are in tiles: ToTile() floors to the containing cell, ToPixels(ts)
+        // converts to pixels at the given tile size.
+        var cell = moved.ToTile();
+        Assert.Equal((13, 16), cell);
+        Assert.Equal(new Position(624, 768), moved.ToPixels(tileSize: 48));
 
         var distance = position.DistanceTo(new Position(13, 16));
         Assert.Equal(5, distance, precision: 10);
