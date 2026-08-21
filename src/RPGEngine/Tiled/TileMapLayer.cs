@@ -37,9 +37,20 @@ public sealed class TileMapLayer
     public bool AbovePlayer { get; }
 
     /// <summary>
+    /// Gets whether the layer is a <em>collision</em> layer: its tiles are solid and block
+    /// character movement (see <see cref="TileMap.IsSolid"/>). A layer declares this by setting
+    /// a custom boolean property named <c>is_collision</c> to <see langword="true"/> (Tiled
+    /// convention, mirroring <c>above_player</c>). When the property is absent, is not a
+    /// boolean, or is <see langword="false"/>, this is <see langword="false"/> and the layer
+    /// never blocks movement.
+    /// </summary>
+    public bool IsCollision { get; }
+
+    /// <summary>
     /// Gets the layer's custom properties (from the layer's <c>&lt;properties&gt;</c> block), in
-    /// file order. The Tiled <c>above_player</c> flag, when present, appears here too; the flag
-    /// is additionally surfaced as <see cref="AbovePlayer"/>.
+    /// file order. The Tiled <c>above_player</c> and <c>is_collision</c> flags, when present,
+    /// appear here too; the flags are additionally surfaced as <see cref="AbovePlayer"/> and
+    /// <see cref="IsCollision"/>.
     /// </summary>
     public IReadOnlyList<MapProperty> Properties { get; }
 
@@ -63,6 +74,7 @@ public sealed class TileMapLayer
         int width,
         int height,
         bool abovePlayer,
+        bool isCollision,
         IReadOnlyList<MapProperty> properties)
     {
         Name = name;
@@ -73,6 +85,7 @@ public sealed class TileMapLayer
         Width = width;
         Height = height;
         AbovePlayer = abovePlayer;
+        IsCollision = isCollision;
         Properties = properties;
     }
 
@@ -88,8 +101,9 @@ public sealed class TileMapLayer
     /// <summary>
     /// Builds a <see cref="TileMapLayer"/> from a DotTiled <see cref="TileLayer"/>. The raw GIDs
     /// (which may carry flip bits) are split into masked tile IDs and <see cref="TileFlags"/>,
-    /// and the layer's custom properties are consulted for the <c>above_player</c> flag and
-    /// exposed through <see cref="Properties"/>.
+    /// and the layer's custom properties are consulted for the <c>above_player</c> and
+    /// <c>is_collision</c> flags, exposed through <see cref="Properties"/> and the dedicated
+    /// <see cref="AbovePlayer"/>/<see cref="IsCollision"/> members.
     /// </summary>
     internal static TileMapLayer FromDotTiled(TileLayer layer)
     {
@@ -131,6 +145,8 @@ public sealed class TileMapLayer
         var properties = layer.Properties.Select(MapProperty.Create).ToArray();
         var abovePlayer = layer.Properties.Any(p =>
             p.Name == "above_player" && p is BoolProperty boolProperty && boolProperty.Value);
+        var isCollision = layer.Properties.Any(p =>
+            p.Name == "is_collision" && p is BoolProperty boolProperty && boolProperty.Value);
 
         return new TileMapLayer(
             layer.Name,
@@ -141,6 +157,7 @@ public sealed class TileMapLayer
             width,
             height,
             abovePlayer,
+            isCollision,
             properties);
     }
 

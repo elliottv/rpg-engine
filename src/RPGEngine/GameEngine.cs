@@ -55,6 +55,13 @@ namespace RPGEngine;
 /// animation snaps back to the standing frame.
 /// </para>
 /// <para>
+/// When a map is set, the player's displacement is resolved with <em>axis-separated
+/// movement</em> against the map's solid tiles: each axis is applied in turn and reverted when
+/// the player's sprite footprint would overlap a solid tile or leave the map (the map edge is
+/// solid). This blocks the player at solid tiles, keeps wall-sliding natural and prevents
+/// diagonal corner-cutting. See <c>docs/Architecture.md</c> for the collision model.
+/// </para>
+/// <para>
 /// The engine is <see cref="IDisposable"/>: it owns the assigned map and disposes it when
 /// <see cref="Map"/> is replaced or when the engine itself is disposed (a <see cref="TileMap"/>
 /// is disposable because it prerenders each tile layer into an <see cref="SKImage"/> on load).
@@ -171,8 +178,9 @@ public sealed class GameEngine : IDisposable
 
     /// <summary>
     /// Advances the simulation by <paramref name="dt"/> seconds: resolves the movement direction
-    /// from the currently pressed keys, moves the player, clamps it inside the map, and advances
-    /// the walk-cycle animation of the player and every NPC.
+    /// from the currently pressed keys, moves the player (resolving collisions against the map's
+    /// solid tiles with axis-separated movement when a map is set), clamps it inside the map, and
+    /// advances the walk-cycle animation of the player and every NPC.
     /// </summary>
     /// <param name="dt">The elapsed time in seconds since the previous frame.</param>
     public void Update(double dt)
@@ -180,7 +188,7 @@ public sealed class GameEngine : IDisposable
         var direction = Config.GetMovementDirection(_pressedKeys);
         if (direction.HasValue)
         {
-            Player.Move(direction.Value, speedFactor: 1, dt);
+            MovePlayerWithCollisionResolution(direction.Value, dt);
         }
 
         if (Map is not null)
@@ -509,6 +517,75 @@ public sealed class GameEngine : IDisposable
         return new Position(
             Math.Clamp(desiredX, 0, maxX) - offsetX,
             Math.Clamp(desiredY, 0, maxY) - offsetY);
+    }
+
+    /// <summary>
+    /// Moves the player in <paramref name="direction"/> by <c>BaseSpeed * dt</c> tiles and, when
+    /// a map is set, resolves collisions against the map's solid tiles using
+    /// <em>axis-separated movement</em>: the horizontal displacement is applied first and
+    /// reverted if the player's sprite footprint (see <see cref="PlayerFootprintOverlapsSolid"/>)
+    /// would overlap a solid tile or leave the map (the map edge is solid, see
+    /// <see cref="Tiled.TileMap.IsSolid"/>); the vertical displacement is then applied the same
+    /// way, starting from the horizontal result. This keeps wall-sliding natural (a blocked axis
+    /// reverts while the other axis still moves) and prevents diagonal corner-cutting (each axis
+    /// is resolved independently). Without a map the displacement is applied directly, matching
+    /// <see cref="Character.Move(Direction, double, double)"/>.
+    /// </summary>
+    /// <param name="direction">The direction to face and move towards.</param>
+    /// <param name="dt">The elapsed time in seconds since the previous frame.</param>
+    /// <remarks>
+    /// NPCs are not moved by the engine (they have no AI yet), so collision resolution only
+    /// applies to the player here; the public <see cref="Tiled.TileMap.IsSolid"/> API is
+    /// available for future NPC logic.
+    /// </remarks>
+    private void MovePlayerWithCollisionResolution(Direction direction, double dt)
+    {
+        // The engine resolves the displacement itself (axis by axis) instead of calling
+        // Player.Move, which would move both axes at once; setting the direction here keeps the
+        // facing behaviour identical to the previous Player.Move call.
+        Player.Direction = direction;
+
+        var delta = direction.Delta() * (Player.Character.BaseSpeed * dt);
+
+        if (Map is null)
+        {
+            Player.Position += delta;
+            return;
+        }
+
+        var position = Player.Position;
+
+        // Horizontal axis: apply the X displacement, then revert it if the resulting footprint
+        // overlaps a solid tile (or leaves the map, which IsSolid treats as solid).
+        var afterX = position.WithOffset(delta.X, 0);
+        if (!PlayerFootprintOverlapsSolid(afterX))
+        {
+            position = afterX;
+        }
+
+        // Vertical axis: same rule, starting from the horizontal result (this is what makes
+        // diagonal movement slide along a wall on the free axis).
+        var afterY = position.WithOffset(0, delta.Y);
+        if (!PlayerFootprintOverlapsSolid(afterY))
+        {
+            position = afterY;
+        }
+
+        Player.Position = position;
+    }
+
+    /// <summary>
+    /// Returns whether the player's sprite footprint with its top-left at
+    /// <paramref name="position"/> overlaps a solid tile or leaves the map. The footprint size
+    /// is the player's sprite size in pixels (<see cref="Character.GetSpriteSize"/>) converted
+    /// to tiles with the map's tile width, and the overlap is tested with
+    /// <see cref="Tiled.TileMap.IsAreaSolid"/>.
+    /// </summary>
+    private bool PlayerFootprintOverlapsSolid(Position position)
+    {
+        var ts = Map!.TileWidth;
+        var (spriteWidth, spriteHeight) = Player.Character.GetSpriteSize(_spriteSheetManager);
+        return Map.IsAreaSolid(position.X, position.Y, spriteWidth / (double)ts, spriteHeight / (double)ts);
     }
 
     /// <summary>
