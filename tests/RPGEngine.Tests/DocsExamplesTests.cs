@@ -74,6 +74,53 @@ public class DocsExamplesTests
         Assert.NotEqual(0, bitmap.GetPixel(320, 240).Alpha);
     }
 
+
+    // ---------------------------------------------------------------------
+    // docs/api/GameEngine.md and docs/api/Player.md: click-to-move auto-walk
+    // and the OnMove movement-state event (story 38).
+    // ---------------------------------------------------------------------
+    /// <summary>
+    /// The click-to-move example from the documentation: render once so the engine knows the
+    /// canvas size, click a distant walkable tile, and the player auto-walks along the A* path
+    /// to the clicked tile center while <see cref="Player.OnMove"/> fires on the start and the
+    /// completion.
+    /// </summary>
+    [Fact]
+    public void ClickToMove_AutoWalksToClickedTileAndFiresOnMove()
+    {
+        using var fixture = new TiledTestFixture(
+            10, 10,
+            new[] { new TileLayerSpec("ground", Enumerable.Repeat(1u, 10 * 10).ToArray()) });
+        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        engine.Player.Position = new Position(0.5, 0.5);
+
+        var moveEvents = new List<PlayerMoveEventArgs>();
+        engine.Player.OnMove += (_, e) => moveEvents.Add(e);
+
+        // Render at least once so the engine knows the canvas size, then translate a mouse click.
+        const int canvas = 480; // 10 tiles x 48 px: the whole map is visible
+        using (var bitmap = new SKBitmap(canvas, canvas))
+        using (var renderCanvas = new SKCanvas(bitmap))
+        {
+            engine.Render(renderCanvas, FrameDt);
+        }
+
+        // Click at the canvas position of the tile the host wants the player to walk to.
+        var surface = engine.WorldToSurface(new Position(5.5, 5.5), canvas, canvas);
+        engine.Click(surface.X, surface.Y);
+
+        // The player now auto-walks along the A* path; drive the loop normally.
+        var target = new Position(5.5, 5.5);
+        for (var frame = 0; frame < 5000 && engine.Player.Position != target; frame++)
+        {
+            engine.Update(FrameDt);
+        }
+
+        Assert.Equal(target, engine.Player.Position);
+        Assert.Contains(moveEvents, e => e.IsMoving);   // the walk started
+        Assert.Contains(moveEvents, e => !e.IsMoving);  // and completed (stopped)
+    }
+
     // ---------------------------------------------------------------------
     // docs/api/GameEngine.md: the Render example. When a map is smaller than the
     // canvas it is centered and the area around it is black (story 24).
