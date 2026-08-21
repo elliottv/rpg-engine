@@ -28,8 +28,10 @@ Player ── Character (Position, Direction, BaseSpeed, SpriteSheets, walk-cycl
 `Player` is a thin wrapper that forwards state access and movement to its `Character`. All of
 the in-world state lives on `Character`:
 
-- `Character.Position` — top-left world position of the sprite, in **tiles** (its size is the
-  configured sheet's derived cell size, in pixels, used only for clamping).
+- `Character.Position` — the **feet** position (the *middle-bottom* of the sprite, where the
+  character stands), in **tiles**. The sprite is rendered above and centered on this point; its
+  size is the configured sheet's derived cell size, in pixels, used only for clamping and the
+  collision footprint.
 - `Character.Direction` — the facing direction (8 directions: Down/Left/Right/Up plus the four diagonals).
 - `Character.BaseSpeed` — movement speed in **tiles per second** (the player default is 2,
   i.e. the tile-unit equivalent of 96 px/s at 48 px tiles).
@@ -80,7 +82,10 @@ canvasHeight)` (internal, asserted by the tests):
 `Render` turns the tile origin into a pixel viewport for the map (a pure pixel renderer) and
 into pixel screen positions for the characters. The map's `TileMap.Draw` / `DrawAbovePlayer`
 receive a pixel `SKRect` and blit their prerendered layer images; each character is drawn at
-screen position `(pos.X*ts - origin.X*ts, pos.Y*ts - origin.Y*ts)`.
+its **feet** (anchor) screen position `(pos.X*ts - origin.X*ts, pos.Y*ts - origin.Y*ts)`. The
+compositor anchors every sprite at its **middle-bottom**, so a character's sprite top-left is
+at `(pos.X*ts - w/2 - origin.X*ts, pos.Y*ts - h - origin.Y*ts)` in world pixels (the sprite is
+drawn above and centered on its feet).
 
 The engine exposes two public conversions that use the **same camera** (follow + clamp) for the
 given canvas size, so a host can translate between canvas pixels and world tiles without
@@ -259,8 +264,11 @@ a map has no collision layer, every in-bounds cell is walkable. Non-collision la
 The engine resolves the player's movement with **axis-separated movement** against a footprint
 in tile units:
 
-- The footprint is the player's sprite size in pixels (`Character.GetSpriteSize`) converted to
-  tiles (`px / ts`, where `ts` is the map's tile width), positioned at the player's top-left.
+- The footprint is the **lower half** of the sprite **anchored at the feet** (`Position` is the
+  sprite's middle-bottom). With the sprite size in pixels (`Character.GetSpriteSize`) converted
+  to tiles (`px / ts`, where `ts` is the map's tile width), the footprint rectangle is
+  `(pos.X - w/(2*ts), pos.Y - h/(2*ts))` with size `(w/ts, h/(2*ts))` — the upper half of the
+  sprite (the upper body) never collides with the ground.
 - `TileMap.IsAreaSolid(x, y, width, height)` (internal) tests the tiles overlapped by that
   tile-unit rectangle: the bounds are floored to the containing cells, and a rectangle that ends
   exactly on a tile boundary does not count the next tile.
@@ -271,8 +279,11 @@ in tile units:
 This keeps **wall-sliding** natural (a blocked axis reverts while the other axis still moves, so
 a diagonal move into a wall slides along the wall on the free axis) and prevents **diagonal
 corner-cutting** (each axis is resolved independently, so a diagonal cannot squeeze diagonally
-through a corner). The existing map-bounds clamp (`ClampPlayerToMap`) remains as a safety net
-for positions placed outside the map by other means.
+through a corner). The map-bounds clamp (`ClampPlayerToMap`) keeps the **lower-half footprint**
+inside the map (the feet clamp to `x ∈ [halfWidth, max(halfWidth, Map.Width - halfWidth)]`,
+`y ∈ [halfHeight, max(halfHeight, Map.Height)]` — for the default 48×48 sprite with 48 px
+tiles this is `x ∈ [0.5, Map.Width - 0.5]`, `y ∈ [0.5, Map.Height]`) and remains as a
+safety net for positions placed outside the map by other means. The map edge is solid.
 
 NPCs are not moved by the engine (they have no AI yet), so collision resolution currently only
 applies to the player; the public `TileMap.IsSolid` API is available for future NPC logic.
@@ -374,9 +385,10 @@ below-player layers → NPCs → player → above-player layers
 - **The camera works in tiles and renders in pixels.** `Render` computes the camera origin in
   tiles (follow + clamp, see above), derives a pixel viewport
   `(origin.X*ts, origin.Y*ts, origin.X*ts + canvasWidth, origin.Y*ts + canvasHeight)` and passes
-  it to the map renderer (which stays a pure pixel renderer), and draws each character at the
-  screen position `(pos.X*ts - origin.X*ts, pos.Y*ts - origin.Y*ts)`. The canvas size is read
-  from the canvas clip bounds.
+  it to the map renderer (which stays a pure pixel renderer), and draws each character at its
+  **feet** (middle-bottom anchor) screen position
+  `(pos.X*ts - origin.X*ts, pos.Y*ts - origin.Y*ts)`; the sprite is drawn above and centered on
+  that point. The canvas size is read from the canvas clip bounds.
 - When the map is **smaller than the canvas** on an axis it is **centered** in the canvas and
   the area around it stays black (`offset = max(0, (canvasSize − mapPixelSize) / (2*ts))` tiles),
   so a small map is never letterboxed with transparent or leftover pixels. When the map fills
