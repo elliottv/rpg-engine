@@ -62,7 +62,12 @@ public sealed class Character
     // the first step goes toward 0, then the bounce alternates direction at each end.
     private int _frameStep = -1;
 
-    /// <summary>Gets or sets the top-left world position of the character's sprite, in tiles.</summary>
+    /// <summary>
+    /// Gets or sets the world position of the character's feet, in tiles. The feet are the
+    /// <em>middle-bottom</em> of the sprite: the sprite is rendered above and centered on this
+    /// point, so a position of <c>(8.5, 8.5)</c> means the character stands with its feet at the
+    /// centre of tile <c>(8, 8)</c>.
+    /// </summary>
     public Position Position { get; set; }
 
     /// <summary>Gets or sets the direction the character is facing.</summary>
@@ -231,12 +236,14 @@ public sealed class Character
     }
 
     /// <summary>
-    /// Draws the character at <paramref name="screenPosition"/> (its world position minus the
-    /// camera origin). The spritesheet references are resolved through
-    /// <paramref name="spriteSheetManager"/>, which the engine supplies at draw time.
+    /// Draws the character at <paramref name="anchorPosition"/> (its feet position — the
+    /// middle-bottom of the sprite — minus the camera origin). The spritesheet references are
+    /// resolved through <paramref name="spriteSheetManager"/>, which the engine supplies at
+    /// draw time.
     /// </summary>
     /// <param name="canvas">The canvas to draw onto.</param>
-    /// <param name="screenPosition">The top-left screen position of the sprite (its size is the sheet's derived cell size).</param>
+    /// <param name="anchorPosition">The feet (middle-bottom) anchor of the sprite, in pixels:
+    /// the sprite is drawn above and centered on this point.</param>
     /// <param name="dt">The elapsed time in seconds (reserved for future animation timing).</param>
     /// <param name="spriteSheetManager">The manager that resolves the referenced sheet names.</param>
     /// <exception cref="InvalidOperationException">
@@ -246,9 +253,9 @@ public sealed class Character
     /// <exception cref="ArgumentOutOfRangeException">
     /// A <see cref="SpriteSheetRef"/> has a <see cref="SpriteSheetRef.CharacterIndex"/> outside 1..8.
     /// </exception>
-    internal void Draw(SKCanvas canvas, Position screenPosition, double dt, SpriteSheetManager spriteSheetManager)
+    internal void Draw(SKCanvas canvas, Position anchorPosition, double dt, SpriteSheetManager spriteSheetManager)
     {
-        _compositor.Draw(canvas, screenPosition, _spriteSheets, Direction, _animationFrame, spriteSheetManager);
+        _compositor.Draw(canvas, anchorPosition, _spriteSheets, Direction, _animationFrame, spriteSheetManager);
     }
 
     /// <summary>
