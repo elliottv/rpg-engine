@@ -202,6 +202,31 @@ public class GameEngineTests
     }
 
     // ---------------------------------------------------------------------
+    // Acceptance (story 49): the engine's update loop drives autonomous
+    // movement started with Character.StartMoving — an NPC added to
+    // engine.Characters moves on its own (no map → no clamp).
+    // ---------------------------------------------------------------------
+    /// <summary>Verifies an NPC started with StartMoving is moved by the engine's Update loop (no map, so no clamping).</summary>
+    [Fact]
+    public void Update_NpcStartedWithStartMoving_MovesNpc()
+    {
+        var engine = new GameEngine();
+        var npc = new Character { BaseSpeed = 2, Position = new Position(5, 5) };
+        npc.StartMoving(Direction.Left);
+        engine.Characters.Add(npc);
+
+        engine.Update(dt: 1);
+
+        // No map: no clamping. The NPC moved 2 tiles left, driven by the engine's update loop.
+        Assert.Equal(new Position(3, 5), npc.Position);
+        Assert.Equal(Direction.Left, npc.Direction);
+        Assert.True(npc.IsMoving);
+
+        // The player (no input, no map) is unaffected.
+        Assert.Equal(new Position(0, 0), engine.Player.Position);
+    }
+
+    // ---------------------------------------------------------------------
     // Acceptance 6: LoadSpriteSheet registers by unique name (duplicate →
     // InvalidOperationException), and Render uses the loaded sheets (a character
     // configured with a loaded sheet name and a valid character index 1..8
