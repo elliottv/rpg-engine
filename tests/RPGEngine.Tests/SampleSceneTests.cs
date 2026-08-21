@@ -68,7 +68,9 @@ public class SampleSceneTests
 
         var spawn = objects.Objects.Single(obj => obj.Name == "spawn");
         Assert.Equal(TileMapObjectShape.Point, spawn.Shape);
-        Assert.Equal(SampleScene.PlayerPosition, spawn.Position);
+        // The spawn object is a Tiled object-layer position, which stays in pixels: (6, 6)
+        // tiles = (288, 288) px (the tile-unit equivalent of SampleScene.PlayerPosition).
+        Assert.Equal(new Position(288, 288), spawn.Position);
 
         var chest = objects.Objects.Single(obj => obj.Name == "chest");
         Assert.Equal(true, chest.Properties.Single(p => p.Name == "locked").Value);
@@ -116,8 +118,8 @@ public class SampleSceneTests
         using var fixtures = FixtureAssets.MaterializeToTempDirectory();
         var engine = SampleScene.Create(fixtures.Root);
 
-        // Camera origin for a 640×480 view with the player at (288, 288): (0, 48).
-        // Player screen top-left = (288, 240); centre = (312, 264).
+        // The player is at (6, 6) tiles (= 288 px). The camera origin for a 640×480 view is
+        // (0, 1) tiles (= 48 px), so the player screen top-left = (288, 240); centre = (312, 264).
         using var bitmap = Render(engine, CanvasWidth, CanvasHeight);
 
         var expected = CharacterTestHelper.SpriteColor(seed: 1, characterIndex: 1, Direction.Down, frame: 1);
@@ -131,7 +133,7 @@ public class SampleSceneTests
         using var fixtures = FixtureAssets.MaterializeToTempDirectory();
         var engine = SampleScene.Create(fixtures.Root);
 
-        // Villager world (144, 192) → screen (144, 144); centre (168, 168).
+        // Villager world (3, 4) tiles = (144, 192) px → screen (144, 144); centre (168, 168).
         using var bitmap = Render(engine, CanvasWidth, CanvasHeight);
 
         // Parts drawn: hair2 (absent), face (seed 3), body (seed 2), hair1 (seed 4, on top).
@@ -146,7 +148,7 @@ public class SampleSceneTests
         using var fixtures = FixtureAssets.MaterializeToTempDirectory();
         var engine = SampleScene.Create(fixtures.Root);
 
-        // Guard world (528, 384) → screen (528, 336); centre (552, 360).
+        // Guard world (11, 8) tiles = (528, 384) px → screen (528, 336); centre (552, 360).
         using var bitmap = Render(engine, CanvasWidth, CanvasHeight);
 
         // Parts drawn: face (seed 3), body (seed 2), armour (seed 7), head (seed 8, on top).
