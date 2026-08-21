@@ -46,16 +46,22 @@ namespace RPGEngine;
 /// animation snaps back to the standing frame.
 /// </para>
 /// <para>
+/// The engine is <see cref="IDisposable"/>: it owns the assigned map and disposes it when
+/// <see cref="Map"/> is replaced or when the engine itself is disposed (a <see cref="TileMap"/>
+/// is disposable because it prerenders each tile layer into an <see cref="SKImage"/> on load).
+/// </para>
+/// <para>
 /// Tile sets are not loaded through the engine: a <see cref="TileMap"/> owns the tilesets that
 /// its layers reference (they are created when the map is loaded). Standalone tilesets can be
 /// loaded directly through the <c>TileSet.Load</c> factories in <c>RPGEngine.Tiled</c>.
 /// </para>
 /// </remarks>
-public sealed class GameEngine
+public sealed class GameEngine : IDisposable
 {
     private readonly SpriteSheetManager _spriteSheetManager = new();
     private readonly List<Character> _characters = [];
     private readonly HashSet<Key> _pressedKeys = [];
+    private TileMap? _map;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="GameEngine"/> class with default state: a
@@ -83,7 +89,24 @@ public sealed class GameEngine
     /// Gets or sets the tile map to be displayed, or <see langword="null"/> when no map is loaded.
     /// When the value is changed, the next <see cref="Render"/> uses the new map immediately.
     /// </summary>
-    public TileMap? Map { get; set; }
+    /// <remarks>
+    /// The engine owns the assigned map: replacing the value disposes the previous map (a
+    /// <see cref="TileMap"/> is <see cref="IDisposable"/>), and <see cref="Dispose"/> releases
+    /// the current map. Hosts that load maps directly and never assign them through this property
+    /// are responsible for disposing those maps themselves.
+    /// </remarks>
+    public TileMap? Map
+    {
+        get => _map;
+        set
+        {
+            if (!ReferenceEquals(_map, value))
+            {
+                _map?.Dispose();
+                _map = value;
+            }
+        }
+    }
 
     /// <summary>
     /// Gets or sets the configuration values used by the engine. The engine reads the
@@ -207,6 +230,18 @@ public sealed class GameEngine
         {
             canvas.Restore();
         }
+    }
+
+    /// <summary>
+    /// Releases the resources owned by the engine: the current map (if any) is disposed, which
+    /// releases its prerendered layer images. Replacing the map through <see cref="Map"/> already
+    /// disposes the previous map, so hosts only need to call this when the engine itself is being
+    /// torn down. This method is safe to call more than once.
+    /// </summary>
+    public void Dispose()
+    {
+        // Assigning null through the setter disposes the current map and clears the reference.
+        Map = null;
     }
 
     /// <summary>
