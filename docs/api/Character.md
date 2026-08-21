@@ -44,6 +44,25 @@ Gets or sets the movement speed of the character in **tiles per second**.
 var character = new Character { BaseSpeed = 2 };
 ```
 
+### `bool IsMoving`
+
+Gets whether the character is currently moving **autonomously** — started with
+`StartMoving(direction)` and not yet stopped with `StopMoving()`. While `true`, every
+`Update(dt)` moves the character towards its current `Direction` by `BaseSpeed * dt` tiles.
+
+This is independent of the engine's key-driven player movement: it targets characters the host
+drives itself (e.g. NPCs in `GameEngine.Characters`). Do **not** combine `StartMoving` on the
+player's character with the engine's key-driven player movement — `GameEngine.Update` calls
+`Player.Character.Update(dt)` each frame, so both displacements would add up.
+
+```csharp
+var npc = new Character { BaseSpeed = 2 };
+npc.StartMoving(Direction.Right);
+Console.WriteLine(npc.IsMoving); // True
+npc.StopMoving();
+Console.WriteLine(npc.IsMoving); // False
+```
+
 ### `double AnimationCycleSpeed`
 
 Gets or sets the movement speed (tiles/s) at which the walk cycle completes exactly one full
@@ -95,6 +114,35 @@ var character = new Character { Direction = Direction.Up, BaseSpeed = 1 };
 character.Move(dt: 1); // 1 tile up
 ```
 
+### `void StartMoving(Direction direction)`
+
+Starts **autonomous movement**: the character faces `direction` and moves towards it on every
+`Update(dt)` — exactly like the player does while a movement key is held — until
+`StopMoving()` is called. The character starts moving on the *next* `Update`: this method only
+sets the facing direction and the `IsMoving` state, and never changes `Position` itself. The
+engine's update loop calls `Update(dt)` on every character each frame, so a started character
+moves automatically.
+
+Autonomous movement is **not** collision-resolved by the engine (collision resolution applies
+to the player only), so hosts that move NPCs with `StartMoving` are responsible for keeping
+them in bounds themselves. Do not combine `StartMoving` on the player's character with the
+engine's key-driven player movement.
+
+```csharp
+var npc = new Character { BaseSpeed = 2, Position = new Position(3, 4) };
+npc.StartMoving(Direction.Right); // faces right and begins moving on the next Update
+```
+
+### `void StopMoving()`
+
+Stops autonomous movement started with `StartMoving()`. The character stays where it is and the
+walk-cycle animation snaps back to the standing frame on the next `Update`. Calling it when the
+character is not moving is a no-op (idempotent).
+
+```csharp
+npc.StopMoving(); // the NPC stops; the walk cycle snaps to the standing frame on the next Update
+```
+
 ## Example: configuring a character with a sheet name + index
 
 ```csharp
@@ -110,3 +158,26 @@ character.SpriteSheets.Add(new SpriteSheetRef("cape", CharacterIndex: 4));
 
 Console.WriteLine(character.SpriteSheets.Count); // 2
 ```
+
+## Example: an NPC that patrols with StartMoving / StopMoving
+
+`StartMoving`/`StopMoving` give hosts a simple way to drive NPCs autonomously through the
+engine's update loop: the NPC is added to `GameEngine.Characters` (so the engine calls
+`Update(dt)` on it every frame), and the host periodically switches its direction or stops it.
+
+```csharp
+// An NPC that walks right for 2 seconds, then left for 2 seconds, forever.
+var npc = new Character { BaseSpeed = 2, Position = new Position(3, 4) };
+npc.SpriteSheets.Add(new SpriteSheetRef("villager", CharacterIndex: 2));
+engine.Characters.Add(npc);
+
+npc.StartMoving(Direction.Right); // begins moving right on the next engine.Update
+
+// ... a few engine.Update(dt) calls later, after ~2 seconds ...
+npc.StopMoving();                 // stays put; walk cycle snaps to the standing frame
+npc.StartMoving(Direction.Left);  // turns around and starts moving left
+```
+
+> Note: `Character.Update(dt)` is internal — hosts do not call it directly. The engine calls it
+> on the player and every NPC in `GameEngine.Characters` each frame, which is what makes a
+> started character move automatically.
