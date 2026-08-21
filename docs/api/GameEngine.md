@@ -15,9 +15,17 @@ registry and the pressed-keys state, and exposes the game-loop entry points `Upd
   output to a CPU bitmap. When the host passes a GPU-backed `SKCanvas` (e.g. the surface of a
   SkiaSharp GL view or a WebAssembly `SKSurface` created from a `GRContext`), the drawing is
   hardware accelerated. The engine has **zero platform-specific dependencies**.
+- **All world coordinates are in tiles** (double): `Player.Position`, `Character.Position`,
+  camera origins and the `SurfaceToWorld`/`WorldToSurface` conversions. Pixels are produced only
+  at the canvas boundary — `Render` multiplies the tile positions by the map's tile size to
+  place sprites and the camera viewport (the tile size is read from `TileMap.TileWidth`, with a
+  default of 48 when no map is set).
 - The camera is internal: `Render` follows the player and clamps the viewport inside the map.
   When the map is smaller than the canvas on an axis it is centered and the area around it is
   filled with black, so the map is never letterboxed with transparent or leftover pixels.
+  `SurfaceToWorld` and `WorldToSurface` expose the same follow + clamp camera for the given
+  canvas size — the foundation the "click to move" and "GUI around game objects" features will
+  build on.
 - When a map is set, `Render` clears the whole canvas to black first, then draws the map's
   below-player layers, then every NPC, then the player, and finally the map's `above_player`
   layers (tile layers declaring the Tiled `above_player` custom property) so those tiles appear
@@ -51,7 +59,7 @@ Gets the player character. The camera always follows the player.
 
 ```csharp
 var engine = new GameEngine();
-engine.Player.Position = new Position(96, 96);
+engine.Player.Position = new Position(2, 2);
 engine.Player.SpriteSheets.Add(new SpriteSheetRef("hero", CharacterIndex: 1));
 ```
 
@@ -61,7 +69,7 @@ Gets the mutable list of NPC characters present in the game world. The player is
 list (it is rendered separately, on top).
 
 ```csharp
-var npc = new Character { Position = new Position(144, 192) };
+var npc = new Character { Position = new Position(3, 4) };
 npc.SpriteSheets.Add(new SpriteSheetRef("villager_body", CharacterIndex: 2));
 engine.Characters.Add(npc);
 ```
@@ -105,8 +113,8 @@ engine.Input(Key.D, isPressed: false);  // key-up
 ### `void Update(double dt)`
 
 Advances the simulation by `dt` seconds: resolves the movement direction from the currently
-pressed keys, moves the player, clamps it inside the map, and advances the walk-cycle animation
-of the player and every NPC.
+pressed keys, moves the player (in tiles), clamps it inside the map, and advances the
+walk-cycle animation of the player and every NPC.
 
 ```csharp
 engine.Update(dt: 1.0 / 60);
@@ -119,7 +127,8 @@ black background behind/around a map smaller than the canvas), then the map's be
 layers are drawn, then every NPC, then the player on top, and finally the map's `above_player`
 layers so those tiles appear above the player. The camera follows the player, centers a map
 smaller than the canvas, and is clamped so the viewport stays inside the map; the canvas size is
-read from the canvas clip bounds.
+read from the canvas clip bounds. The camera origin is computed in tiles and converted to a
+pixel viewport for the map and to pixel screen positions for the characters.
 
 ```csharp
 using var bitmap = new SKBitmap(640, 480);
@@ -128,6 +137,34 @@ using (var canvas = new SKCanvas(bitmap))
     canvas.Clear(SKColors.Transparent);
     engine.Render(canvas, dt: 1.0 / 60);
 }
+```
+
+### `Position SurfaceToWorld(double surfaceX, double surfaceY, double canvasWidth, double canvasHeight)`
+
+Translates a host-surface (canvas) coordinate, in pixels, to a world coordinate, in tiles, using
+the same camera as `Render` (follow + clamp) for the given canvas size:
+`world = (surfaceX / ts + origin.X, surfaceY / ts + origin.Y)`, where `ts` is the map's tile
+width (48 when no map is set) and `origin` is the camera origin for that canvas size. This is
+the inverse of `WorldToSurface` within floating-point tolerance. Hosts use it to translate mouse
+clicks into world coordinates for "click to move".
+
+```csharp
+// With no map the camera origin is (0,0): a surface point of (408, 408) on a 960×960 canvas is
+// world (8.5, 8.5) tiles at ts = 48.
+var world = engine.SurfaceToWorld(408, 408, 960, 960); // (8.5, 8.5)
+```
+
+### `Position WorldToSurface(Position worldPosition, double canvasWidth, double canvasHeight)`
+
+Translates a world coordinate, in tiles, to a host-surface (canvas) coordinate, in pixels, using
+the same camera as `Render` (follow + clamp) for the given canvas size:
+`surface = ((world.X - origin.X) * ts, (world.Y - origin.Y) * ts)`, where `ts` is the map's tile
+width (48 when no map is set) and `origin` is the camera origin for that canvas size. This is
+the inverse of `SurfaceToWorld` within floating-point tolerance. Hosts use it to position GUI
+elements around game objects.
+
+```csharp
+var surface = engine.WorldToSurface(new Position(8.5, 8.5), 960, 960); // (408, 408)
 ```
 
 ### `void Dispose()`
@@ -210,11 +247,11 @@ await engine.LoadPartSpriteSheetAsync("villager_body", stream, CharacterPartType
 var engine = new GameEngine();
 engine.Map = TileMap.Load("assets/map.tmx");
 engine.LoadSpriteSheet("hero", "assets/characters/character_full.png");
-engine.Player.Position = new Position(6 * 48, 6 * 48);
+engine.Player.Position = new Position(6, 6);
 engine.Player.SpriteSheets.Add(new SpriteSheetRef("hero", CharacterIndex: 1));
 
 engine.LoadPartSpriteSheet("body", "assets/characters/character_part_body.png", CharacterPartType.Body);
-var npc = new Character { Position = new Position(3 * 48, 4 * 48) };
+var npc = new Character { Position = new Position(3, 4) };
 npc.SpriteSheets.Add(new SpriteSheetRef("body", CharacterIndex: 2));
 engine.Characters.Add(npc);
 

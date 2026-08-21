@@ -48,15 +48,16 @@ engine.Map = await TileMap.LoadAsync(
 using var heroStream = new MemoryStream(await http.GetByteArrayAsync("assets/characters/character_full.png"));
 await engine.LoadSpriteSheetAsync("hero", heroStream);
 
-// 3. Place the player and give it the "hero" sheet, character slot 1.
-engine.Player.Position = new Position(6 * 48, 6 * 48);
+// 3. Place the player (in tiles — the fixture map has 48 px tiles) and give it the "hero"
+//    sheet, character slot 1.
+engine.Player.Position = new Position(6, 6);
 engine.Player.SpriteSheets.Add(new SpriteSheetRef("hero", CharacterIndex: 1));
 
 // 4. Add an NPC built from part sheets (body + face + hair1, character slot 2). The other part
 //    sheets (face, hair1) are loaded the same way with LoadPartSpriteSheetAsync.
 using var bodyStream = new MemoryStream(await http.GetByteArrayAsync("assets/characters/character_part_body.png"));
 await engine.LoadPartSpriteSheetAsync("body", bodyStream, CharacterPartType.Body);
-var npc = new Character { Position = new Position(3 * 48, 4 * 48) };
+var npc = new Character { Position = new Position(3, 4) };
 npc.SpriteSheets.Add(new SpriteSheetRef("body", CharacterIndex: 2));
 engine.Characters.Add(npc);
 
