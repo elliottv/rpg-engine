@@ -42,9 +42,9 @@ public class CharacterTests
 
     // ---------------------------------------------------------------------
     // Acceptance 2: Move(direction, factor, dt) moves exactly
-    // BaseSpeed * factor * dt pixels in the right axis/direction and sets Direction.
+    // BaseSpeed * factor * dt tiles in the right axis/direction and sets Direction.
     // ---------------------------------------------------------------------
-    /// <summary>Verifies Move(direction, factor, dt) moves exactly BaseSpeed × factor × dt pixels along the correct axis and direction, and sets Direction.</summary>
+    /// <summary>Verifies Move(direction, factor, dt) moves exactly BaseSpeed × factor × dt tiles along the correct axis and direction, and sets Direction.</summary>
     [Theory]
     [InlineData(Direction.Down, 0.0, 100.0)]
     [InlineData(Direction.Up, 0.0, -100.0)]
@@ -57,7 +57,7 @@ public class CharacterTests
     {
         var character = new Character { BaseSpeed = 100, Position = new Position(0, 0) };
 
-        // BaseSpeed * factor * dt = 100 * 2 * 0.5 = 100 pixels.
+        // BaseSpeed * factor * dt = 100 * 2 * 0.5 = 100 tiles.
         character.Move(direction, speedFactor: 2, dt: 0.5);
 
         Assert.Equal(expectedX, character.Position.X);
@@ -84,7 +84,7 @@ public class CharacterTests
     // Acceptance 2b (story 21): diagonal movement moves the normalized distance
     // (magnitude 1, not √2) and sets the diagonal Direction.
     // ---------------------------------------------------------------------
-    /// <summary>Verifies Move(DownRight, 1, 1) at BaseSpeed 100 moves exactly (100·√½, 100·√½) and sets Direction to DownRight.</summary>
+    /// <summary>Verifies Move(DownRight, 1, 1) at BaseSpeed 100 moves exactly (100·√½, 100·√½) tiles and sets Direction to DownRight.</summary>
     [Fact]
     public void Move_Diagonal_MovesNormalizedDistance_AndSetsDirection()
     {
@@ -92,7 +92,7 @@ public class CharacterTests
 
         character.Move(Direction.DownRight, speedFactor: 1, dt: 1);
 
-        // DownRight = (+√½, +√½); 100 px of travel split evenly across the two axes.
+        // DownRight = (+√½, +√½); 100 tiles of travel split evenly across the two axes.
         var component = 100 * Math.Sqrt(0.5);
         Assert.Equal(component, character.Position.X, precision: 9);
         Assert.Equal(component, character.Position.Y, precision: 9);
@@ -104,14 +104,15 @@ public class CharacterTests
     // ---------------------------------------------------------------------
     /// <summary>
     /// Verifies the walk-cycle animation is time-based and speed-scaled: at
-    /// BaseSpeed == AnimationCycleSpeed == 96 the cycle completes one full 4-frame cycle
-    /// (<c>0 → 1 → 2 → 1</c>) per second. A single one-second <see cref="Character.Update(double)"/>
-    /// after moving advances exactly 4 frames and lands back on the standing frame.
+    /// BaseSpeed == AnimationCycleSpeed == 2 (tiles/s, the new defaults) the cycle completes
+    /// one full 4-frame cycle (<c>0 → 1 → 2 → 1</c>) per second. A single one-second
+    /// <see cref="Character.Update(double)"/> after moving advances exactly 4 frames and lands
+    /// back on the standing frame.
     /// </summary>
     [Fact]
-    public void Update_AtBaseSpeed96_MoveOnceThenOneSecondUpdate_CompletesOneCycle()
+    public void Update_AtDefaultSpeed_MoveOnceThenOneSecondUpdate_CompletesOneCycle()
     {
-        var character = new Character { BaseSpeed = 96 };
+        var character = new Character { BaseSpeed = 2 };
 
         // A fresh character stands on the middle (standing) frame and stays there when idle.
         Assert.Equal(StandingFrame, character.AnimationFrame);
@@ -126,13 +127,14 @@ public class CharacterTests
     }
 
     /// <summary>
-    /// Verifies the walk-cycle advances frames per second proportionally to BaseSpeed: the frame
-    /// sequence over one second is revealed by moving + updating at the exact per-frame duration.
+    /// Verifies the walk-cycle advances frames per second proportionally to BaseSpeed (tiles/s):
+    /// the frame sequence over one second is revealed by moving + updating at the exact per-frame
+    /// duration. 2 tiles/s is the new default equivalent of the previous 96 px/s at 48px tiles.
     /// </summary>
     [Theory]
-    [InlineData(96, new[] { 0, 1, 2, 1 })]                 // 0.25 s/frame → 4 frames/s → 1 cycle/s
-    [InlineData(192, new[] { 0, 1, 2, 1, 0, 1, 2, 1 })]    // 0.125 s/frame → 8 frames/s → 2 cycles/s
-    [InlineData(48, new[] { 0, 1 })]                       // 0.5 s/frame → 2 frames/s → 1/2 cycle/s
+    [InlineData(2, new[] { 0, 1, 2, 1 })]                 // 0.25 s/frame → 4 frames/s → 1 cycle/s
+    [InlineData(4, new[] { 0, 1, 2, 1, 0, 1, 2, 1 })]    // 0.125 s/frame → 8 frames/s → 2 cycles/s
+    [InlineData(1, new[] { 0, 1 })]                       // 0.5 s/frame → 2 frames/s → 1/2 cycle/s
     public void Update_WalkCycle_AdvancesFramesPerSecondScaledByBaseSpeed(double baseSpeed, int[] expectedFrames)
     {
         var character = new Character { BaseSpeed = baseSpeed };
@@ -152,7 +154,7 @@ public class CharacterTests
     [Fact]
     public void Update_WhenNotMoving_SnapsToStandingFrame()
     {
-        var character = new Character { BaseSpeed = 96 };
+        var character = new Character { BaseSpeed = 2 };
 
         // Advance the cycle while moving.
         MoveAndUpdate(character, Direction.Down, dt: 0.25);
@@ -168,8 +170,8 @@ public class CharacterTests
     public void Update_AnimationCycleSpeed_IsConfigurable()
     {
         // secondsPerFrame = AnimationCycleSpeed / (BaseSpeed * FramesPerCycle)
-        //                 = 192 / (96 * 4) = 0.5 s/frame → only 2 frames per second.
-        var character = new Character { BaseSpeed = 96, AnimationCycleSpeed = 192 };
+        //                 = 4 / (2 * 4) = 0.5 s/frame → only 2 frames per second.
+        var character = new Character { BaseSpeed = 2, AnimationCycleSpeed = 4 };
 
         MoveAndUpdate(character, Direction.Down, dt: 0.5);
         Assert.Equal(0, character.AnimationFrame);

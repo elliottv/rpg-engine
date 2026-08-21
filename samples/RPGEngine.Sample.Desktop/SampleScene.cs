@@ -15,14 +15,14 @@ internal static class SampleScene
     /// <summary>Tile size in pixels of the fixture map and the RPG Maker MZ sheets.</summary>
     public const int TileSize = 48;
 
-    /// <summary>Player world position (on the sand path of the fixture map).</summary>
-    public static readonly Position PlayerPosition = new(6 * TileSize, 6 * TileSize);
+    /// <summary>Player world position in tiles (on the sand path of the fixture map).</summary>
+    public static readonly Position PlayerPosition = new(6, 6);
 
-    /// <summary>First NPC world position (a villager made of body/face/hair1 parts).</summary>
-    public static readonly Position VillagerPosition = new(3 * TileSize, 4 * TileSize);
+    /// <summary>First NPC world position in tiles (a villager made of body/face/hair1 parts).</summary>
+    public static readonly Position VillagerPosition = new(3, 4);
 
-    /// <summary>Second NPC world position (a guard made of body/face/armour/head parts).</summary>
-    public static readonly Position GuardPosition = new(11 * TileSize, 8 * TileSize);
+    /// <summary>Second NPC world position in tiles (a guard made of body/face/armour/head parts).</summary>
+    public static readonly Position GuardPosition = new(11, 8);
 
     /// <summary>
     /// Builds the engine for the sample scene from a directory that contains the materialized
@@ -42,10 +42,11 @@ internal static class SampleScene
         engine.Player.SpriteSheets.Add(new SpriteSheetRef("hero", CharacterIndex: 1));
 
         // NPC 1 "villager": body + face + hair1 part sheets, character slot 2.
+        // NPC speed is 1 tile/s (the tile-unit equivalent of the previous 48 px/s at 48px tiles).
         var villager = new Character
         {
             Position = VillagerPosition,
-            BaseSpeed = 48,
+            BaseSpeed = 1,
         };
         engine.LoadPartSpriteSheet("villager_body", Path.Combine(assetsRoot, FixtureAssets.PartBody), CharacterPartType.Body);
         engine.LoadPartSpriteSheet("villager_face", Path.Combine(assetsRoot, FixtureAssets.PartFace), CharacterPartType.Face);
@@ -56,10 +57,11 @@ internal static class SampleScene
         engine.Characters.Add(villager);
 
         // NPC 2 "guard": body + face + armour + head part sheets, character slot 3.
+        // NPC speed is 1 tile/s (the tile-unit equivalent of the previous 48 px/s at 48px tiles).
         var guard = new Character
         {
             Position = GuardPosition,
-            BaseSpeed = 48,
+            BaseSpeed = 1,
         };
         engine.LoadPartSpriteSheet("guard_body", Path.Combine(assetsRoot, FixtureAssets.PartBody), CharacterPartType.Body);
         engine.LoadPartSpriteSheet("guard_face", Path.Combine(assetsRoot, FixtureAssets.PartFace), CharacterPartType.Face);

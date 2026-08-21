@@ -12,6 +12,13 @@ namespace RPGEngine;
 /// </summary>
 /// <remarks>
 /// <para>
+/// All world coordinates (<see cref="Player.Position"/>, <see cref="Character.Position"/>,
+/// camera origins and <see cref="SurfaceToWorld"/>/<see cref="WorldToSurface"/>) are expressed
+/// in <em>tiles</em> (double). Pixels are produced only at the canvas boundary: <see cref="Render"/>
+/// multiplies the tile positions by the map's tile size to place sprites and the camera viewport,
+/// and the tile size of a map is read from <c>TileMap.TileWidth</c> (48 when no map is set).
+/// </para>
+/// <para>
 /// The game loop is written by the host: each frame the host calls <see cref="Update"/> with its
 /// own elapsed time (<c>dt</c>, in seconds) to advance the simulation, then <see cref="Render"/>
 /// with the same <c>dt</c> to draw the frame onto its canvas. The engine never runs its own loop
@@ -28,8 +35,10 @@ namespace RPGEngine;
 /// The camera is internal to the engine: <see cref="Render"/> follows the player and clamps the
 /// viewport inside the map. When the map is smaller than the canvas on an axis it is centered
 /// in that axis and the area around it is filled with black (the map background), so the map is
-/// never letterboxed with transparent or leftover pixels. If a public camera API becomes
-/// necessary later it can be extracted without breaking this class's API.
+/// never letterboxed with transparent or leftover pixels. <see cref="SurfaceToWorld"/> and
+/// <see cref="WorldToSurface"/> expose the same follow + clamp camera for the given canvas size,
+/// translating host-surface (canvas) coordinates to world coordinates and back — the foundation
+/// the "click to move" and "GUI around game objects" features will build on.
 /// </para>
 /// <para>
 /// When a map is set, <see cref="Render"/> clears the whole canvas to black first, then draws
@@ -62,6 +71,12 @@ public sealed class GameEngine : IDisposable
     private readonly List<Character> _characters = [];
     private readonly HashSet<Key> _pressedKeys = [];
     private TileMap? _map;
+
+    // The canvas size (in pixels) of the most recent Render call, stored so the future
+    // click-to-move story can translate host-surface coordinates with the same camera without
+    // further API churn.
+    private double _lastCanvasWidth;
+    private double _lastCanvasHeight;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="GameEngine"/> class with default state: a
@@ -114,6 +129,20 @@ public sealed class GameEngine : IDisposable
     /// immediately.
     /// </summary>
     public GameConfig Config { get; set; }
+
+    /// <summary>
+    /// Gets the width in pixels of the canvas from the most recent <see cref="Render"/> call
+    /// (0 before the first render). Internal so the future click-to-move story can translate
+    /// host-surface coordinates without further API churn.
+    /// </summary>
+    internal double LastCanvasWidth => _lastCanvasWidth;
+
+    /// <summary>
+    /// Gets the height in pixels of the canvas from the most recent <see cref="Render"/> call
+    /// (0 before the first render). Internal so the future click-to-move story can translate
+    /// host-surface coordinates without further API churn.
+    /// </summary>
+    internal double LastCanvasHeight => _lastCanvasHeight;
 
     /// <summary>
     /// Reports a key event to the engine. A value of <see langword="true"/> for
@@ -173,7 +202,9 @@ public sealed class GameEngine : IDisposable
     /// the map's <c>above_player</c> layers so those tiles appear above the player. The camera
     /// follows the player, centers a map smaller than the canvas, and is clamped so the viewport
     /// stays inside the map; the canvas size is read from the canvas clip bounds so the view
-    /// adapts to the current surface size automatically.
+    /// adapts to the current surface size automatically. The camera origin is computed in tiles
+    /// and converted to a pixel viewport for the map (a pure pixel renderer) and to pixel screen
+    /// positions for the characters.
     /// </summary>
     /// <param name="canvas">The canvas to draw onto (CPU or GPU backed; see the class remarks).</param>
     /// <param name="dt">The elapsed time in seconds since the previous frame (reserved for future animation timing).</param>
@@ -185,12 +216,21 @@ public sealed class GameEngine : IDisposable
         var canvasWidth = Math.Max(0, (int)Math.Ceiling(bounds.Width));
         var canvasHeight = Math.Max(0, (int)Math.Ceiling(bounds.Height));
 
+        // Record the canvas size so the future click-to-move story can translate host-surface
+        // coordinates with the same camera used here, without further API churn.
+        _lastCanvasWidth = canvasWidth;
+        _lastCanvasHeight = canvasHeight;
+
+        var ts = Map?.TileWidth ?? 48;
         var origin = ComputeCameraOrigin(canvasWidth, canvasHeight);
+
+        // The pixel viewport of the camera, derived from the tile origin. TileMap.Draw /
+        // DrawAbovePlayer stay pure pixel renderers and receive this pixel rect.
         var viewport = new SKRect(
-            (float)origin.X,
-            (float)origin.Y,
-            (float)(origin.X + canvasWidth),
-            (float)(origin.Y + canvasHeight));
+            (float)(origin.X * ts),
+            (float)(origin.Y * ts),
+            (float)(origin.X * ts + canvasWidth),
+            (float)(origin.Y * ts + canvasHeight));
 
         // When a map is set the whole canvas is cleared to black first: this is the black
         // background behind/around a map that is smaller than the canvas. Without a map the
@@ -200,14 +240,16 @@ public sealed class GameEngine : IDisposable
             canvas.Clear(SKColors.Black);
         }
 
-        // Draw everything in world coordinates and let the translate apply the camera: the map
-        // draws its tiles at world positions, and each character is drawn at its world position.
+        // Draw everything through a single camera translation in pixels (origin * ts): the map
+        // blits its prerendered pixel layers in world pixels, and each character is drawn at its
+        // world pixel position (pos * ts). The net screen position of a character is therefore
+        // (pos.X*ts - origin.X*ts, pos.Y*ts - origin.Y*ts).
         // Draw order is: below-player map layers -> each NPC -> the player -> above-player map
         // layers, so tiles marked with the Tiled above_player property appear on top of the player.
         canvas.Save();
         try
         {
-            canvas.Translate((float)-origin.X, (float)-origin.Y);
+            canvas.Translate((float)(-origin.X * ts), (float)(-origin.Y * ts));
 
             if (Map is not null)
             {
@@ -216,10 +258,10 @@ public sealed class GameEngine : IDisposable
 
             foreach (var character in _characters)
             {
-                character.Draw(canvas, character.Position, dt, _spriteSheetManager);
+                character.Draw(canvas, character.Position.ToPixels(ts), dt, _spriteSheetManager);
             }
 
-            Player.Character.Draw(canvas, Player.Position, dt, _spriteSheetManager);
+            Player.Character.Draw(canvas, Player.Position.ToPixels(ts), dt, _spriteSheetManager);
 
             if (Map is not null)
             {
@@ -230,6 +272,51 @@ public sealed class GameEngine : IDisposable
         {
             canvas.Restore();
         }
+    }
+
+    /// <summary>
+    /// Translates a host-surface (canvas) coordinate, in pixels, to a world coordinate, in
+    /// tiles, using the same camera as <see cref="Render"/> (follow + clamp) for the given
+    /// canvas size: <c>world = (surfaceX / ts + origin.X, surfaceY / ts + origin.Y)</c>, where
+    /// <c>ts</c> is the map's tile width (48 when no map is set) and <c>origin</c> is the camera
+    /// origin computed by <see cref="ComputeCameraOrigin"/>.
+    /// </summary>
+    /// <param name="surfaceX">The horizontal surface coordinate in pixels.</param>
+    /// <param name="surfaceY">The vertical surface coordinate in pixels.</param>
+    /// <param name="canvasWidth">The width of the canvas in pixels.</param>
+    /// <param name="canvasHeight">The height of the canvas in pixels.</param>
+    /// <returns>The world position in tiles under the given surface point.</returns>
+    /// <remarks>
+    /// This is the inverse of <see cref="WorldToSurface"/> within floating-point tolerance.
+    /// Hosts use it to translate mouse clicks into world coordinates for "click to move".
+    /// </remarks>
+    public Position SurfaceToWorld(double surfaceX, double surfaceY, double canvasWidth, double canvasHeight)
+    {
+        var ts = Map?.TileWidth ?? 48;
+        var origin = ComputeCameraOrigin((int)canvasWidth, (int)canvasHeight);
+        return new Position(surfaceX / ts + origin.X, surfaceY / ts + origin.Y);
+    }
+
+    /// <summary>
+    /// Translates a world coordinate, in tiles, to a host-surface (canvas) coordinate, in
+    /// pixels, using the same camera as <see cref="Render"/> (follow + clamp) for the given
+    /// canvas size: <c>surface = ((world.X - origin.X) * ts, (world.Y - origin.Y) * ts)</c>,
+    /// where <c>ts</c> is the map's tile width (48 when no map is set) and <c>origin</c> is the
+    /// camera origin computed by <see cref="ComputeCameraOrigin"/>.
+    /// </summary>
+    /// <param name="worldPosition">The world position in tiles.</param>
+    /// <param name="canvasWidth">The width of the canvas in pixels.</param>
+    /// <param name="canvasHeight">The height of the canvas in pixels.</param>
+    /// <returns>The surface position in pixels where the world position appears.</returns>
+    /// <remarks>
+    /// This is the inverse of <see cref="SurfaceToWorld"/> within floating-point tolerance.
+    /// Hosts use it to position GUI elements around game objects.
+    /// </remarks>
+    public Position WorldToSurface(Position worldPosition, double canvasWidth, double canvasHeight)
+    {
+        var ts = Map?.TileWidth ?? 48;
+        var origin = ComputeCameraOrigin((int)canvasWidth, (int)canvasHeight);
+        return new Position((worldPosition.X - origin.X) * ts, (worldPosition.Y - origin.Y) * ts);
     }
 
     /// <summary>
@@ -358,16 +445,19 @@ public sealed class GameEngine : IDisposable
         => _spriteSheetManager.LoadPartAsync(name, stream, partType);
 
     /// <summary>
-    /// Computes the camera origin: the world pixel position that maps to the canvas' top-left
-    /// corner. The desired origin centers the player; it is then clamped so the viewport stays
-    /// inside the map (<c>origin ∈ [0, max(0, PixelSize - canvasSize)]</c> per axis). When the
-    /// map is smaller than the canvas on an axis, half the difference is subtracted so the map is
-    /// centered and the origin becomes negative (<c>origin = clamp(desired, 0, max) - max(0,
-    /// (canvasSize - PixelSize) / 2)</c> per axis). When no map is set the origin is <c>(0, 0)</c>.
+    /// Computes the camera origin: the world position (in tiles) that maps to the canvas' top-left
+    /// corner. Let <c>ts</c> be the map's tile width. The desired origin centers the player
+    /// (<c>desired = player.Position - (canvasWidth / (2*ts), canvasHeight / (2*ts))</c>); it is
+    /// then clamped so the viewport stays inside the map
+    /// (<c>origin ∈ [0, max(0, Map.Width - canvasWidth / ts)]</c> per axis). When the map is
+    /// smaller than the canvas on an axis, half the difference is subtracted so the map is
+    /// centered and the origin becomes negative (<c>origin = clamp(desired, 0, max) -
+    /// max(0, (canvasSize - Map.PixelSize) / (2*ts))</c> per axis). When no map is set the origin
+    /// is <c>(0, 0)</c>.
     /// </summary>
     /// <param name="canvasWidth">The width of the canvas in pixels.</param>
     /// <param name="canvasHeight">The height of the canvas in pixels.</param>
-    /// <returns>The camera origin in world pixel coordinates.</returns>
+    /// <returns>The camera origin in world tile coordinates.</returns>
     /// <remarks>
     /// Internal so the test project can assert the camera contract directly; the camera is not
     /// part of the public API of this story.
@@ -379,21 +469,23 @@ public sealed class GameEngine : IDisposable
             return new Position(0, 0);
         }
 
-        // The maximum viewport origin keeps the view inside the map: 0 when the map is smaller
-        // than the canvas on an axis (the map cannot scroll on that axis), otherwise
-        // PixelSize - canvasSize.
-        var maxX = Math.Max(0, Map.PixelWidth - canvasWidth);
-        var maxY = Math.Max(0, Map.PixelHeight - canvasHeight);
+        var ts = Map.TileWidth;
+
+        // The maximum viewport origin (in tiles) keeps the view inside the map: 0 when the map
+        // is smaller than the canvas on an axis (the map cannot scroll on that axis), otherwise
+        // Map.Width - canvasWidth / ts.
+        var maxX = Math.Max(0, Map.Width - canvasWidth / (double)ts);
+        var maxY = Math.Max(0, Map.Height - canvasHeight / (double)ts);
 
         // When the map is smaller than the canvas on an axis it is centered by shifting the
-        // origin by half the difference, producing a negative origin. When the map fills (or
-        // exceeds) the canvas the offset is 0 and the behavior is exactly the follow + clamp
-        // described above.
-        var offsetX = Math.Max(0, (canvasWidth - Map.PixelWidth) / 2.0);
-        var offsetY = Math.Max(0, (canvasHeight - Map.PixelHeight) / 2.0);
+        // origin by half the difference (in tiles), producing a negative origin. When the map
+        // fills (or exceeds) the canvas the offset is 0 and the behavior is exactly the
+        // follow + clamp described above.
+        var offsetX = Math.Max(0, (canvasWidth - Map.PixelWidth) / (2.0 * ts));
+        var offsetY = Math.Max(0, (canvasHeight - Map.PixelHeight) / (2.0 * ts));
 
-        var desiredX = Player.Position.X - (canvasWidth / 2.0);
-        var desiredY = Player.Position.Y - (canvasHeight / 2.0);
+        var desiredX = Player.Position.X - (canvasWidth / (2.0 * ts));
+        var desiredY = Player.Position.Y - (canvasHeight / (2.0 * ts));
 
         return new Position(
             Math.Clamp(desiredX, 0, maxX) - offsetX,
@@ -402,16 +494,19 @@ public sealed class GameEngine : IDisposable
 
     /// <summary>
     /// Clamps the player's top-left position so its sprite stays inside the map bounds. The
-    /// sprite size is resolved from the player's configured spritesheet (see
-    /// <see cref="Character.GetSpriteSize"/>); when no sheet is configured it falls back to the
-    /// 48×48 default. <c>x ∈ [0, PixelWidth - spriteWidth]</c>, <c>y ∈ [0, PixelHeight - spriteHeight]</c>.
+    /// sprite size is resolved in pixels from the player's configured spritesheet (see
+    /// <see cref="Character.GetSpriteSize"/>) and converted to tiles using the map's tile width;
+    /// when no sheet is configured it falls back to the 48×48 default.
+    /// <c>x ∈ [0, max(0, Map.Width - spriteWidth / ts)]</c>,
+    /// <c>y ∈ [0, max(0, Map.Height - spriteHeight / ts)]</c>, all in tiles.
     /// Called after every move while a map is set.
     /// </summary>
     private void ClampPlayerToMap()
     {
+        var ts = Map!.TileWidth;
         var (spriteWidth, spriteHeight) = Player.Character.GetSpriteSize(_spriteSheetManager);
-        var maxX = Math.Max(0, Map!.PixelWidth - spriteWidth);
-        var maxY = Math.Max(0, Map!.PixelHeight - spriteHeight);
+        var maxX = Math.Max(0, Map.Width - spriteWidth / (double)ts);
+        var maxY = Math.Max(0, Map.Height - spriteHeight / (double)ts);
 
         var position = Player.Position;
         Player.Position = new Position(

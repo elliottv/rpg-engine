@@ -3,6 +3,18 @@
 The RPG Engine is built around a small composition model. This page explains how the pieces fit
 together and documents the fixed RPG Maker MZ part-composition order.
 
+## Coordinate system: tiles
+
+All world coordinates — `Character.Position`, `Player.Position`, camera origins and the
+`GameEngine.SurfaceToWorld` / `GameEngine.WorldToSurface` conversions — are expressed in
+**tiles** (double). Y grows downward. Pixels are produced only at the canvas boundary: the
+engine multiplies the tile positions by the map's tile size (`TileMap.TileWidth`, default 48
+when no map is set) when rendering. Movement speeds are in **tiles per second**.
+
+The tile size is fixed by the map (48 px for the fixture map and the RPG Maker MZ sheets), so a
+world position like `(8.5, 8.5)` tiles corresponds to the pixel position `(408, 408)` at
+48 px/tile.
+
 ## The composition model
 
 ### Player → Character
@@ -16,10 +28,11 @@ Player ── Character (Position, Direction, BaseSpeed, SpriteSheets, walk-cycl
 `Player` is a thin wrapper that forwards state access and movement to its `Character`. All of
 the in-world state lives on `Character`:
 
-- `Character.Position` — top-left world pixel position of the sprite (its size is the
-  configured sheet's derived cell size).
+- `Character.Position` — top-left world position of the sprite, in **tiles** (its size is the
+  configured sheet's derived cell size, in pixels, used only for clamping).
 - `Character.Direction` — the facing direction (8 directions: Down/Left/Right/Up plus the four diagonals).
-- `Character.BaseSpeed` — movement speed in pixels per second.
+- `Character.BaseSpeed` — movement speed in **tiles per second** (the player default is 2,
+  i.e. the tile-unit equivalent of 96 px/s at 48 px tiles).
 - `Character.SpriteSheets` — the list of `SpriteSheetRef`s (sheet name + 1..8 character index).
 - `Character.Update(dt)` — advances the walk-cycle animation (internal).
 
@@ -49,9 +62,41 @@ for each frame:
     engine.Render(canvas, dt)                // draw map + NPCs + player
 ```
 
-`GameEngine` never runs its own loop and never blocks. The camera is internal to the engine:
-`Render` follows the player and clamps the viewport inside the map. No public camera API exists
-in this epic.
+`GameEngine` never runs its own loop and never blocks.
+
+### The camera and surface ↔ world conversion
+
+The camera is internal to the engine: `Render` follows the player and clamps the viewport inside
+the map. The camera origin is computed in **tiles** by `ComputeCameraOrigin(canvasWidth,
+canvasHeight)` (internal, asserted by the tests):
+
+- `max = max(0, Map.Width - canvasWidth / ts)` per axis, where `ts` is the map's tile width —
+  the farthest the viewport may scroll while staying inside the map.
+- `desired = player.Position - (canvasWidth / (2*ts), canvasHeight / (2*ts))` — centers the player.
+- `origin = clamp(desired, 0, max) - max(0, (canvasSize - Map.PixelSize) / (2*ts))` per axis —
+  the centering offset when the map is smaller than the canvas (a negative origin).
+- No map → `(0, 0)`.
+
+`Render` turns the tile origin into a pixel viewport for the map (a pure pixel renderer) and
+into pixel screen positions for the characters. The map's `TileMap.Draw` / `DrawAbovePlayer`
+receive a pixel `SKRect` and blit their prerendered layer images; each character is drawn at
+screen position `(pos.X*ts - origin.X*ts, pos.Y*ts - origin.Y*ts)`.
+
+The engine exposes two public conversions that use the **same camera** (follow + clamp) for the
+given canvas size, so a host can translate between canvas pixels and world tiles without
+reimplementing the camera:
+
+- `Position SurfaceToWorld(double surfaceX, double surfaceY, double canvasWidth, double canvasHeight)`
+  — `world = (surfaceX / ts + origin.X, surfaceY / ts + origin.Y)`. This is the foundation of
+  the "click to move" feature: a mouse click at `(surfaceX, surfaceY)` becomes a world position.
+- `Position WorldToSurface(Position worldPosition, double canvasWidth, double canvasHeight)`
+  — `surface = ((world.X - origin.X) * ts, (world.Y - origin.Y) * ts)`. This is the foundation
+  of the "GUI around game objects" feature: a world position becomes a canvas position to draw
+  UI at.
+
+The two conversions are inverses of each other within floating-point tolerance. With no map the
+origin is `(0, 0)`, so `SurfaceToWorld(408, 408, 960, 960)` returns `(8.5, 8.5)` tiles at
+`ts = 48`.
 
 ### Tiled model
 
@@ -72,6 +117,7 @@ The map exposes a read-only view of everything the Tiled file declares:
   `TileMapObjectLayer` exposes its `Name`, `Visible`, `Opacity`, `Properties` and `Objects`;
   each `TileMapObject` exposes its `Id`, `Name`, `Type`, `Position`, `Width`/`Height`, `Shape`
   (`TileMapObjectShape`) and its own custom `Properties`. Object layers do not render tiles.
+  Object-layer positions stay in **pixels** (they come straight from the Tiled file).
 
 The read model wraps DotTiled, so no DotTiled types leak into the public API.
 
@@ -128,12 +174,13 @@ Hair (`Hair1` and `Hair2`) is shown unless a `Head` part sheet is present whose 
 The canonical sample scene (used by the desktop and WebAssembly hosts and by the end-to-end
 tests) configures:
 
-- **Player**: full sheet `hero`, character index **1**.
-- **Villager**: part sheets `body` + `face` + `hair1`, character index **2**.
-- **Guard**: part sheets `body` + `face` + `armour` + `head`, character index **3**.
+- **Player**: full sheet `hero`, character index **1**, at **(6, 6) tiles**.
+- **Villager**: part sheets `body` + `face` + `hair1`, character index **2**, at **(3, 4) tiles**.
+- **Guard**: part sheets `body` + `face` + `armour` + `head`, character index **3**, at **(11, 8) tiles**.
 
 ```csharp
 // Player — a single full sheet, character slot 1.
+engine.Player.Position = new Position(6, 6);
 engine.Player.SpriteSheets.Add(new SpriteSheetRef("hero", CharacterIndex: 1));
 
 // Villager — parts composed in the fixed order, character slot 2.
@@ -158,6 +205,9 @@ Opposite keys cancel (`W`+`S` or `A`+`D`), and a diagonal pair combines into a d
 normalized, magnitude 1). When no bound key is held the player stops and the animation snaps back
 to the standing frame. The engine reads `GameConfig` at input time and never caches a snapshot.
 
+Movement speeds are in **tiles per second**; a move of one second at the default speed
+(`Player.DefaultBaseSpeed == 2`) travels exactly **2 tiles** (96 px with 48 px tiles).
+
 The walk-cycle animation is **time-based and speed-scaled**: `Character.Update(dt)` advances the
 walk cycle at a rate proportional to `BaseSpeed` and `AnimationCycleSpeed`. The walk cycle is the
 bounce `0 → 1 → 2 → 1` (4 frame steps), and the time per frame is
@@ -166,9 +216,10 @@ bounce `0 → 1 → 2 → 1` (4 frame steps), and the time per frame is
 secondsPerFrame = AnimationCycleSpeed / (BaseSpeed * FramesPerCycle)
 ```
 
-so at `BaseSpeed == AnimationCycleSpeed == 96` one frame lasts 0.25 s and the cycle completes
-exactly **once per second** (4 frames/s). Doubling `BaseSpeed` doubles the cycle rate; raising
-`AnimationCycleSpeed` (the reference speed) slows the animation relative to movement speed.
+so at `BaseSpeed == AnimationCycleSpeed == 2` (both in tiles/s, the defaults) one frame lasts
+0.25 s and the cycle completes exactly **once per second** (4 frames/s). Doubling `BaseSpeed`
+doubles the cycle rate; raising `AnimationCycleSpeed` (the reference speed) slows the animation
+relative to movement speed.
 
 ## Rendering
 
@@ -194,9 +245,13 @@ below-player layers → NPCs → player → above-player layers
   player (e.g. tree canopies the player walks under). Each blit draws the intersection of the
   viewport with the layer image bounds, so viewport culling is preserved and no per-tile work
   happens per frame.
-- The camera follows the player and clamps the viewport inside the map. When the map is
-  **smaller than the canvas** on an axis it is **centered** in the canvas and the area around
-  it stays black (`offset = max(0, (canvasSize − mapPixelSize) / 2)`), so a small map is never
-  letterboxed with transparent or leftover pixels. When the map fills (or exceeds) the canvas,
-  the behaviour is the classic follow-and-clamp camera. The canvas size is read from the
-  canvas clip bounds.
+- **The camera works in tiles and renders in pixels.** `Render` computes the camera origin in
+  tiles (follow + clamp, see above), derives a pixel viewport
+  `(origin.X*ts, origin.Y*ts, origin.X*ts + canvasWidth, origin.Y*ts + canvasHeight)` and passes
+  it to the map renderer (which stays a pure pixel renderer), and draws each character at the
+  screen position `(pos.X*ts - origin.X*ts, pos.Y*ts - origin.Y*ts)`. The canvas size is read
+  from the canvas clip bounds.
+- When the map is **smaller than the canvas** on an axis it is **centered** in the canvas and
+  the area around it stays black (`offset = max(0, (canvasSize − mapPixelSize) / (2*ts))` tiles),
+  so a small map is never letterboxed with transparent or leftover pixels. When the map fills
+  (or exceeds) the canvas, the behaviour is the classic follow-and-clamp camera.

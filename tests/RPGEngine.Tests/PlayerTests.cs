@@ -94,7 +94,7 @@ public class PlayerTests
     // Acceptance 4: Move(direction, factor, dt) moves the underlying Character
     // by BaseSpeed * factor * dt and updates its Direction.
     // ---------------------------------------------------------------------
-    /// <summary>Verifies Move(direction, factor, dt) moves the underlying Character exactly BaseSpeed × factor × dt pixels along the right axis and updates its Direction.</summary>
+    /// <summary>Verifies Move(direction, factor, dt) moves the underlying Character exactly BaseSpeed × factor × dt tiles along the right axis and updates its Direction.</summary>
     [Theory]
     [InlineData(Direction.Down, 0.0, 100.0)]
     [InlineData(Direction.Up, 0.0, -100.0)]
@@ -108,7 +108,7 @@ public class PlayerTests
         var player = new Player { Position = new Position(0, 0) };
         player.Character.BaseSpeed = 100;
 
-        // BaseSpeed * factor * dt = 100 * 2 * 0.5 = 100 pixels.
+        // BaseSpeed * factor * dt = 100 * 2 * 0.5 = 100 tiles.
         player.Move(direction, speedFactor: 2, dt: 0.5);
 
         Assert.Equal(expectedX, player.Position.X);
@@ -150,22 +150,23 @@ public class PlayerTests
         var right = config.GetDirection(Key.D)!.Value;
         var down = config.GetDirection(Key.S)!.Value;
 
-        // Move right for one second (60 frames at 1/60 s) → 96 px to the right.
+        // Move right for one second (60 frames at 1/60 s) → 2 tiles to the right (the new
+        // default BaseSpeed of 2 tiles/s, the tile-unit equivalent of the previous 96 px/s).
         for (var frame = 0; frame < 60; frame++)
         {
             player.Move(right, speedFactor: 1, dt);
         }
 
-        Assert.Equal(96, player.Position.X, precision: 6);
+        Assert.Equal(2, player.Position.X, precision: 6);
         Assert.Equal(0, player.Position.Y, precision: 6);
 
-        // Then move down for half a second (30 frames) → 48 px down.
+        // Then move down for half a second (30 frames) → 1 tile down.
         for (var frame = 0; frame < 30; frame++)
         {
             player.Move(down, speedFactor: 1, dt);
         }
 
-        Assert.Equal(96, player.Position.X, precision: 6);
-        Assert.Equal(48, player.Position.Y, precision: 6);
+        Assert.Equal(2, player.Position.X, precision: 6);
+        Assert.Equal(1, player.Position.Y, precision: 6);
     }
 }

@@ -46,28 +46,28 @@ public sealed class Character
     // the first step goes toward 0, then the bounce alternates direction at each end.
     private int _frameStep = -1;
 
-    /// <summary>Gets or sets the top-left world position of the character's sprite, in pixels.</summary>
+    /// <summary>Gets or sets the top-left world position of the character's sprite, in tiles.</summary>
     public Position Position { get; set; }
 
     /// <summary>Gets or sets the direction the character is facing.</summary>
     public Direction Direction { get; set; }
 
-    /// <summary>Gets or sets the movement speed of the character in pixels per second.</summary>
+    /// <summary>Gets or sets the movement speed of the character in tiles per second.</summary>
     public double BaseSpeed { get; set; }
 
     /// <summary>
-    /// Gets or sets the movement speed (px/s) at which the walk cycle completes exactly one full
-    /// cycle per second. Defaults to 96, matching <see cref="Player.DefaultBaseSpeed"/>.
+    /// Gets or sets the movement speed (tiles/s) at which the walk cycle completes exactly one full
+    /// cycle per second. Defaults to 2, matching <see cref="Player.DefaultBaseSpeed"/>.
     /// </summary>
     /// <remarks>
     /// The walk cycle is the bounce <c>0 &#8594; 1 &#8594; 2 &#8594; 1</c>, i.e.
     /// <see cref="FramesPerCycle"/> frame steps. The time per frame is
     /// <c>secondsPerFrame = AnimationCycleSpeed / (BaseSpeed * FramesPerCycle)</c>, so at
-    /// <c>BaseSpeed == AnimationCycleSpeed == 96</c> one frame lasts 0.25 s (4 frames/s =
+    /// <c>BaseSpeed == AnimationCycleSpeed == 2</c> one frame lasts 0.25 s (4 frames/s =
     /// 1 cycle/s). Doubling the movement speed doubles the cycle rate; halving it halves it.
     /// Raising this property (the reference speed) slows the animation relative to movement speed.
     /// </remarks>
-    public double AnimationCycleSpeed { get; set; } = 96;
+    public double AnimationCycleSpeed { get; set; } = 2;
 
     /// <summary>
     /// Gets the mutable list of spritesheet references used to render the character. Each entry
@@ -92,13 +92,13 @@ public sealed class Character
 
     /// <summary>
     /// Moves the character in <paramref name="direction"/> by <c>BaseSpeed * speedFactor * dt</c>
-    /// pixels and sets the facing direction.
+    /// tiles and sets the facing direction.
     /// </summary>
     /// <param name="direction">The direction to face and move towards.</param>
     /// <param name="speedFactor">A multiplier applied to <see cref="BaseSpeed"/>. When zero the
     /// character only turns to face <paramref name="direction"/> without moving.</param>
     /// <param name="dt">The elapsed time in seconds (defaults to 1, so calling
-    /// <c>Move(d, factor)</c> moves <c>BaseSpeed * factor</c> pixels, i.e. per-second semantics).</param>
+    /// <c>Move(d, factor)</c> moves <c>BaseSpeed * factor</c> tiles, i.e. per-second semantics).</param>
     public void Move(Direction direction, double speedFactor = 1, double dt = 1)
     {
         Direction = direction;
@@ -149,7 +149,7 @@ public sealed class Character
         _animationAccumulator += dt;
 
         // secondsPerFrame = AnimationCycleSpeed / (BaseSpeed * FramesPerCycle). At
-        // BaseSpeed == AnimationCycleSpeed == 96 this is 0.25 s/frame, i.e. 4 frames/s = 1 cycle/s.
+        // BaseSpeed == AnimationCycleSpeed == 2 this is 0.25 s/frame, i.e. 4 frames/s = 1 cycle/s.
         var secondsPerFrame = AnimationCycleSpeed / (BaseSpeed * FramesPerCycle);
         var framesToAdvance = (int)Math.Floor(_animationAccumulator / secondsPerFrame);
         _animationAccumulator -= framesToAdvance * secondsPerFrame;
@@ -192,7 +192,9 @@ public sealed class Character
     /// <returns>The sprite size <c>(width, height)</c> in pixels.</returns>
     /// <remarks>
     /// Used by the engine to clamp a character (notably the player) inside the map bounds using
-    /// its actual rendered size, whatever the sheet's derived cell size is.
+    /// its actual rendered size, whatever the sheet's derived cell size is. The value stays in
+    /// pixels because it reads the sheet's cell size; the engine converts it to tiles (dividing
+    /// by the map's tile size) when clamping.
     /// </remarks>
     internal (int Width, int Height) GetSpriteSize(SpriteSheetManager manager)
     {

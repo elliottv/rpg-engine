@@ -16,9 +16,9 @@ namespace RPGEngine.Tests.Fixtures;
 /// </para>
 /// <list type="bullet">
 /// <item>Map: the committed 16×12 orthogonal map (48px tiles, 768×576 px world).</item>
-/// <item>Player: <c>hero</c> full sheet, character index 1, at (288, 288) — on the sand path.</item>
-/// <item>NPC "villager": <c>body</c> + <c>face</c> + <c>hair1</c> part sheets, character index 2, at (144, 192).</item>
-/// <item>NPC "guard": <c>body</c> + <c>face</c> + <c>armour</c> + <c>head</c> part sheets, character index 3, at (528, 384).</item>
+/// <item>Player: <c>hero</c> full sheet, character index 1, at (6, 6) tiles — on the sand path.</item>
+/// <item>NPC "villager": <c>body</c> + <c>face</c> + <c>hair1</c> part sheets, character index 2, at (3, 4) tiles.</item>
+/// <item>NPC "guard": <c>body</c> + <c>face</c> + <c>armour</c> + <c>head</c> part sheets, character index 3, at (11, 8) tiles.</item>
 /// </list>
 /// </remarks>
 internal static class SampleScene
@@ -26,14 +26,14 @@ internal static class SampleScene
     /// <summary>Tile size in pixels of the fixture map and the RPG Maker MZ sheets.</summary>
     public const int TileSize = 48;
 
-    /// <summary>Player world position (on the sand path of the fixture map).</summary>
-    public static readonly Position PlayerPosition = new(6 * TileSize, 6 * TileSize);
+    /// <summary>Player world position in tiles (on the sand path of the fixture map).</summary>
+    public static readonly Position PlayerPosition = new(6, 6);
 
-    /// <summary>First NPC world position (a villager made of body/face/hair1 parts).</summary>
-    public static readonly Position VillagerPosition = new(3 * TileSize, 4 * TileSize);
+    /// <summary>First NPC world position in tiles (a villager made of body/face/hair1 parts).</summary>
+    public static readonly Position VillagerPosition = new(3, 4);
 
-    /// <summary>Second NPC world position (a guard made of body/face/armour/head parts).</summary>
-    public static readonly Position GuardPosition = new(11 * TileSize, 8 * TileSize);
+    /// <summary>Second NPC world position in tiles (a guard made of body/face/armour/head parts).</summary>
+    public static readonly Position GuardPosition = new(11, 8);
 
     /// <summary>
     /// Builds the engine for the sample scene from a directory that contains the materialized
@@ -54,11 +54,12 @@ internal static class SampleScene
         engine.Player.Position = PlayerPosition;
         engine.Player.SpriteSheets.Add(new SpriteSheetRef("hero", CharacterIndex: 1));
 
-        // NPC 1 "villager": body + face + hair1 part sheets, character slot 2.
+        // NPC 1 "villager": body + face + hair1 part sheets, character slot 2. The NPC speed is
+        // 1 tile/s (the tile-unit equivalent of the previous 48 px/s at 48px tiles).
         var villager = new Character
         {
             Position = VillagerPosition,
-            BaseSpeed = 48,
+            BaseSpeed = 1,
         };
         engine.LoadPartSpriteSheet("villager_body", Path.Combine(assetsRoot, FixtureAssets.PartBody), CharacterPartType.Body);
         engine.LoadPartSpriteSheet("villager_face", Path.Combine(assetsRoot, FixtureAssets.PartFace), CharacterPartType.Face);
@@ -68,11 +69,12 @@ internal static class SampleScene
         villager.SpriteSheets.Add(new SpriteSheetRef("villager_hair1", CharacterIndex: 2));
         engine.Characters.Add(villager);
 
-        // NPC 2 "guard": body + face + armour + head part sheets, character slot 3.
+        // NPC 2 "guard": body + face + armour + head part sheets, character slot 3. The NPC
+        // speed is 1 tile/s (the tile-unit equivalent of the previous 48 px/s at 48px tiles).
         var guard = new Character
         {
             Position = GuardPosition,
-            BaseSpeed = 48,
+            BaseSpeed = 1,
         };
         engine.LoadPartSpriteSheet("guard_body", Path.Combine(assetsRoot, FixtureAssets.PartBody), CharacterPartType.Body);
         engine.LoadPartSpriteSheet("guard_face", Path.Combine(assetsRoot, FixtureAssets.PartFace), CharacterPartType.Face);

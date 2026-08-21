@@ -25,14 +25,14 @@ public sealed class GameScene
     /// <summary>Tile size in pixels of the fixture map and the RPG Maker MZ sheets.</summary>
     public const int TileSize = 48;
 
-    /// <summary>Player world position (on the sand path of the fixture map).</summary>
-    public static readonly Position PlayerPosition = new(6 * TileSize, 6 * TileSize);
+    /// <summary>Player world position in tiles (on the sand path of the fixture map).</summary>
+    public static readonly Position PlayerPosition = new(6, 6);
 
-    /// <summary>First NPC world position (a villager made of body/face/hair1 parts).</summary>
-    public static readonly Position VillagerPosition = new(3 * TileSize, 4 * TileSize);
+    /// <summary>First NPC world position in tiles (a villager made of body/face/hair1 parts).</summary>
+    public static readonly Position VillagerPosition = new(3, 4);
 
-    /// <summary>Second NPC world position (a guard made of body/face/armour/head parts).</summary>
-    public static readonly Position GuardPosition = new(11 * TileSize, 8 * TileSize);
+    /// <summary>Second NPC world position in tiles (a guard made of body/face/armour/head parts).</summary>
+    public static readonly Position GuardPosition = new(11, 8);
 
     private readonly GameEngine _engine;
 
@@ -85,10 +85,11 @@ public sealed class GameScene
         await engine.LoadPartSpriteSheetAsync("villager_body", await FetchPngStreamAsync(http, baseUrl, "characters/character_part_body.png.b64").ConfigureAwait(false), CharacterPartType.Body).ConfigureAwait(false);
         await engine.LoadPartSpriteSheetAsync("villager_face", await FetchPngStreamAsync(http, baseUrl, "characters/character_part_face.png.b64").ConfigureAwait(false), CharacterPartType.Face).ConfigureAwait(false);
         await engine.LoadPartSpriteSheetAsync("villager_hair1", await FetchPngStreamAsync(http, baseUrl, "characters/character_part_hair1.png.b64").ConfigureAwait(false), CharacterPartType.Hair1).ConfigureAwait(false);
+        // NPC speed is 1 tile/s (the tile-unit equivalent of the previous 48 px/s at 48px tiles).
         var villager = new Character
         {
             Position = VillagerPosition,
-            BaseSpeed = 48,
+            BaseSpeed = 1,
         };
         villager.SpriteSheets.Add(new SpriteSheetRef("villager_body", CharacterIndex: 2));
         villager.SpriteSheets.Add(new SpriteSheetRef("villager_face", CharacterIndex: 2));
@@ -100,10 +101,11 @@ public sealed class GameScene
         await engine.LoadPartSpriteSheetAsync("guard_face", await FetchPngStreamAsync(http, baseUrl, "characters/character_part_face.png.b64").ConfigureAwait(false), CharacterPartType.Face).ConfigureAwait(false);
         await engine.LoadPartSpriteSheetAsync("guard_armour", await FetchPngStreamAsync(http, baseUrl, "characters/character_part_armour.png.b64").ConfigureAwait(false), CharacterPartType.Armour).ConfigureAwait(false);
         await engine.LoadPartSpriteSheetAsync("guard_head", await FetchPngStreamAsync(http, baseUrl, "characters/character_part_head.png.b64").ConfigureAwait(false), CharacterPartType.Head).ConfigureAwait(false);
+        // NPC speed is 1 tile/s (the tile-unit equivalent of the previous 48 px/s at 48px tiles).
         var guard = new Character
         {
             Position = GuardPosition,
-            BaseSpeed = 48,
+            BaseSpeed = 1,
         };
         guard.SpriteSheets.Add(new SpriteSheetRef("guard_body", CharacterIndex: 3));
         guard.SpriteSheets.Add(new SpriteSheetRef("guard_face", CharacterIndex: 3));

@@ -7,11 +7,11 @@ using Xunit;
 namespace RPGEngine.Tests;
 
 /// <summary>
-/// Acceptance tests for <see cref="GameEngine"/> (story 3): the root object that owns the
-/// player, NPCs, map, configuration and spritesheet registry, and exposes the
-/// <c>Update</c>/<c>Render</c>/<c>Input</c>/<c>LoadSpriteSheet</c> API used by the host game
-/// loop. Tile sets are loaded by the <c>TileMap</c> itself and are not part of the engine's
-/// public API.
+/// Acceptance tests for <see cref="GameEngine"/> (story 3, updated by story 37: tile-based
+/// world coordinates): the root object that owns the player, NPCs, map, configuration and
+/// spritesheet registry, and exposes the <c>Update</c>/<c>Render</c>/<c>Input</c>/
+/// <c>LoadSpriteSheet</c> API used by the host game loop. All world coordinates are in tiles;
+/// pixels are produced only at the canvas boundary.
 /// </summary>
 public class GameEngineTests
 {
@@ -21,15 +21,15 @@ public class GameEngineTests
 
     // ---------------------------------------------------------------------
     // Acceptance 1: Input → movement. Pressing W and calling Update(1/60)
-    // for 60 frames with BaseSpeed = 96 moves the player up ~96 px; releasing
+    // for 60 frames with BaseSpeed = 2 moves the player up ~2 tiles; releasing
     // the key stops the movement.
     // ---------------------------------------------------------------------
-    /// <summary>Verifies holding W for one second at 96 px/s moves the player up ~96 px, and releasing the key stops the movement.</summary>
+    /// <summary>Verifies holding W for one second at the default 2 tiles/s moves the player up 2 tiles, and releasing the key stops the movement.</summary>
     [Fact]
     public void Input_UpKeyForOneSecond_MovesPlayerUpByBaseSpeed()
     {
         var engine = new GameEngine();
-        engine.Player.Character.BaseSpeed = 96;
+        engine.Player.Character.BaseSpeed = 2;
         engine.Player.Position = new Position(200, 200);
 
         engine.Input(Key.W, true);
@@ -38,9 +38,9 @@ public class GameEngineTests
             engine.Update(FrameDt);
         }
 
-        // Moved straight up for one second: -96 px on Y, X unchanged.
+        // Moved straight up for one second: -2 tiles on Y, X unchanged.
         Assert.Equal(200, engine.Player.Position.X, precision: 6);
-        Assert.Equal(200 - 96, engine.Player.Position.Y, precision: 6);
+        Assert.Equal(200 - 2, engine.Player.Position.Y, precision: 6);
         Assert.Equal(Direction.Up, engine.Player.Direction);
 
         // Releasing the key stops the movement on the next update.
@@ -77,12 +77,15 @@ public class GameEngineTests
     }
 
     // ---------------------------------------------------------------------
-    // Acceptance 3: the camera follows the player and clamps inside the map.
-    // With a 10×10 (48px) map and a 240×240 canvas the origin is (0,0) at the
-    // top-left corner, (PixelWidth - 240, PixelHeight - 240) at the bottom-right
-    // corner, and centers the player in the middle. Verified via rendering.
+    // Acceptance 3 (story 37): the camera follows the player and clamps inside
+    // the map, in tile units. With a 10×10 (48px) map and a 240×240 canvas the
+    // origin is (0,0) tiles at the top-left corner, (5,5) tiles at the
+    // bottom-right corner (previously (240,240) px), and (2,2) tiles for the
+    // player at (4.5,4.5) tiles (previously (216,216) px) — the camera contract
+    // is unchanged when re-expressed in tiles. Verified via ComputeCameraOrigin
+    // and rendered output.
     // ---------------------------------------------------------------------
-    /// <summary>Verifies the camera origin clamps to the map bounds and centers the player, asserted through rendered output.</summary>
+    /// <summary>Verifies the camera origin clamps to the map bounds and centers the player, in tile units, asserted through rendered output.</summary>
     [Fact]
     public void Camera_ClampsToMapBounds_AndCentersPlayer()
     {
@@ -101,17 +104,18 @@ public class GameEngineTests
             Assert.NotEqual(0, bitmap.GetPixel(200, 200).Alpha);
         }
 
-        // Bottom-right corner: origin clamped to (PixelWidth - 240, PixelHeight - 240).
-        engine.Player.Position = new Position(480 - CellSize, 480 - CellSize);
-        Assert.Equal(new Position(240, 240), engine.ComputeCameraOrigin(canvasSize, canvasSize));
+        // Bottom-right corner: origin clamped to (Map.Width - canvas/ts, Map.Height - canvas/ts)
+        // = (10 - 5, 10 - 5) = (5, 5) tiles (previously (240, 240) px).
+        engine.Player.Position = new Position(9, 9); // 432 px
+        Assert.Equal(new Position(5, 5), engine.ComputeCameraOrigin(canvasSize, canvasSize));
         using (var bitmap = Render(engine, canvasSize, canvasSize))
         {
             AssertSpriteColor(bitmap, topLeftX: 192, topLeftY: 192, seed: 1, characterIndex: 1);
         }
 
-        // Middle: origin = player - canvas/2 (no clamping), so the player is centered.
-        engine.Player.Position = new Position(216, 216);
-        Assert.Equal(new Position(96, 96), engine.ComputeCameraOrigin(canvasSize, canvasSize));
+        // Middle: origin = player - canvas/(2*ts) (no clamping), so the player is centered.
+        engine.Player.Position = new Position(4.5, 4.5); // 216 px
+        Assert.Equal(new Position(2, 2), engine.ComputeCameraOrigin(canvasSize, canvasSize));
         using (var bitmap = Render(engine, canvasSize, canvasSize))
         {
             AssertSpriteColor(bitmap, topLeftX: 120, topLeftY: 120, seed: 1, characterIndex: 1);
@@ -134,7 +138,7 @@ public class GameEngineTests
         ConfigurePlayerSprite(engine, seed: 1);
         engine.Player.Position = new Position(0, 0);
 
-        var npc = new Character { Position = new Position(96, 96) };
+        var npc = new Character { Position = new Position(2, 2) }; // 96 px
         using (var npcStream = CharacterTestHelper.CreateSheetStream(2))
         {
             engine.LoadSpriteSheet("npc", npcStream);
@@ -152,9 +156,10 @@ public class GameEngineTests
         Assert.Equal(CharacterTestHelper.SpriteColor(2, 2, Direction.Down, StandingFrame), bitmap.GetPixel(120, 120));
 
         // Replacing the map changes the output: the 2×2 (96×96) map is now centered on the
-        // 240×240 canvas (origin -72,-72), so the player/NPC move to screen (72,72)/(168,168)
-        // and the pixel at (200,100) is outside the map and every sprite: it is black (the black
-        // background around a smaller map), instead of the red tile of the 10×10 map.
+        // 240×240 canvas (origin -1.5,-1.5 tiles), so the player/NPC move to screen
+        // (72,72)/(168,168) and the pixel at (200,100) is outside the map and every sprite: it
+        // is black (the black background around a smaller map), instead of the red tile of the
+        // 10×10 map.
         using (var smallFixture = CreateFilledMapFixture(2, 2))
         {
             engine.Map = TileMap.Load(smallFixture.MapPath);
@@ -164,7 +169,7 @@ public class GameEngineTests
         }
 
         // Removing the NPC removes its pixels; re-adding restores them. On the centered 2×2
-        // map the NPC (world 96,96) is at screen (168,168); its centre pixel is (192,192).
+        // map the NPC (world 2,2) is at screen (168,168); its centre pixel is (192,192).
         engine.Characters.Remove(npc);
         using (var withoutNpc = Render(engine, canvasSize, canvasSize))
         {
@@ -310,12 +315,12 @@ public class GameEngineTests
     // diagonally, opposite keys cancel, and releasing one key of a held
     // diagonal pair reverts to the remaining cardinal direction.
     // ---------------------------------------------------------------------
-    /// <summary>Verifies holding W+D for one second at 96 px/s moves diagonally up-right (~±67.88 px per axis) and sets Direction to UpRight; releasing D then moves straight up.</summary>
+    /// <summary>Verifies holding W+D for one second at 2 tiles/s moves diagonally up-right (~±1.414 tiles per axis) and sets Direction to UpRight; releasing D then moves straight up.</summary>
     [Fact]
     public void Update_HoldingDiagonalPair_MovesDiagonallyAndRevertsOnRelease()
     {
         var engine = new GameEngine();
-        engine.Player.Character.BaseSpeed = 96;
+        engine.Player.Character.BaseSpeed = 2;
         engine.Player.Position = new Position(200, 200);
 
         engine.Input(Key.W, true);
@@ -325,8 +330,8 @@ public class GameEngineTests
             engine.Update(FrameDt);
         }
 
-        // UpRight = (+√½, -√½); one second at 96 px/s → (±96·√½) ≈ (±67.88) per axis.
-        var component = 96 * Math.Sqrt(0.5);
+        // UpRight = (+√½, -√½); one second at 2 tiles/s → (±2·√½) ≈ (±1.414) per axis.
+        var component = 2 * Math.Sqrt(0.5);
         Assert.Equal(200 + component, engine.Player.Position.X, precision: 6);
         Assert.Equal(200 - component, engine.Player.Position.Y, precision: 6);
         Assert.Equal(Direction.UpRight, engine.Player.Direction);
@@ -373,10 +378,9 @@ public class GameEngineTests
 
     // ---------------------------------------------------------------------
     // Acceptance (story 23): the player is clamped inside the map using its
-    // actual sprite size (78×108 for a 936×864 sheet), verified through
-    // ComputeCameraOrigin/rendering.
+    // actual sprite size (78×108 for a 936×864 sheet), converted to tiles.
     // ---------------------------------------------------------------------
-    /// <summary>Verifies ClampPlayerToMap uses the player's derived 78×108 sprite size (maxX = PixelWidth - 78, maxY = PixelHeight - 108).</summary>
+    /// <summary>Verifies ClampPlayerToMap uses the player's derived 78×108 sprite size converted to tiles (maxX = 10 - 78/48, maxY = 10 - 108/48).</summary>
     [Fact]
     public void ClampPlayerToMap_UsesPlayerSpriteSize()
     {
@@ -389,11 +393,12 @@ public class GameEngineTests
         }
         engine.Player.SpriteSheets.Add(new SpriteSheetRef("hero", CharacterIndex: 1));
 
-        // Beyond the bottom-right corner: clamps to (480 - 78, 480 - 108) = (402, 372).
+        // Beyond the bottom-right corner: clamps to (10 - 78/48, 10 - 108/48) = (8.375, 7.75)
+        // tiles (the previous (402, 372) px).
         engine.Player.Position = new Position(1000, 1000);
         engine.Update(FrameDt);
-        Assert.Equal(480 - 78, engine.Player.Position.X, precision: 6);
-        Assert.Equal(480 - 108, engine.Player.Position.Y, precision: 6);
+        Assert.Equal(10 - (78 / (double)CellSize), engine.Player.Position.X, precision: 6);
+        Assert.Equal(10 - (108 / (double)CellSize), engine.Player.Position.Y, precision: 6);
 
         // Negative position clamps to (0, 0).
         engine.Player.Position = new Position(-100, -100);
@@ -417,12 +422,12 @@ public class GameEngineTests
         engine.Player.SpriteSheets.Add(new SpriteSheetRef("hero", CharacterIndex: 1));
 
         engine.Player.Position = new Position(1000, 1000);
-        engine.Update(FrameDt); // clamps to (402, 372)
+        engine.Update(FrameDt); // clamps to (8.375, 7.75)
 
-        // The camera origin clamps to the map: maxX = maxY = 480 - 240 = 240.
-        Assert.Equal(new Position(240, 240), engine.ComputeCameraOrigin(canvasSize, canvasSize));
+        // The camera origin clamps to the map: maxX = maxY = 10 - 240/48 = 5 tiles.
+        Assert.Equal(new Position(5, 5), engine.ComputeCameraOrigin(canvasSize, canvasSize));
 
-        // The 78×108 sprite renders at screen (402 - 240, 372 - 240) = (162, 132).
+        // The 78×108 sprite renders at screen ((8.375 - 5)*48, (7.75 - 5)*48) = (162, 132).
         using var bitmap = Render(engine, canvasSize, canvasSize);
         var expected = CharacterTestHelper.SpriteColor(seed: 1, characterIndex: 1, Direction.Down, StandingFrame);
         Assert.Equal(expected, bitmap.GetPixel(162 + 39, 132 + 54));
@@ -434,7 +439,7 @@ public class GameEngineTests
     // map is centered, and Render clears the surrounding area to black. Tile layers
     // declaring the Tiled above_player property are drawn after the player.
     // ---------------------------------------------------------------------
-    /// <summary>Verifies a map smaller than the canvas is centered (negative origin) and the surrounding pixels are black.</summary>
+    /// <summary>Verifies a map smaller than the canvas is centered (negative origin, in tiles) and the surrounding pixels are black.</summary>
     [Fact]
     public void Camera_MapSmallerThanCanvas_CentersMapWithBlackBackground()
     {
@@ -443,8 +448,8 @@ public class GameEngineTests
         var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
         engine.Player.Position = new Position(0, 0);
 
-        // offset = (240 - 96) / 2 = 72 on each axis; the origin is the negative offset.
-        Assert.Equal(new Position(-72, -72), engine.ComputeCameraOrigin(canvasSize, canvasSize));
+        // offset = (240 - 96) / (2 * 48) = 1.5 on each axis; the origin is the negative offset.
+        Assert.Equal(new Position(-1.5, -1.5), engine.ComputeCameraOrigin(canvasSize, canvasSize));
 
         using var bitmap = Render(engine, canvasSize, canvasSize);
 
@@ -463,7 +468,7 @@ public class GameEngineTests
         Assert.Equal(black, bitmap.GetPixel(120, 220)); // below the map
     }
 
-    /// <summary>Verifies a map that fills (or exceeds) the canvas keeps the previous follow + clamp camera behavior (offset == 0).</summary>
+    /// <summary>Verifies a map that fills (or exceeds) the canvas keeps the previous follow + clamp camera behavior (offset == 0), in tiles.</summary>
     [Fact]
     public void Camera_MapFillsCanvas_KeepsFollowAndClampBehavior()
     {
@@ -475,13 +480,13 @@ public class GameEngineTests
         engine.Player.Position = new Position(0, 0);
         Assert.Equal(new Position(0, 0), engine.ComputeCameraOrigin(canvasSize, canvasSize));
 
-        // Bottom-right: origin clamped to PixelSize - canvasSize.
-        engine.Player.Position = new Position(480 - CellSize, 480 - CellSize);
-        Assert.Equal(new Position(240, 240), engine.ComputeCameraOrigin(canvasSize, canvasSize));
+        // Bottom-right: origin clamped to (Map.Width - canvas/ts, Map.Height - canvas/ts) = (5, 5).
+        engine.Player.Position = new Position(9, 9);
+        Assert.Equal(new Position(5, 5), engine.ComputeCameraOrigin(canvasSize, canvasSize));
 
-        // Middle: origin = player - canvas/2 (follow, no clamping).
-        engine.Player.Position = new Position(216, 216);
-        Assert.Equal(new Position(96, 96), engine.ComputeCameraOrigin(canvasSize, canvasSize));
+        // Middle: origin = player - canvas/(2*ts) (follow, no clamping).
+        engine.Player.Position = new Position(4.5, 4.5);
+        Assert.Equal(new Position(2, 2), engine.ComputeCameraOrigin(canvasSize, canvasSize));
     }
 
     /// <summary>Verifies a tile on an above_player layer is drawn on top of the player, and without the flag the player is on top.</summary>
@@ -532,6 +537,124 @@ public class GameEngineTests
             using var bitmap = Render(engine, canvasSize, canvasSize);
             var expected = CharacterTestHelper.SpriteColor(seed: 1, characterIndex: 1, Direction.Down, StandingFrame);
             Assert.Equal(expected, bitmap.GetPixel(24, 24));
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // Story 37 acceptance 4: SurfaceToWorld / WorldToSurface are camera-aware
+    // and inverses within floating-point tolerance. With no map the origin is
+    // (0,0), so SurfaceToWorld(408, 408, 960, 960) == (8.5, 8.5) tiles.
+    // ---------------------------------------------------------------------
+    /// <summary>Verifies SurfaceToWorld and WorldToSurface are inverses within 1e-9, and the documented origin-(0,0) round trip.</summary>
+    [Fact]
+    public void SurfaceToWorld_WorldToSurface_AreInversesWithinTolerance()
+    {
+        var engine = new GameEngine(); // no map -> camera origin (0,0), ts 48
+
+        // With origin (0,0) and ts 48, SurfaceToWorld(408, 408, 960, 960) == (8.5, 8.5).
+        var world = engine.SurfaceToWorld(408, 408, 960, 960);
+        Assert.Equal(8.5, world.X, precision: 9);
+        Assert.Equal(8.5, world.Y, precision: 9);
+
+        // Round-trip: WorldToSurface(SurfaceToWorld(p)) == p within floating-point tolerance.
+        var surface = engine.WorldToSurface(world, 960, 960);
+        Assert.Equal(408, surface.X, precision: 9);
+        Assert.Equal(408, surface.Y, precision: 9);
+
+        // Inverses across a spread of surface points.
+        foreach (var (sx, sy) in new[] { (0.0, 0.0), (123.0, 456.0), (959.0, 1.0), (408.0, 408.0) })
+        {
+            var roundTripped = engine.WorldToSurface(engine.SurfaceToWorld(sx, sy, 960, 960), 960, 960);
+            Assert.Equal(sx, roundTripped.X, precision: 9);
+            Assert.Equal(sy, roundTripped.Y, precision: 9);
+        }
+    }
+
+    /// <summary>Verifies SurfaceToWorld / WorldToSurface use the same follow + clamp camera as Render for a given canvas size.</summary>
+    [Fact]
+    public void SurfaceToWorld_WorldToSurface_RespectCameraOffset()
+    {
+        const int canvasSize = 240;
+        using var fixture = CreateFilledMapFixture(10, 10); // 480×480 px
+        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        ConfigurePlayerSprite(engine, seed: 1);
+
+        // Player at (4.5, 4.5) tiles -> camera origin (2, 2) tiles, so the player's world
+        // position maps to the canvas centre (120, 120) px.
+        engine.Player.Position = new Position(4.5, 4.5);
+        var surface = engine.WorldToSurface(new Position(4.5, 4.5), canvasSize, canvasSize);
+        Assert.Equal(120, surface.X, precision: 9);
+        Assert.Equal(120, surface.Y, precision: 9);
+
+        // And the canvas centre maps back to the player's world position.
+        var world = engine.SurfaceToWorld(120, 120, canvasSize, canvasSize);
+        Assert.Equal(4.5, world.X, precision: 9);
+        Assert.Equal(4.5, world.Y, precision: 9);
+
+        // The conversions are inverses within floating-point tolerance.
+        var roundTripped = engine.WorldToSurface(engine.SurfaceToWorld(80, 160, canvasSize, canvasSize), canvasSize, canvasSize);
+        Assert.Equal(80, roundTripped.X, precision: 9);
+        Assert.Equal(160, roundTripped.Y, precision: 9);
+    }
+
+    // ---------------------------------------------------------------------
+    // Story 37 acceptance 5: rendering reproduces the previous pixel output.
+    // Player.Position = (8.5, 8.5) tiles with camera origin (0,0) draws the
+    // sprite at 408 px.
+    // ---------------------------------------------------------------------
+    /// <summary>Verifies a player at (8.5, 8.5) tiles with origin (0,0) renders its sprite at screen position 408 px (pixel assertion).</summary>
+    [Fact]
+    public void Render_PlayerAt8_5_WithOriginZero_DrawsSpriteAt408Px()
+    {
+        // A 21×21 map (1008×1008 px) on a 960×960 canvas: Render derives the canvas size
+        // from the clip bounds (962×962), for which the camera origin is exactly (0,0) tiles —
+        // the player's desired origin (8.5 - 962/96 < 0) clamps to 0 and the map is larger than
+        // the canvas, so there is no centering offset.
+        using var fixture = CreateFilledMapFixture(21, 21);
+        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        ConfigurePlayerSprite(engine, seed: 1);
+        engine.Player.Position = new Position(8.5, 8.5);
+
+        using var bitmap = new SKBitmap(960, 960);
+        using (var canvas = new SKCanvas(bitmap))
+        {
+            canvas.Clear(SKColors.Transparent);
+            engine.Render(canvas, FrameDt);
+
+            // Assert the camera origin used inside Render is exactly (0,0) tiles.
+            var canvasWidth = (int)Math.Ceiling(canvas.LocalClipBounds.Width);
+            var canvasHeight = (int)Math.Ceiling(canvas.LocalClipBounds.Height);
+            Assert.Equal(new Position(0, 0), engine.ComputeCameraOrigin(canvasWidth, canvasHeight));
+        }
+
+        // The 48×48 sprite is drawn at screen top-left (408, 408); its centre is (432, 432).
+        var expected = CharacterTestHelper.SpriteColor(seed: 1, characterIndex: 1, Direction.Down, StandingFrame);
+        Assert.Equal(expected, bitmap.GetPixel(408 + (CellSize / 2), 408 + (CellSize / 2)));
+        Assert.Equal(expected, bitmap.GetPixel(408, 408));
+        Assert.Equal(expected, bitmap.GetPixel(408 + CellSize - 1, 408 + CellSize - 1));
+    }
+
+    // ---------------------------------------------------------------------
+    // Story 37: Render records the canvas size from the clip bounds (internal
+    // state the click-to-move story will consume).
+    // ---------------------------------------------------------------------
+    /// <summary>Verifies Render records the canvas size derived from the clip bounds for the future click-to-move story.</summary>
+    [Fact]
+    public void Render_RecordsCanvasSize()
+    {
+        var engine = new GameEngine();
+        Assert.Equal(0, engine.LastCanvasWidth);
+        Assert.Equal(0, engine.LastCanvasHeight);
+
+        using var bitmap = new SKBitmap(240, 160);
+        using (var canvas = new SKCanvas(bitmap))
+        {
+            canvas.Clear(SKColors.Transparent);
+            engine.Render(canvas, FrameDt);
+
+            // Render stores the same clip-derived size it uses for the camera.
+            Assert.Equal(Math.Max(0, (int)Math.Ceiling(canvas.LocalClipBounds.Width)), engine.LastCanvasWidth);
+            Assert.Equal(Math.Max(0, (int)Math.Ceiling(canvas.LocalClipBounds.Height)), engine.LastCanvasHeight);
         }
     }
 

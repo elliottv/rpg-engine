@@ -23,12 +23,12 @@ namespace RPGEngine;
 public sealed class Player
 {
     /// <summary>
-    /// The default movement speed, in pixels per second, of a player created by the parameterless
-    /// constructor: 96 px/s, i.e. two 48px map tiles every second (the tile grid is fixed at
-    /// 48px regardless of the sprite's derived cell size). This is a gameplay tuning
-    /// constant and is expected to be adjusted later.
+    /// The default movement speed, in tiles per second, of a player created by the parameterless
+    /// constructor: 2 tiles/s, i.e. the tile-unit equivalent of the previous 96 px/s with 48 px
+    /// tiles (two 48px map tiles every second). This is a gameplay tuning constant and is
+    /// expected to be adjusted later.
     /// </summary>
-    public const double DefaultBaseSpeed = 96;
+    public const double DefaultBaseSpeed = 2;
 
     /// <summary>Gets or sets the <see cref="Character"/> that represents the player in the game world.</summary>
     /// <remarks>
@@ -57,7 +57,7 @@ public sealed class Player
     }
 
     /// <summary>
-    /// Gets or sets the top-left world position of the player's sprite, in pixels. Forwards to
+    /// Gets or sets the top-left world position of the player's sprite, in tiles. Forwards to
     /// <see cref="Character.Position"/>.
     /// </summary>
     public Position Position
@@ -87,7 +87,7 @@ public sealed class Player
 
     /// <summary>
     /// Moves the player in <paramref name="direction"/> by <c>BaseSpeed * speedFactor * dt</c>
-    /// pixels and sets the facing direction. Forwards to
+    /// tiles and sets the facing direction. Forwards to
     /// <see cref="Character.Move(Direction, double, double)"/>.
     /// </summary>
     /// <param name="direction">The direction to face and move towards.</param>

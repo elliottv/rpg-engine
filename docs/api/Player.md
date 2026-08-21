@@ -5,20 +5,21 @@ Namespace: `RPGEngine` — represents the player character controlled by the use
 ## Remarks
 
 The player is **composed** of a `Character` (composition, no inheritance) which carries all of
-the in-world state: position, facing direction, movement speed and the list of spritesheet
-references. `Player` is a thin wrapper that forwards state access and movement to that character,
-so configuring `SpriteSheets` or moving the player is exactly equivalent to configuring/moving
-the underlying `Character`.
+the in-world state: position (in tiles), facing direction, movement speed (in tiles per second)
+and the list of spritesheet references. `Player` is a thin wrapper that forwards state access
+and movement to that character, so configuring `SpriteSheets` or moving the player is exactly
+equivalent to configuring/moving the underlying `Character`.
 
 The player does not listen to input itself. The engine (`GameEngine`) owns the pressed-keys
 state and calls `Move(direction, 1, dt)` in its update loop.
 
 ## Fields
 
-### `const double DefaultBaseSpeed = 96`
+### `const double DefaultBaseSpeed = 2`
 
-The default movement speed in pixels per second of a player created by the parameterless
-constructor (96 px/s, i.e. two 48px map tiles every second).
+The default movement speed in **tiles per second** of a player created by the parameterless
+constructor (2 tiles/s, the tile-unit equivalent of the previous 96 px/s with 48 px tiles: two
+48px map tiles every second).
 
 ## Constructors
 
@@ -31,7 +32,7 @@ var player = new Player();
 ### `Player(Character character)` — wraps the provided character
 
 ```csharp
-var character = new Character { BaseSpeed = 64 };
+var character = new Character { BaseSpeed = 1 };
 var player = new Player(character);
 ```
 
@@ -45,16 +46,16 @@ speed and spritesheets as well.
 
 ```csharp
 var player = new Player();
-player.Character.Position = new Position(10, 20);
+player.Character.Position = new Position(6, 6);
 ```
 
 ### `Position Position`
 
-Gets or sets the top-left world position of the player's sprite, in pixels. Forwards to
+Gets or sets the top-left world position of the player's sprite, in tiles. Forwards to
 `Character.Position`.
 
 ```csharp
-player.Position = new Position(6 * 48, 6 * 48);
+player.Position = new Position(6, 6);
 ```
 
 ### `Direction Direction`
@@ -80,7 +81,7 @@ player.SpriteSheets.Add(new SpriteSheetRef("hero", CharacterIndex: 1));
 
 ### `void Move(Direction direction, double speedFactor = 1, double dt = 1)`
 
-Moves the player in `direction` by `BaseSpeed * speedFactor * dt` pixels and sets the facing
+Moves the player in `direction` by `BaseSpeed * speedFactor * dt` tiles and sets the facing
 direction. Forwards to `Character.Move`.
 
 ```csharp

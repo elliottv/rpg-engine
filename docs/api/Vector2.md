@@ -32,7 +32,7 @@ a direction delta by a distance.
 
 ```csharp
 var delta = Direction.Up.Delta();         // (0, -1)
-var step = delta * (96 * 1 * 0.5);        // (0, -48) — 48 px up at 96 px/s for 0.5 s
+var step = delta * (2 * 1 * 0.5);         // (0, -1) — 1 tile up at 2 tiles/s for 0.5 s
 ```
 
 ## Example
@@ -41,5 +41,6 @@ var step = delta * (96 * 1 * 0.5);        // (0, -48) — 48 px up at 96 px/s fo
 var position = new Position(10, 20);
 var offset = new Vector2(3, -4);
 var moved = position + offset;            // (13, 16)
-var tile = moved.ToTile(tileSize: 48);    // (0, 0)
+var tile = moved.ToTile();                // (13, 16) — the containing cell
+var pixels = moved.ToPixels(48);          // (624, 768) — pixels at 48 px/tile
 ```
