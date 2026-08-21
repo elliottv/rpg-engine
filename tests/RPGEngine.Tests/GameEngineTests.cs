@@ -94,8 +94,9 @@ public class GameEngineTests
         var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
         ConfigurePlayerSprite(engine, seed: 1);
 
-        // Top-left corner: origin (0,0), the player sprite is at screen (0,0).
-        engine.Player.Position = new Position(0, 0);
+        // Top-left corner: origin (0,0). The player at (0.5, 1.0) has its feet (middle-bottom)
+        // at screen (24, 48), so the 48×48 sprite's top-left is at (0, 0) (centre (24, 24)).
+        engine.Player.Position = new Position(0.5, 1.0);
         Assert.Equal(new Position(0, 0), engine.ComputeCameraOrigin(canvasSize, canvasSize));
         using (var bitmap = Render(engine, canvasSize, canvasSize))
         {
@@ -105,20 +106,23 @@ public class GameEngineTests
         }
 
         // Bottom-right corner: origin clamped to (Map.Width - canvas/ts, Map.Height - canvas/ts)
-        // = (10 - 5, 10 - 5) = (5, 5) tiles (previously (240, 240) px).
-        engine.Player.Position = new Position(9, 9); // 432 px
+        // = (10 - 5, 10 - 5) = (5, 5) tiles (previously (240, 240) px). The player at (9, 9) has
+        // its feet at screen (192, 192); the sprite top-left is (168, 144), centre (192, 168).
+        engine.Player.Position = new Position(9, 9);
         Assert.Equal(new Position(5, 5), engine.ComputeCameraOrigin(canvasSize, canvasSize));
         using (var bitmap = Render(engine, canvasSize, canvasSize))
         {
-            AssertSpriteColor(bitmap, topLeftX: 192, topLeftY: 192, seed: 1, characterIndex: 1);
+            AssertSpriteColor(bitmap, topLeftX: 168, topLeftY: 144, seed: 1, characterIndex: 1);
         }
 
         // Middle: origin = player - canvas/(2*ts) (no clamping), so the player is centered.
-        engine.Player.Position = new Position(4.5, 4.5); // 216 px
+        // Player at (4.5, 4.5) → origin (2, 2); feet at screen (120, 120), sprite top-left
+        // (96, 72), centre (120, 96).
+        engine.Player.Position = new Position(4.5, 4.5);
         Assert.Equal(new Position(2, 2), engine.ComputeCameraOrigin(canvasSize, canvasSize));
         using (var bitmap = Render(engine, canvasSize, canvasSize))
         {
-            AssertSpriteColor(bitmap, topLeftX: 120, topLeftY: 120, seed: 1, characterIndex: 1);
+            AssertSpriteColor(bitmap, topLeftX: 96, topLeftY: 72, seed: 1, characterIndex: 1);
         }
     }
 
@@ -136,9 +140,9 @@ public class GameEngineTests
         var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
 
         ConfigurePlayerSprite(engine, seed: 1);
-        engine.Player.Position = new Position(0, 0);
+        engine.Player.Position = new Position(0.5, 1.0); // feet at (24, 48) px, sprite at (0,0)
 
-        var npc = new Character { Position = new Position(2, 2) }; // 96 px
+        var npc = new Character { Position = new Position(2.5, 3.0) }; // feet at (120, 144) px
         using (var npcStream = CharacterTestHelper.CreateSheetStream(2))
         {
             engine.LoadSpriteSheet("npc", npcStream);
@@ -150,9 +154,9 @@ public class GameEngineTests
 
         // Map pixels present in a region no sprite covers.
         Assert.NotEqual(0, bitmap.GetPixel(200, 200).Alpha);
-        // Player drawn at screen (0,0).
+        // Player sprite drawn at screen top-left (0,0) (centre (24,24)).
         Assert.Equal(CharacterTestHelper.SpriteColor(1, 1, Direction.Down, StandingFrame), bitmap.GetPixel(24, 24));
-        // NPC drawn at screen (96,96).
+        // NPC sprite drawn at screen top-left (96,96) (centre (120,120)).
         Assert.Equal(CharacterTestHelper.SpriteColor(2, 2, Direction.Down, StandingFrame), bitmap.GetPixel(120, 120));
 
         // Replacing the map changes the output: the 2×2 (96×96) map is now centered on the
@@ -169,7 +173,8 @@ public class GameEngineTests
         }
 
         // Removing the NPC removes its pixels; re-adding restores them. On the centered 2×2
-        // map the NPC (world 2,2) is at screen (168,168); its centre pixel is (192,192).
+        // map the NPC (world 2.5,3.0) has its feet at (192,216) px screen; its sprite top-left is
+        // (168,168) and its centre pixel is (192,192).
         engine.Characters.Remove(npc);
         using (var withoutNpc = Render(engine, canvasSize, canvasSize))
         {
@@ -256,6 +261,7 @@ public class GameEngineTests
             engine.LoadSpriteSheet("hero", stream);
         }
         engine.Player.SpriteSheets.Add(new SpriteSheetRef("hero", CharacterIndex: 1));
+        engine.Player.Position = new Position(0.5, 1.0); // sprite fills the 48×48 bitmap
 
         using var bitmap = Render(engine, CellSize, CellSize);
         Assert.NotEqual(0, bitmap.GetPixel(24, 24).Alpha);
@@ -376,6 +382,7 @@ public class GameEngineTests
             await engine.LoadSpriteSheetAsync("hero", stream);
         }
         engine.Player.SpriteSheets.Add(new SpriteSheetRef("hero", CharacterIndex: 1));
+        engine.Player.Position = new Position(0.5, 1.0); // sprite fills the 48×48 bitmap
 
         using var bitmap = Render(engine, CellSize, CellSize);
         Assert.NotEqual(0, bitmap.GetPixel(24, 24).Alpha);
@@ -410,6 +417,7 @@ public class GameEngineTests
         // Facing up: the per-direction adjustment draws hair2 over the body; the transparent
         // head keeps it visible, so the rendered centre pixel is the hair2 colour.
         engine.Player.Character.Move(Direction.Up, speedFactor: 0);
+        engine.Player.Position = new Position(0.5, 1.0); // sprite fills the 48×48 bitmap
 
         using var bitmap = Render(engine, CellSize, CellSize);
         var expected = CharacterTestHelper.SpriteColor(seed: 3, characterIndex: 1, Direction.Up, StandingFrame);
@@ -500,18 +508,19 @@ public class GameEngineTests
         }
         engine.Player.SpriteSheets.Add(new SpriteSheetRef("hero", CharacterIndex: 1));
 
-        // Beyond the bottom-right corner: clamps to (10 - 78/48, 10 - 108/48) = (8.375, 7.75)
-        // tiles (the previous (402, 372) px).
+        // Beyond the bottom-right corner: the feet clamp so the lower-half footprint stays in
+        // the map: x = 10 - 78/(2*48) = 9.1875, y = 10 (the feet can reach the bottom edge).
         engine.Player.Position = new Position(1000, 1000);
         engine.Update(FrameDt);
-        Assert.Equal(10 - (78 / (double)CellSize), engine.Player.Position.X, precision: 6);
-        Assert.Equal(10 - (108 / (double)CellSize), engine.Player.Position.Y, precision: 6);
+        Assert.Equal(10 - (78 / (2.0 * CellSize)), engine.Player.Position.X, precision: 6);
+        Assert.Equal(10, engine.Player.Position.Y, precision: 6);
 
-        // Negative position clamps to (0, 0).
+        // Negative position clamps the feet to the top-left: x = 78/(2*48) = 0.8125,
+        // y = 108/(2*48) = 1.125 (the lower-half footprint just fits against the top edge).
         engine.Player.Position = new Position(-100, -100);
         engine.Update(FrameDt);
-        Assert.Equal(0, engine.Player.Position.X, precision: 6);
-        Assert.Equal(0, engine.Player.Position.Y, precision: 6);
+        Assert.Equal(78 / (2.0 * CellSize), engine.Player.Position.X, precision: 6);
+        Assert.Equal(108 / (2.0 * CellSize), engine.Player.Position.Y, precision: 6);
     }
 
     /// <summary>Verifies the 78×108 clamp through ComputeCameraOrigin and rendered output.</summary>
@@ -529,15 +538,39 @@ public class GameEngineTests
         engine.Player.SpriteSheets.Add(new SpriteSheetRef("hero", CharacterIndex: 1));
 
         engine.Player.Position = new Position(1000, 1000);
-        engine.Update(FrameDt); // clamps to (8.375, 7.75)
+        engine.Update(FrameDt); // clamps to (9.1875, 10)
 
         // The camera origin clamps to the map: maxX = maxY = 10 - 240/48 = 5 tiles.
         Assert.Equal(new Position(5, 5), engine.ComputeCameraOrigin(canvasSize, canvasSize));
 
-        // The 78×108 sprite renders at screen ((8.375 - 5)*48, (7.75 - 5)*48) = (162, 132).
+        // The 78×108 sprite is anchored at its middle-bottom (feet): with the player's feet at
+        // (9.1875, 10) tiles the screen feet are ((9.1875-5)*48, (10-5)*48) = (201, 240) and the
+        // sprite top-left is (201 - 39, 240 - 108) = (162, 132); its centre is (201, 186).
         using var bitmap = Render(engine, canvasSize, canvasSize);
         var expected = CharacterTestHelper.SpriteColor(seed: 1, characterIndex: 1, Direction.Down, StandingFrame);
         Assert.Equal(expected, bitmap.GetPixel(162 + 39, 132 + 54));
+    }
+
+    /// <summary>Verifies ClampPlayerToMap keeps the default 48×48 sprite's lower-half footprint in the map (feet x ∈ [0.5, 9.5], y ∈ [0.5, 10]).</summary>
+    [Fact]
+    public void ClampPlayerToMap_DefaultSprite_ClampsFeetFootprint()
+    {
+        using var fixture = CreateFilledMapFixture(10, 10); // 480×480 px
+        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        ConfigurePlayerSprite(engine, seed: 1);
+
+        // Beyond the bottom-right corner: the default 48×48 sprite's half-width is 0.5 tiles,
+        // so the feet clamp to x = 10 - 0.5 = 9.5 and y = 10 (feet at the bottom edge).
+        engine.Player.Position = new Position(1000, 1000);
+        engine.Update(FrameDt);
+        Assert.Equal(9.5, engine.Player.Position.X, precision: 6);
+        Assert.Equal(10, engine.Player.Position.Y, precision: 6);
+
+        // Negative position clamps the feet to the top-left: x = 0.5, y = 0.5.
+        engine.Player.Position = new Position(-100, -100);
+        engine.Update(FrameDt);
+        Assert.Equal(0.5, engine.Player.Position.X, precision: 6);
+        Assert.Equal(0.5, engine.Player.Position.Y, precision: 6);
     }
 
     // ---------------------------------------------------------------------
@@ -620,7 +653,7 @@ public class GameEngineTests
         {
             var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
             ConfigurePlayerSprite(engine, seed: 1);
-            engine.Player.Position = new Position(0, 0);
+            engine.Player.Position = new Position(0.5, 1.0); // sprite fills the 48×48 tile
 
             using var bitmap = Render(engine, canvasSize, canvasSize);
             Assert.Equal(new SKColor(0, 128, 0, 255), bitmap.GetPixel(24, 24));
@@ -639,7 +672,7 @@ public class GameEngineTests
         {
             var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
             ConfigurePlayerSprite(engine, seed: 1);
-            engine.Player.Position = new Position(0, 0);
+            engine.Player.Position = new Position(0.5, 1.0); // sprite fills the 48×48 tile
 
             using var bitmap = Render(engine, canvasSize, canvasSize);
             var expected = CharacterTestHelper.SpriteColor(seed: 1, characterIndex: 1, Direction.Down, StandingFrame);
@@ -709,7 +742,7 @@ public class GameEngineTests
     // Player.Position = (8.5, 8.5) tiles with camera origin (0,0) draws the
     // sprite at 408 px.
     // ---------------------------------------------------------------------
-    /// <summary>Verifies a player at (8.5, 8.5) tiles with origin (0,0) renders its sprite at screen position 408 px (pixel assertion).</summary>
+    /// <summary>Verifies a player at (8.5, 8.5) tiles with origin (0,0) renders its 48×48 sprite with its middle-bottom (feet) at screen position (408, 408) px (pixel assertion).</summary>
     [Fact]
     public void Render_PlayerAt8_5_WithOriginZero_DrawsSpriteAt408Px()
     {
@@ -734,11 +767,13 @@ public class GameEngineTests
             Assert.Equal(new Position(0, 0), engine.ComputeCameraOrigin(canvasWidth, canvasHeight));
         }
 
-        // The 48×48 sprite is drawn at screen top-left (408, 408); its centre is (432, 432).
+        // The player's feet (middle-bottom) are at (408, 408) px; the 48×48 sprite is drawn
+        // above and centered on that point: top-left (384, 360), centre (408, 384), bottom-right
+        // (431, 407).
         var expected = CharacterTestHelper.SpriteColor(seed: 1, characterIndex: 1, Direction.Down, StandingFrame);
-        Assert.Equal(expected, bitmap.GetPixel(408 + (CellSize / 2), 408 + (CellSize / 2)));
-        Assert.Equal(expected, bitmap.GetPixel(408, 408));
-        Assert.Equal(expected, bitmap.GetPixel(408 + CellSize - 1, 408 + CellSize - 1));
+        Assert.Equal(expected, bitmap.GetPixel(384 + (CellSize / 2), 360 + (CellSize / 2))); // centre (408, 384)
+        Assert.Equal(expected, bitmap.GetPixel(384, 360));   // top-left
+        Assert.Equal(expected, bitmap.GetPixel(384 + CellSize - 1, 360 + CellSize - 1)); // bottom-right (431, 407)
     }
 
     // ---------------------------------------------------------------------
@@ -829,20 +864,21 @@ public class GameEngineTests
         var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
         ConfigurePlayerSprite(engine, seed: 1);
 
-        // The default 48x48 sprite is a 1x1-tile footprint. Start at (0.5, 1.0) and hold D.
+        // The default 48x48 sprite has a lower-half footprint 1 tile wide and 0.5 tile tall,
+        // anchored at the feet. Start at (0.5, 1.0) and hold D.
         engine.Player.Position = new Position(0.5, 1.0);
         engine.Input(Key.D, true);
 
-        for (var frame = 0; frame < 120; frame++)
-        {
-            engine.Update(FrameDt);
-        }
+        // Move right by exactly 1 tile (dt = 0.5 at 2 tiles/s): the feet reach X = 1.5, where
+        // the lower-half footprint [1.0, 2.0] just touches the solid tile at x = 2.0.
+        engine.Update(dt: 0.5);
+        Assert.Equal(1.5, engine.Player.Position.X, precision: 6);
 
-        // The player slides to exactly the left edge of the solid tile at x=2: position.x = 1.0
-        // (the footprint's right edge is at 2.0) and it never overlaps the solid tile.
-        Assert.Equal(1.0, engine.Player.Position.X, precision: 6);
+        // The next step would push the footprint into the solid tile and is reverted.
+        engine.Update(dt: 0.5);
+        Assert.Equal(1.5, engine.Player.Position.X, precision: 6);
         Assert.Equal(1.0, engine.Player.Position.Y, precision: 6); // straight line, Y unchanged
-        Assert.True(engine.Player.Position.X + 1.0 <= 2.0 + 1e-9, "The footprint must never overlap the solid tile.");
+        Assert.True(engine.Player.Position.X + 0.5 <= 2.0 + 1e-9, "The footprint must never overlap the solid tile.");
         Assert.Equal(Direction.Right, engine.Player.Direction);
     }
 
@@ -864,15 +900,16 @@ public class GameEngineTests
         engine.Player.Position = new Position(1.0, 0.5);
         engine.Input(Key.S, true);
 
-        for (var frame = 0; frame < 120; frame++)
-        {
-            engine.Update(FrameDt);
-        }
+        // Move down by exactly 1.5 tiles (dt = 0.75 at 2 tiles/s): the feet reach Y = 2.0, where
+        // the lower-half footprint [1.5, 2.0] just touches the solid row at y = 2.0.
+        engine.Update(dt: 0.75);
+        Assert.Equal(2.0, engine.Player.Position.Y, precision: 6);
 
-        // The player stops at exactly the top edge of the solid row at y=2: position.y = 1.0.
+        // The next step would push the footprint into the solid row and is reverted.
+        engine.Update(dt: 0.1);
         Assert.Equal(1.0, engine.Player.Position.X, precision: 6);
-        Assert.Equal(1.0, engine.Player.Position.Y, precision: 6);
-        Assert.True(engine.Player.Position.Y + 1.0 <= 2.0 + 1e-9, "The footprint must never overlap the solid tile.");
+        Assert.Equal(2.0, engine.Player.Position.Y, precision: 6);
+        Assert.True(engine.Player.Position.Y <= 2.0 + 1e-9, "The footprint must never overlap the solid tile.");
         Assert.Equal(Direction.Down, engine.Player.Direction);
     }
 
@@ -891,10 +928,10 @@ public class GameEngineTests
         var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
         ConfigurePlayerSprite(engine, seed: 1);
 
-        // Start flush against the left edge of the wall column (x=3): the 1x1 footprint spans
-        // [2,3) at x=2. Moving UpRight, the X displacement is blocked by the wall while Y is
-        // free, so the player slides straight up along the wall.
-        engine.Player.Position = new Position(2.0, 4.0);
+        // Start flush against the left edge of the wall column (x=3): the lower-half footprint
+        // spans [2,3) horizontally at feet x=2.5. Moving UpRight, the X displacement is blocked by
+        // the wall while Y is free, so the player slides straight up along the wall.
+        engine.Player.Position = new Position(2.5, 4.0);
         engine.Input(Key.W, true);
         engine.Input(Key.D, true);
 
@@ -903,8 +940,8 @@ public class GameEngineTests
             engine.Update(FrameDt);
         }
 
-        // X never moves into the wall: it stays at exactly 2.0 (the wall's left edge).
-        Assert.Equal(2.0, engine.Player.Position.X, precision: 6);
+        // X never moves into the wall: it stays at exactly 2.5 (the feet at the wall's left edge).
+        Assert.Equal(2.5, engine.Player.Position.X, precision: 6);
         // Y slides up along the wall: one second at 2 tiles/s diagonally = 2 * sqrt(0.5) ~ 1.414.
         Assert.Equal(4.0 - (2 * Math.Sqrt(0.5)), engine.Player.Position.Y, precision: 6);
     }
@@ -931,6 +968,56 @@ public class GameEngineTests
         Assert.Equal(0.5, engine.Player.Position.Y, precision: 6);
     }
 
+    /// <summary>Verifies a solid tile in the upper-body region does not block a player walking past it: only the lower half of the sprite collides with the ground.</summary>
+    [Fact]
+    public void Update_SolidTileInUpperBody_DoesNotBlockWalkingPast()
+    {
+        // 4x4 map with a single solid tile at (2, 0) — the upper-body region when the player's
+        // feet are in row 1 (the lower-half footprint spans y ∈ [1.0, 1.5]).
+        var gids = new uint[16];
+        gids[(0 * 4) + 2] = 1;
+        using var fixture = CreateCollisionMapFixture(4, 4, gids);
+        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        ConfigurePlayerSprite(engine, seed: 1);
+
+        // Feet in row 1: the lower-half footprint spans y ∈ [1.0, 1.5], so the solid tile at
+        // (2, 0) is in the upper-body region and must not block the walk.
+        engine.Player.Position = new Position(0.5, 1.5);
+        engine.Input(Key.D, true);
+
+        // One second at 2 tiles/s (dt = 1.0): the player walks right past the tile to feet X = 2.5.
+        engine.Update(dt: 1.0);
+        Assert.Equal(2.5, engine.Player.Position.X, precision: 6);
+        Assert.Equal(1.5, engine.Player.Position.Y, precision: 6);
+    }
+
+    /// <summary>Verifies a solid tile in the lower-half region blocks the player at the feet boundary (feet X = 1.5).</summary>
+    [Fact]
+    public void Update_SolidTileInLowerHalf_BlocksAtFeetBoundary()
+    {
+        // 4x4 map with a single solid tile at (2, 1) — the lower-half region when the player's
+        // feet are in row 1 (the lower-half footprint spans y ∈ [1.0, 1.5]).
+        var gids = new uint[16];
+        gids[(1 * 4) + 2] = 1;
+        using var fixture = CreateCollisionMapFixture(4, 4, gids);
+        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        ConfigurePlayerSprite(engine, seed: 1);
+
+        engine.Player.Position = new Position(0.5, 1.5);
+        engine.Input(Key.D, true);
+
+        // Move right by exactly 1 tile: the feet reach X = 1.5, where the lower-half footprint
+        // [1.0, 2.0] just touches the solid tile at x = 2.0.
+        engine.Update(dt: 0.5);
+        Assert.Equal(1.5, engine.Player.Position.X, precision: 6);
+
+        // The next step would push the footprint into the solid tile and is reverted.
+        engine.Update(dt: 0.5);
+        Assert.Equal(1.5, engine.Player.Position.X, precision: 6);
+        Assert.Equal(1.5, engine.Player.Position.Y, precision: 6);
+        Assert.True(engine.Player.Position.X + 0.5 <= 2.0 + 1e-9);
+    }
+
     /// <summary>Verifies the map edge is solid: with no collision layer the player cannot walk out of the map.</summary>
     [Fact]
     public void Update_MapEdgeIsSolid_PlayerCannotLeaveMap()
@@ -940,30 +1027,27 @@ public class GameEngineTests
         var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
         ConfigurePlayerSprite(engine, seed: 1);
 
-        // Walk right: the 1x1 footprint stops when its right edge reaches the map edge at x=2,
-        // so the player clamps to x = 1.0 instead of leaving the map.
+        // Walk right: the lower-half footprint stops when its right edge (feet X + 0.5) reaches
+        // the map edge at x=2, so the player's feet stop at x = 1.5 instead of leaving the map.
         engine.Player.Position = new Position(0.5, 0.5);
         engine.Input(Key.D, true);
-        for (var frame = 0; frame < 120; frame++)
-        {
-            engine.Update(FrameDt);
-        }
+        engine.Update(dt: 0.5); // feet reach X = 1.5 (footprint [1.0, 2.0], still inside the map)
+        engine.Update(dt: 0.5); // would leave the map and is reverted
 
-        Assert.Equal(1.0, engine.Player.Position.X, precision: 6);
+        Assert.Equal(1.5, engine.Player.Position.X, precision: 6);
         Assert.Equal(0.5, engine.Player.Position.Y, precision: 6);
-        Assert.True(engine.Player.Position.X + 1.0 <= 2.0 + 1e-9);
+        Assert.True(engine.Player.Position.X + 0.5 <= 2.0 + 1e-9);
 
-        // Then walk down: the same rule clamps Y to 1.0 (the footprint's bottom edge at y=2).
+        // Then walk down: the same rule clamps the feet to y = 2.0 (the footprint's bottom edge,
+        // which is the feet, at the map edge y=2).
         engine.Input(Key.D, false);
         engine.Input(Key.S, true);
-        for (var frame = 0; frame < 120; frame++)
-        {
-            engine.Update(FrameDt);
-        }
+        engine.Update(dt: 0.75); // feet reach Y = 2.0 (footprint [1.5, 2.0], still inside the map)
+        engine.Update(dt: 0.1);  // would leave the map and is reverted
 
-        Assert.Equal(1.0, engine.Player.Position.X, precision: 6);
-        Assert.Equal(1.0, engine.Player.Position.Y, precision: 6);
-        Assert.True(engine.Player.Position.Y + 1.0 <= 2.0 + 1e-9);
+        Assert.Equal(1.5, engine.Player.Position.X, precision: 6);
+        Assert.Equal(2.0, engine.Player.Position.Y, precision: 6);
+        Assert.True(engine.Player.Position.Y <= 2.0 + 1e-9);
     }
 
     // ---------------------------------------------------------------------
@@ -1498,7 +1582,9 @@ public class GameEngineTests
         Assert.Equal(new Position(0, 0), engine.Player.Position);
 
         engine.Update(FrameDt);
-        Assert.Equal(new Position(0, 0), engine.Player.Position);
+        // The clamp keeps the player's lower-half footprint in the map: the default feet start
+        // at (0, 0) and are clamped up to (0.5, 0.5).
+        Assert.Equal(new Position(0.5, 0.5), engine.Player.Position);
     }
 
     /// <summary>
