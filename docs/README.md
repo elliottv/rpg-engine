@@ -99,6 +99,11 @@ foreach (var layer in engine.Map?.ObjectLayers ?? [])
 > an `SKImage` on load. The engine owns the assigned map: replacing `engine.Map` disposes the
 > previous map, and disposing the engine (`using var engine = ...` or `engine.Dispose()`) disposes
 > the current one.
+>
+> **Collision layers:** a tile layer declaring the Tiled `is_collision` boolean custom property
+> set to `true` contains **solid** tiles that block the player (see `docs/Architecture.md`); the
+> map edge is solid (characters cannot leave the map), and tiles drawn from non-collision layers
+> never block.
 
 ### Reading order
 
@@ -109,8 +114,8 @@ foreach (var layer in engine.Map?.ObjectLayers ?? [])
 | [api/Character.md](api/Character.md) / [api/Player.md](api/Player.md) | In-world state, sprite references and the speed-scaled walk-cycle animation (`AnimationCycleSpeed`). |
 | [api/SpriteSheet.md](api/SpriteSheet.md) | The 12×8 sheet layout (derived cell size, e.g. 576×384 or 936×864) and the **1..8 character index** semantics. |
 | [api/SpriteSheetManager.md](api/SpriteSheetManager.md) | Loading full/part sheets by path or stream, including the async `LoadAsync`/`LoadPartAsync` overloads. |
-| [api/TileMap.md](api/TileMap.md) / [api/TileSet.md](api/TileSet.md) | Tiled TMX/TSX loading (sync + async); prerendered layer images, viewport-culled image-blit rendering and `IDisposable`; map custom properties, object layers and the `above_player` flag. |
-| [api/TileMapLayer.md](api/TileMapLayer.md) | Tile-layer data and the `AbovePlayer` flag. |
+| [api/TileMap.md](api/TileMap.md) / [api/TileSet.md](api/TileSet.md) | Tiled TMX/TSX loading (sync + async); prerendered layer images, viewport-culled image-blit rendering and `IDisposable`; map custom properties, object layers, the `above_player` flag and collision (`IsSolid`, the `is_collision` layer convention). |
+| [api/TileMapLayer.md](api/TileMapLayer.md) | Tile-layer data and the `AbovePlayer` / `IsCollision` flags. |
 | [api/MapProperty.md](api/MapProperty.md) / [api/MapPropertyType.md](api/MapPropertyType.md) | Typed map/layer/object custom properties. |
 | [api/TileMapObject.md](api/TileMapObject.md) / [api/TileMapObjectShape.md](api/TileMapObjectShape.md) / [api/TileMapObjectLayer.md](api/TileMapObjectLayer.md) | The object-layer read model. |
 | [api/TiledAssetFetcher.md](api/TiledAssetFetcher.md) / [api/TiledAssetFetcherAsync.md](api/TiledAssetFetcherAsync.md) | Resolving Tiled assets by URI (sync and async). |

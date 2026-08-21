@@ -13,13 +13,20 @@ corresponding flip flags are stored in a parallel list.
 | `Visible` | Gets whether the layer is visible (shown) in the map. |
 | `Opacity` | Gets the opacity of the layer, from 0 (fully transparent) to 1 (fully opaque). |
 | `AbovePlayer` | Gets whether the layer is rendered **above** the player (declared by the Tiled `above_player` boolean custom property set to `true`). |
-| `Properties` | Gets the layer's custom properties, in file order (includes `above_player` when declared). |
+| `IsCollision` | Gets whether the layer is a **collision** layer (declared by the Tiled `is_collision` boolean custom property set to `true`); its non-empty tiles are solid and block movement. |
+| `Properties` | Gets the layer's custom properties, in file order (includes `above_player`/`is_collision` when declared). |
 | `Width` / `Height` | Get the size of the layer in tiles. |
 | `TileIds` | Gets the tile IDs in row-major order (0 = empty cell). |
 
 `AbovePlayer` is `true` when the layer declares a custom boolean property named `above_player`
 with value `true` (Tiled convention, case-sensitive). When the property is absent, is not a
 boolean, or is `false`, it is `false` and the layer is rendered below the player.
+
+`IsCollision` is `true` when the layer declares a custom boolean property named `is_collision`
+with value `true` (Tiled convention, case-sensitive, mirroring `above_player`). When the
+property is absent, is not a boolean, or is `false`, it is `false` and the layer never blocks
+movement. The engine treats every non-empty tile (GID != 0) of a collision layer as solid — see
+`TileMap.IsSolid` and `docs/Architecture.md` for how characters collide with them.
 
 ## Methods
 
@@ -59,4 +66,12 @@ Console.WriteLine(ground.Properties.Count); // custom properties declared on the
 var treesAbove = map.Layers.Single(layer => layer.Name == "trees_above");
 Console.WriteLine(treesAbove.AbovePlayer); // True
 Console.WriteLine(treesAbove.Properties.Single(p => p.Name == "above_player").Value); // True
+
+// A collision layer (is_collision = true) contains solid tiles that block characters.
+// The committed fixture map has no collision layer; this snippet assumes the loaded map
+// declares one named "walls" (e.g. your own map with a walls layer).
+var walls = map.Layers.Single(layer => layer.Name == "walls");
+Console.WriteLine(walls.IsCollision);      // True
+Console.WriteLine(walls.Properties.Single(p => p.Name == "is_collision").Value); // True
+Console.WriteLine(map.IsSolid(3, 4));      // e.g. True where the walls layer has a tile
 ```

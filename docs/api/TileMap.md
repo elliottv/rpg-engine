@@ -23,6 +23,10 @@ Namespace: `RPGEngine.Tiled` — a tile map loaded from a Tiled `.tmx` file (and
   `TileMapLayer.AbovePlayer` is `false`) are drawn first, and the layers **above** the player
   (those declaring the Tiled `above_player` custom property set to `true`) are drawn afterwards,
   so those tiles appear in front of the player.
+- **Collision**: a layer declaring the Tiled `is_collision` boolean custom property set to
+  `true` is a collision layer; its non-empty tiles are solid and block character movement.
+  `IsSolid` reports solid tiles and treats the map edge as solid (see the `IsSolid` method
+  below).
 
 ## Properties
 
@@ -120,12 +124,19 @@ var flags = map.GetTileFlags("ground", 0, 0);
 
 ### `bool IsSolid(int tileX, int tileY)`
 
-Returns whether the tile at `(tileX, tileY)` blocks movement. The current contract always
-returns `false`; collision data will be added by a later story.
+Returns whether the tile at `(tileX, tileY)` blocks movement. A tile is solid when **any**
+collision layer (`TileMapLayer.IsCollision`) has a non-empty tile (GID != 0) at that cell.
+Coordinates **outside the map are always solid**: the map edge blocks characters, so they cannot
+leave the map through it. When the map has no collision layer, every in-bounds cell is walkable.
 
 ```csharp
-Console.WriteLine(map.IsSolid(1, 1)); // False
+Console.WriteLine(map.IsSolid(1, 1)); // False (no collision layer in this map)
 ```
+
+Collision layers are declared with the Tiled `is_collision` boolean custom property set to
+`true` (see `TileMapLayer.IsCollision`). The engine uses `IsSolid` to block the player against
+solid tiles with axis-separated movement (see `docs/Architecture.md`); the same public API is
+available for future NPC logic.
 
 ### `void Dispose()`
 
@@ -152,7 +163,7 @@ Console.WriteLine(map.Height);             // 12
 Console.WriteLine(map.Layers.Count);       // 3 ("ground" + "decor" + "trees_above")
 Console.WriteLine(map.Layers[0].Name);     // "ground"
 Console.WriteLine(map.GetTileId("ground", 0, 0)); // >= 1 (a grass tile)
-Console.WriteLine(map.IsSolid(1, 1));      // False
+Console.WriteLine(map.IsSolid(1, 1));      // False (no collision layer here)
 
 // Map custom properties (looked up case-sensitively; null when absent).
 var difficulty = map.GetProperty("difficulty");

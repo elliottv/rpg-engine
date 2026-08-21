@@ -782,12 +782,189 @@ public class GameEngineTests
     }
 
     // ---------------------------------------------------------------------
+    // Story 35: map collisions. A tile layer declaring the Tiled is_collision
+    // bool property contains solid tiles that block the player; the engine
+    // resolves the player's displacement with axis-separated movement so the
+    // player stops at solid boundaries (never overlapping them) and slides
+    // along walls on the free axis, while the map edge is solid (characters
+    // cannot leave the map) and non-collision layers never block.
+    // ---------------------------------------------------------------------
+    /// <summary>Verifies a player walking right into a solid tile stops at its exact tile-unit boundary and never overlaps it.</summary>
+    [Fact]
+    public void Update_PlayerWalksIntoSolidTile_StopsAtBoundary()
+    {
+        // 4x4 map: a "walls" collision layer with a solid column at x=2 for every row.
+        using var fixture = CreateCollisionMapFixture(4, 4, new uint[]
+        {
+            0, 0, 1, 0,
+            0, 0, 1, 0,
+            0, 0, 1, 0,
+            0, 0, 1, 0,
+        });
+        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        ConfigurePlayerSprite(engine, seed: 1);
+
+        // The default 48x48 sprite is a 1x1-tile footprint. Start at (0.5, 1.0) and hold D.
+        engine.Player.Position = new Position(0.5, 1.0);
+        engine.Input(Key.D, true);
+
+        for (var frame = 0; frame < 120; frame++)
+        {
+            engine.Update(FrameDt);
+        }
+
+        // The player slides to exactly the left edge of the solid tile at x=2: position.x = 1.0
+        // (the footprint's right edge is at 2.0) and it never overlaps the solid tile.
+        Assert.Equal(1.0, engine.Player.Position.X, precision: 6);
+        Assert.Equal(1.0, engine.Player.Position.Y, precision: 6); // straight line, Y unchanged
+        Assert.True(engine.Player.Position.X + 1.0 <= 2.0 + 1e-9, "The footprint must never overlap the solid tile.");
+        Assert.Equal(Direction.Right, engine.Player.Direction);
+    }
+
+    /// <summary>Verifies a player walking down into a solid tile stops at its exact tile-unit boundary and never overlaps it.</summary>
+    [Fact]
+    public void Update_PlayerWalksDownIntoSolidTile_StopsAtBoundary()
+    {
+        // 4x4 map: a "walls" collision layer with a solid row at y=2 for every column.
+        using var fixture = CreateCollisionMapFixture(4, 4, new uint[]
+        {
+            0, 0, 0, 0,
+            0, 0, 0, 0,
+            1, 1, 1, 1,
+            1, 1, 1, 1,
+        });
+        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        ConfigurePlayerSprite(engine, seed: 1);
+
+        engine.Player.Position = new Position(1.0, 0.5);
+        engine.Input(Key.S, true);
+
+        for (var frame = 0; frame < 120; frame++)
+        {
+            engine.Update(FrameDt);
+        }
+
+        // The player stops at exactly the top edge of the solid row at y=2: position.y = 1.0.
+        Assert.Equal(1.0, engine.Player.Position.X, precision: 6);
+        Assert.Equal(1.0, engine.Player.Position.Y, precision: 6);
+        Assert.True(engine.Player.Position.Y + 1.0 <= 2.0 + 1e-9, "The footprint must never overlap the solid tile.");
+        Assert.Equal(Direction.Down, engine.Player.Direction);
+    }
+
+    /// <summary>Verifies a player moving diagonally into a vertical wall slides along the wall on the free axis (axis-separated movement).</summary>
+    [Fact]
+    public void Update_PlayerMovesDiagonallyIntoWall_SlidesAlongWall()
+    {
+        // 5x5 map: a "walls" collision layer with a solid column at x=3 for every row.
+        var gids = new uint[25];
+        for (var y = 0; y < 5; y++)
+        {
+            gids[(y * 5) + 3] = 1;
+        }
+
+        using var fixture = CreateCollisionMapFixture(5, 5, gids);
+        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        ConfigurePlayerSprite(engine, seed: 1);
+
+        // Start flush against the left edge of the wall column (x=3): the 1x1 footprint spans
+        // [2,3) at x=2. Moving UpRight, the X displacement is blocked by the wall while Y is
+        // free, so the player slides straight up along the wall.
+        engine.Player.Position = new Position(2.0, 4.0);
+        engine.Input(Key.W, true);
+        engine.Input(Key.D, true);
+
+        for (var frame = 0; frame < 60; frame++)
+        {
+            engine.Update(FrameDt);
+        }
+
+        // X never moves into the wall: it stays at exactly 2.0 (the wall's left edge).
+        Assert.Equal(2.0, engine.Player.Position.X, precision: 6);
+        // Y slides up along the wall: one second at 2 tiles/s diagonally = 2 * sqrt(0.5) ~ 1.414.
+        Assert.Equal(4.0 - (2 * Math.Sqrt(0.5)), engine.Player.Position.Y, precision: 6);
+    }
+
+    /// <summary>Verifies tiles drawn from a normal (non-collision) layer never block: the player walks across them freely.</summary>
+    [Fact]
+    public void Update_NonCollisionLayer_NeverBlocksMovement()
+    {
+        // A 4x4 map whose ground layer draws a tile in every cell but has no collision layer.
+        using var fixture = CreateFilledMapFixture(4, 4);
+        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        ConfigurePlayerSprite(engine, seed: 1);
+
+        engine.Player.Position = new Position(0.5, 0.5);
+        engine.Input(Key.D, true);
+
+        for (var frame = 0; frame < 60; frame++)
+        {
+            engine.Update(FrameDt);
+        }
+
+        // One second at 2 tiles/s: moved ~2 tiles right, Y unchanged (the drawn tiles never block).
+        Assert.Equal(2.5, engine.Player.Position.X, precision: 6);
+        Assert.Equal(0.5, engine.Player.Position.Y, precision: 6);
+    }
+
+    /// <summary>Verifies the map edge is solid: with no collision layer the player cannot walk out of the map.</summary>
+    [Fact]
+    public void Update_MapEdgeIsSolid_PlayerCannotLeaveMap()
+    {
+        // A 2x2 map with a ground layer only (no collision layer).
+        using var fixture = CreateFilledMapFixture(2, 2);
+        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        ConfigurePlayerSprite(engine, seed: 1);
+
+        // Walk right: the 1x1 footprint stops when its right edge reaches the map edge at x=2,
+        // so the player clamps to x = 1.0 instead of leaving the map.
+        engine.Player.Position = new Position(0.5, 0.5);
+        engine.Input(Key.D, true);
+        for (var frame = 0; frame < 120; frame++)
+        {
+            engine.Update(FrameDt);
+        }
+
+        Assert.Equal(1.0, engine.Player.Position.X, precision: 6);
+        Assert.Equal(0.5, engine.Player.Position.Y, precision: 6);
+        Assert.True(engine.Player.Position.X + 1.0 <= 2.0 + 1e-9);
+
+        // Then walk down: the same rule clamps Y to 1.0 (the footprint's bottom edge at y=2).
+        engine.Input(Key.D, false);
+        engine.Input(Key.S, true);
+        for (var frame = 0; frame < 120; frame++)
+        {
+            engine.Update(FrameDt);
+        }
+
+        Assert.Equal(1.0, engine.Player.Position.X, precision: 6);
+        Assert.Equal(1.0, engine.Player.Position.Y, precision: 6);
+        Assert.True(engine.Player.Position.Y + 1.0 <= 2.0 + 1e-9);
+    }
+
+    // ---------------------------------------------------------------------
     // Helpers
     // ---------------------------------------------------------------------
 
     /// <summary>Creates a map fixture filled with red tiles in a single "ground" layer.</summary>
     private static TiledTestFixture CreateFilledMapFixture(int width, int height)
         => new(width, height, new[] { FilledLayer(width, height) });
+
+    /// <summary>
+    /// Creates a map fixture with a filled "ground" layer (walkable) and a "walls" collision
+    /// layer declaring the Tiled <c>is_collision</c> bool property set to <c>true</c>.
+    /// </summary>
+    private static TiledTestFixture CreateCollisionMapFixture(int width, int height, uint[] collisionGids)
+        => new(
+            width,
+            height,
+            new[]
+            {
+                FilledLayer(width, height),
+                new TileLayerSpec(
+                    "walls",
+                    collisionGids,
+                    Properties: new[] { new FixtureProperty("is_collision", "bool", "true") }),
+            });
 
     /// <summary>Builds a fully filled single-layer spec for a map of the given size.</summary>
     private static TileLayerSpec FilledLayer(int width, int height)

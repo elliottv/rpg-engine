@@ -109,7 +109,8 @@ The map exposes a read-only view of everything the Tiled file declares:
 - `TileMap.Layers` — the **tile layers** only, in file order (bottom → top). Each
   `TileMapLayer` exposes its `Name`, `Visible`, `Opacity`, `TileIds`/`GetTileId`, the
   `AbovePlayer` flag (a layer whose `above_player` boolean custom property is `true` is
-  rendered **after** the player) and its own custom `Properties`.
+  rendered **after** the player), the `IsCollision` flag (a layer whose `is_collision` boolean
+  custom property is `true` contains solid tiles) and its own custom `Properties`.
 - `TileMap.Properties` / `TileMap.GetProperty(name)` — the **map's custom properties**,
   looked up case-sensitively. Properties are typed (`MapPropertyType`: bool/int/float/string/
   color/file/object/class) and boxed into C# values by `MapProperty`.
@@ -220,6 +221,40 @@ so at `BaseSpeed == AnimationCycleSpeed == 2` (both in tiles/s, the defaults) on
 0.25 s and the cycle completes exactly **once per second** (4 frames/s). Doubling `BaseSpeed`
 doubles the cycle rate; raising `AnimationCycleSpeed` (the reference speed) slows the animation
 relative to movement speed.
+
+## Collision
+
+Tile maps can declare **collision layers**: a tile layer whose custom boolean property
+`is_collision` is set to `true` (Tiled convention, mirroring `above_player`) contains **solid**
+tiles that Characters (including the player) cannot walk through. `TileMapLayer.IsCollision`
+surfaces the flag, and `TileMap.IsSolid(tileX, tileY)` returns `true` when *any* collision layer
+has a non-empty tile (GID != 0) at that cell. The **map edge is solid**: `IsSolid` returns
+`true` for out-of-bounds coordinates, so characters cannot leave the map through its edge. When
+a map has no collision layer, every in-bounds cell is walkable. Non-collision layers never block
+(a tile drawn from a normal layer is walkable even if it visually overlaps the character).
+
+The engine resolves the player's movement with **axis-separated movement** against a footprint
+in tile units:
+
+- The footprint is the player's sprite size in pixels (`Character.GetSpriteSize`) converted to
+  tiles (`px / ts`, where `ts` is the map's tile width), positioned at the player's top-left.
+- `TileMap.IsAreaSolid(x, y, width, height)` (internal) tests the tiles overlapped by that
+  tile-unit rectangle: the bounds are floored to the containing cells, and a rectangle that ends
+  exactly on a tile boundary does not count the next tile.
+- Each frame the engine applies the **X displacement first**, then reverts it if the resulting
+  footprint overlaps a solid tile or leaves the map (the map edge is solid); it then applies the
+  **Y displacement the same way**, starting from the horizontal result.
+
+This keeps **wall-sliding** natural (a blocked axis reverts while the other axis still moves, so
+a diagonal move into a wall slides along the wall on the free axis) and prevents **diagonal
+corner-cutting** (each axis is resolved independently, so a diagonal cannot squeeze diagonally
+through a corner). The existing map-bounds clamp (`ClampPlayerToMap`) remains as a safety net
+for positions placed outside the map by other means.
+
+NPCs are not moved by the engine (they have no AI yet), so collision resolution currently only
+applies to the player; the public `TileMap.IsSolid` API is available for future NPC logic.
+Per-tile collision shapes other than full-cell solidity, dynamic (runtime-mutable) collision
+layers and one-way platforms are out of scope for this story.
 
 ## Pathfinding
 

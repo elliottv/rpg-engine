@@ -18,7 +18,7 @@ namespace RPGEngine.Tiled;
 /// </para>
 /// <para>
 /// Tile coordinates are 0-based. Layer data is stored row-major. Only the orthogonal map
-/// layout is supported by this story; collision, pathfinding and <c>.tmj</c> are out of scope.
+/// layout is supported; <c>.tmj</c> is out of scope.
 /// </para>
 /// <para>
 /// Rendering is a per-layer image blit. When the map is loaded, every visible, non-empty tile
@@ -281,14 +281,79 @@ public sealed class TileMap : IDisposable
 
     /// <summary>
     /// Returns whether the tile at (<paramref name="tileX"/>, <paramref name="tileY"/>) blocks
-    /// movement. The current contract always returns <see langword="false"/>; collision data will
-    /// be added by a later story, at which point this method will consult the map's collision
-    /// information instead.
+    /// movement. A tile is solid when <em>any</em> collision layer
+    /// (<see cref="TileMapLayer.IsCollision"/> is <see langword="true"/>) has a non-empty tile
+    /// (GID != 0) at that cell. Coordinates outside the map are always solid: the map edge blocks
+    /// characters, so they cannot leave the map through it. When the map has no collision layer,
+    /// every in-bounds cell is walkable.
     /// </summary>
     /// <param name="tileX">The 0-based tile X coordinate.</param>
     /// <param name="tileY">The 0-based tile Y coordinate.</param>
-    /// <returns><see langword="false"/> for every tile under the current contract.</returns>
-    public bool IsSolid(int tileX, int tileY) => false;
+    /// <returns>
+    /// <see langword="true"/> when the cell is occupied by a collision-layer tile or lies
+    /// outside the map; otherwise <see langword="false"/>.
+    /// </returns>
+    public bool IsSolid(int tileX, int tileY)
+    {
+        if (tileX < 0 || tileX >= Width || tileY < 0 || tileY >= Height)
+        {
+            // The map edge is solid: characters cannot leave the map through it.
+            return true;
+        }
+
+        foreach (var layer in Layers)
+        {
+            if (layer.IsCollision && layer.GetTileId(tileX, tileY) != 0)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Returns whether any tile overlapped by the axis-aligned rectangle from
+    /// (<paramref name="x"/>, <paramref name="y"/>) to
+    /// (<paramref name="x"/> + <paramref name="width"/>, <paramref name="y"/> +
+    /// <paramref name="height"/>), given in tile units, is solid (see
+    /// <see cref="IsSolid(int, int)"/>). The rectangle's bounds are floored to the containing
+    /// cells; a rectangle that ends exactly on a tile boundary does not count the next tile.
+    /// Used by the engine's footprint check to test the tiles overlapped by a character's sprite
+    /// footprint.
+    /// </summary>
+    /// <param name="x">The left bound of the rectangle, in tiles.</param>
+    /// <param name="y">The top bound of the rectangle, in tiles.</param>
+    /// <param name="width">The width of the rectangle, in tiles.</param>
+    /// <param name="height">The height of the rectangle, in tiles.</param>
+    /// <returns>
+    /// <see langword="true"/> when at least one overlapped tile is solid; otherwise
+    /// <see langword="false"/>. A rectangle that lies (or extends) outside the map is solid,
+    /// per the map-edge rule of <see cref="IsSolid(int, int)"/>.
+    /// </returns>
+    internal bool IsAreaSolid(double x, double y, double width, double height)
+    {
+        // The overlapped tile range of [x, x+width) x [y, y+height): floor the minimum corner
+        // and floor the maximum corner (via ceil(max) - 1) so a rectangle that ends exactly on
+        // a tile boundary stays inside the last cell it overlaps.
+        var minTileX = (int)Math.Floor(x);
+        var minTileY = (int)Math.Floor(y);
+        var maxTileX = (int)Math.Ceiling(x + width) - 1;
+        var maxTileY = (int)Math.Ceiling(y + height) - 1;
+
+        for (var tileY = minTileY; tileY <= maxTileY; tileY++)
+        {
+            for (var tileX = minTileX; tileX <= maxTileX; tileX++)
+            {
+                if (IsSolid(tileX, tileY))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
 
     /// <summary>
     /// Draws the visible part of the map to <paramref name="canvas"/>, rendering only the
