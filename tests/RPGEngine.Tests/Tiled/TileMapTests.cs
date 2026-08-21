@@ -88,11 +88,16 @@ public class TileMapTests
     }
 
     // ---------------------------------------------------------------------
-    // Acceptance 4: IsSolid returns false for all tiles (current contract).
+    // Story 35: collision layers (is_collision) and solid-tile queries. A layer
+    // declaring the Tiled <property name="is_collision" type="bool" value="true"/>
+    // custom property is reported by TileMapLayer.IsCollision; TileMap.IsSolid
+    // consults those layers (a non-empty tile is solid and the map edge is solid),
+    // and the internal IsAreaSolid helper tests the tiles overlapped by a tile-unit
+    // rectangle (the engine's footprint check).
     // ---------------------------------------------------------------------
-    /// <summary>Verifies IsSolid returns false for every tile under the current (collision-less) contract.</summary>
+    /// <summary>Verifies IsSolid returns false for every in-bounds cell when the map has no collision layer (no is_collision property).</summary>
     [Fact]
-    public void IsSolid_ReturnsFalseForAllTiles()
+    public void IsSolid_NoCollisionLayer_ReturnsFalseForAllInBoundsCells()
     {
         using var fixture = TiledTestFixture.Create2x2(new[] { Ground });
 
@@ -105,6 +110,172 @@ public class TileMapTests
                 Assert.False(map.IsSolid(x, y));
             }
         }
+    }
+
+    /// <summary>Verifies TileMapLayer.IsCollision is true for a layer declaring the is_collision bool property and false for a layer without it.</summary>
+    [Fact]
+    public void IsCollision_ReadsCustomProperty_FromTmx()
+    {
+        var ground = new TileLayerSpec("ground", new uint[] { 1, 1, 1, 1 });
+        var walls = new TileLayerSpec(
+            "walls",
+            new uint[] { 0, 1, 0, 1 },
+            Properties: new[] { new FixtureProperty("is_collision", "bool", "true") });
+
+        using var fixture = TiledTestFixture.Create2x2(new[] { ground, walls });
+        var map = TileMap.Load(fixture.MapPath);
+
+        Assert.False(map.Layers[0].IsCollision);
+        Assert.True(map.Layers[1].IsCollision);
+    }
+
+    /// <summary>Verifies a layer without the is_collision property (or with it set to false, or with a non-bool property of that name) reports IsCollision == false.</summary>
+    [Fact]
+    public void IsCollision_AbsentFalseOrNonBool_ReportsFalse()
+    {
+        var absent = new TileLayerSpec("absent", new uint[] { 1, 1, 1, 1 });
+        var falseValue = new TileLayerSpec(
+            "false_value",
+            new uint[] { 0, 0, 0, 0 },
+            Properties: new[] { new FixtureProperty("is_collision", "bool", "false") });
+        var nonBool = new TileLayerSpec(
+            "non_bool",
+            new uint[] { 0, 0, 0, 0 },
+            Properties: new[] { new FixtureProperty("is_collision", "string", "true") });
+
+        using var fixture = TiledTestFixture.Create2x2(new[] { absent, falseValue, nonBool });
+        var map = TileMap.Load(fixture.MapPath);
+
+        Assert.False(map.Layers[0].IsCollision);
+        Assert.False(map.Layers[1].IsCollision);
+        Assert.False(map.Layers[2].IsCollision);
+    }
+
+    /// <summary>Verifies the new is_collision parsing does not affect the existing above_player parsing (regression).</summary>
+    [Fact]
+    public void IsCollision_AndAbovePlayer_ParseIndependently()
+    {
+        var above = new TileLayerSpec(
+            "above",
+            new uint[] { 0, 0, 0, 0 },
+            Properties: new[]
+            {
+                new FixtureProperty("above_player", "bool", "true"),
+                new FixtureProperty("is_collision", "bool", "false"),
+            });
+        var walls = new TileLayerSpec(
+            "walls",
+            new uint[] { 0, 1, 0, 0 },
+            Properties: new[] { new FixtureProperty("is_collision", "bool", "true") });
+
+        using var fixture = TiledTestFixture.Create2x2(new[] { above, walls });
+        var map = TileMap.Load(fixture.MapPath);
+
+        Assert.True(map.Layers[0].AbovePlayer);
+        Assert.False(map.Layers[0].IsCollision);
+        Assert.False(map.Layers[1].AbovePlayer);
+        Assert.True(map.Layers[1].IsCollision);
+    }
+
+    /// <summary>Verifies IsSolid returns true exactly where a collision layer has a non-empty tile, and false on empty cells.</summary>
+    [Fact]
+    public void IsSolid_CollisionLayerTile_IsSolid_AndEmptyCellsAreWalkable()
+    {
+        var ground = new TileLayerSpec("ground", new uint[] { 1, 1, 1, 1 }); // walkable
+        var walls = new TileLayerSpec(
+            "walls",
+            new uint[] { 0, 1, 0, 1 },
+            Properties: new[] { new FixtureProperty("is_collision", "bool", "true") });
+
+        using var fixture = TiledTestFixture.Create2x2(new[] { ground, walls });
+        var map = TileMap.Load(fixture.MapPath);
+
+        // (0,0) is empty in the collision layer -> walkable even though ground draws a tile there.
+        Assert.False(map.IsSolid(0, 0));
+        // (1,0) has a tile in the collision layer -> solid.
+        Assert.True(map.IsSolid(1, 0));
+        // (0,1) is empty -> walkable.
+        Assert.False(map.IsSolid(0, 1));
+        // (1,1) has a tile -> solid.
+        Assert.True(map.IsSolid(1, 1));
+    }
+
+    /// <summary>Verifies IsSolid ignores tiles on non-collision layers: a tile drawn from a normal layer is walkable.</summary>
+    [Fact]
+    public void IsSolid_NonCollisionLayer_NeverBlocks()
+    {
+        // All four cells have a tile on the ground layer, but none is a collision layer.
+        using var fixture = TiledTestFixture.Create2x2(new[] { new TileLayerSpec("ground", new uint[] { 1, 1, 1, 1 }) });
+        var map = TileMap.Load(fixture.MapPath);
+
+        Assert.False(map.IsSolid(0, 0));
+        Assert.False(map.IsSolid(1, 0));
+        Assert.False(map.IsSolid(0, 1));
+        Assert.False(map.IsSolid(1, 1));
+    }
+
+    /// <summary>Verifies IsSolid returns true for out-of-bounds coordinates (negative and >= map size): the map edge is solid.</summary>
+    [Fact]
+    public void IsSolid_OutOfBounds_ReturnsTrue()
+    {
+        using var fixture = TiledTestFixture.Create2x2(new[] { Ground });
+        var map = TileMap.Load(fixture.MapPath);
+
+        Assert.True(map.IsSolid(-1, 0));
+        Assert.True(map.IsSolid(0, -1));
+        Assert.True(map.IsSolid(2, 0));
+        Assert.True(map.IsSolid(0, 2));
+        Assert.True(map.IsSolid(-1, -1));
+        Assert.True(map.IsSolid(2, 2));
+    }
+
+    /// <summary>Verifies IsAreaSolid reports solid when the rectangle overlaps a collision-layer tile, using the floored bounds.</summary>
+    [Fact]
+    public void IsAreaSolid_OverlappingSolidTile_ReturnsTrue()
+    {
+        // Collision layer with a single solid tile at (1,1).
+        var walls = new TileLayerSpec(
+            "walls",
+            new uint[] { 0, 0, 0, 1 },
+            Properties: new[] { new FixtureProperty("is_collision", "bool", "true") });
+
+        using var fixture = TiledTestFixture.Create2x2(new[] { walls });
+        var map = TileMap.Load(fixture.MapPath);
+
+        // A rectangle inside the solid cell is solid.
+        Assert.True(map.IsAreaSolid(1.2, 1.2, 0.5, 0.5));
+
+        // A rectangle fully inside a walkable cell is not.
+        Assert.False(map.IsAreaSolid(0.2, 0.2, 0.5, 0.5));
+
+        // A rectangle that ends exactly on the boundary of the solid cell does not include it;
+        // once it spills past the boundary (even slightly) it becomes solid.
+        Assert.False(map.IsAreaSolid(0.0, 1.0, 1.0, 0.5));
+        Assert.True(map.IsAreaSolid(0.0, 1.0, 1.0001, 0.5));
+    }
+
+    /// <summary>Verifies IsAreaSolid returns false for an in-bounds rectangle when the map has no collision layers.</summary>
+    [Fact]
+    public void IsAreaSolid_NoCollisionLayer_ReturnsFalse()
+    {
+        using var fixture = TiledTestFixture.Create2x2(new[] { Ground });
+        var map = TileMap.Load(fixture.MapPath);
+
+        Assert.False(map.IsAreaSolid(0, 0, 2, 2));
+        Assert.False(map.IsAreaSolid(0.25, 0.25, 1.5, 1.5));
+    }
+
+    /// <summary>Verifies IsAreaSolid treats a rectangle that extends outside the map as solid (the map-edge rule).</summary>
+    [Fact]
+    public void IsAreaSolid_OutsideMap_ReturnsTrue()
+    {
+        using var fixture = TiledTestFixture.Create2x2(new[] { Ground });
+        var map = TileMap.Load(fixture.MapPath);
+
+        Assert.True(map.IsAreaSolid(-1, 0, 1, 1));  // starts left of the map
+        Assert.True(map.IsAreaSolid(1.5, 0, 1, 1)); // extends past the right edge
+        Assert.True(map.IsAreaSolid(0, 1.5, 1, 1)); // extends past the bottom edge
+        Assert.True(map.IsAreaSolid(1.5, 1.5, 1, 1)); // extends past both edges
     }
 
     // ---------------------------------------------------------------------
