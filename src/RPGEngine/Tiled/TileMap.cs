@@ -21,6 +21,22 @@ namespace RPGEngine.Tiled;
 /// layout is supported by this story; collision, pathfinding and <c>.tmj</c> are out of scope.
 /// </para>
 /// <para>
+/// Rendering is a per-layer image blit. When the map is loaded, every visible, non-empty tile
+/// layer is prerendered once into its own <see cref="SKImage"/> of the map's pixel size: the
+/// tiles are drawn at their world pixel positions with the flip transforms from
+/// <see cref="TileFlags"/> applied, and the layer's <see cref="TileMapLayer.Opacity"/> is baked
+/// into the layer alpha. <see cref="Draw"/> and <see cref="DrawAbovePlayer"/> then only blit the
+/// cached layer images that intersect the viewport, so drawing a frame no longer touches the
+/// per-tile data (tiles are drawn exactly once, at load time).
+/// </para>
+/// <para>
+/// A <see cref="TileMap"/> is <see cref="IDisposable"/>: disposing it releases the prerendered
+/// layer images (and any surfaces kept during their creation). The engine disposes the previous
+/// map when <c>GameEngine.Map</c> is replaced and when the engine itself is disposed; hosts that
+/// load maps directly are responsible for disposing them when they are replaced or no longer
+/// needed.
+/// </para>
+/// <para>
 /// Rendering happens in two passes. <see cref="Draw"/> draws the layers below the player
 /// (every layer whose <see cref="TileMapLayer.AbovePlayer"/> is <see langword="false"/>), and
 /// <see cref="DrawAbovePlayer"/> draws the layers above the player (those marked with the
@@ -29,10 +45,18 @@ namespace RPGEngine.Tiled;
 /// tiles appear in front of the player.
 /// </para>
 /// </remarks>
-public sealed class TileMap
+public sealed class TileMap : IDisposable
 {
     private readonly IReadOnlyList<TileSet> _tileSets;
     private readonly Dictionary<string, TileMapLayer> _layersByName;
+
+    /// <summary>
+    /// The prerendered layer images, one slot per <see cref="Layers"/> entry in file order.
+    /// A slot is <see langword="null"/> when the layer was not prerendered (invisible or empty).
+    /// </summary>
+    private readonly SKImage?[] _prerenderedImages;
+
+    private bool _disposed;
 
     private TileMap(
         int width,
@@ -58,6 +82,10 @@ public sealed class TileMap
         {
             _layersByName.TryAdd(layer.Name, layer);
         }
+
+        // Every visible, non-empty tile layer is rasterized once into an SKImage at load time.
+        // The prerendered images are the source of every later render call.
+        _prerenderedImages = PrerenderLayers();
     }
 
     /// <summary>Gets the width of the map in tiles.</summary>
@@ -98,6 +126,21 @@ public sealed class TileMap
     /// image/group layers are ignored for now.
     /// </summary>
     public IReadOnlyList<TileMapObjectLayer> ObjectLayers { get; }
+
+    /// <summary>
+    /// Gets the prerendered layer images, one slot per <see cref="Layers"/> entry in file order.
+    /// Each non-<see langword="null"/> image is the full pixel-size raster of its layer with the
+    /// flip transforms and layer opacity baked in; a <see langword="null"/> slot means the layer
+    /// was not prerendered (it is invisible or empty).
+    /// </summary>
+    /// <remarks>
+    /// Internal so the test project can assert the prerender contract (acceptance criterion 5).
+    /// The caller must not dispose these images; <see cref="Dispose"/> owns them.
+    /// </remarks>
+    internal IReadOnlyList<SKImage?> PrerenderedLayerImages => _prerenderedImages;
+
+    /// <summary>Gets whether this map has been disposed. Internal for tests.</summary>
+    internal bool IsDisposed => _disposed;
 
     /// <summary>
     /// Returns the map property named <paramref name="name"/> using a case-sensitive comparison,
@@ -250,93 +293,151 @@ public sealed class TileMap
     /// <summary>
     /// Draws the visible part of the map to <paramref name="canvas"/>, rendering only the
     /// layers that belong <em>below</em> the player (those whose
-    /// <see cref="TileMapLayer.AbovePlayer"/> is <see langword="false"/>). Only tiles
-    /// intersecting <paramref name="viewport"/> are drawn; the viewport is in the same
-    /// (world) coordinate space that tiles are drawn into, so callers that apply a camera
-    /// transform must pass the corresponding viewport rectangle.
+    /// <see cref="TileMapLayer.AbovePlayer"/> is <see langword="false"/>). Only the region of
+    /// each prerendered layer image that intersects <paramref name="viewport"/> is blitted; the
+    /// viewport is in the same (world) coordinate space that tiles are drawn into, so callers
+    /// that apply a camera transform must pass the corresponding viewport rectangle.
     /// </summary>
     /// <param name="canvas">The canvas to draw onto.</param>
-    /// <param name="viewport">The visible world-space rectangle used to cull tiles.</param>
+    /// <param name="viewport">The visible world-space rectangle used to cull layers.</param>
+    /// <exception cref="ObjectDisposedException">The map has been disposed.</exception>
     /// <remarks>
     /// This is the first render pass: the engine calls it before drawing the characters, then
     /// calls <see cref="DrawAbovePlayer"/> afterwards so <c>above_player</c> layers appear on
-    /// top of the player.
+    /// top of the player. Each layer is a prerendered image blit; no per-tile work happens here.
     /// </remarks>
     internal void Draw(SKCanvas canvas, SKRect viewport)
-        => DrawLayers(canvas, viewport, abovePlayerOnly: false);
+        => DrawLayerImages(canvas, viewport, abovePlayerOnly: false);
 
     /// <summary>
     /// Draws the visible part of the map to <paramref name="canvas"/>, rendering only the
     /// layers that belong <em>above</em> the player (those whose
-    /// <see cref="TileMapLayer.AbovePlayer"/> is <see langword="true"/>). The culling,
-    /// opacity and flip handling are identical to <see cref="Draw"/>; only the layer
-    /// selection differs.
+    /// <see cref="TileMapLayer.AbovePlayer"/> is <see langword="true"/>). The culling and image
+    /// blitting are identical to <see cref="Draw"/>; only the layer selection differs.
     /// </summary>
     /// <param name="canvas">The canvas to draw onto.</param>
-    /// <param name="viewport">The visible world-space rectangle used to cull tiles.</param>
+    /// <param name="viewport">The visible world-space rectangle used to cull layers.</param>
+    /// <exception cref="ObjectDisposedException">The map has been disposed.</exception>
     /// <remarks>
     /// This is the second render pass: the engine calls it after the NPCs and the player have
     /// been drawn, so the tiles of <c>above_player</c> layers appear in front of the player.
     /// </remarks>
     internal void DrawAbovePlayer(SKCanvas canvas, SKRect viewport)
-        => DrawLayers(canvas, viewport, abovePlayerOnly: true);
+        => DrawLayerImages(canvas, viewport, abovePlayerOnly: true);
+
+    /// <summary>
+    /// Releases the prerendered layer images owned by this map. This method is idempotent:
+    /// calling it more than once, or after the engine has already replaced/disposed the map, is
+    /// a no-op.
+    /// </summary>
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+
+        foreach (var image in _prerenderedImages)
+        {
+            image?.Dispose();
+        }
+    }
 
     /// <summary>
     /// Shared implementation of the two map render passes. When
     /// <paramref name="abovePlayerOnly"/> is <see langword="false"/> only layers below the
     /// player are drawn (see <see cref="Draw"/>); when <see langword="true"/> only layers
     /// above the player are drawn (see <see cref="DrawAbovePlayer"/>). In both cases the
-    /// visible layers are culled to <paramref name="viewport"/> and drawn in file order with
-    /// their opacity and flip flags applied.
+    /// prerendered layer images are iterated in file order and each image's intersection with
+    /// <paramref name="viewport"/> is blitted with a plain, non-antialiased image draw. Layers
+    /// that were not prerendered (invisible or empty) have a <see langword="null"/> slot and are
+    /// skipped. Opacity and flip transforms were baked in at load time, so the draw path is a
+    /// pure image blit.
     /// </summary>
-    private void DrawLayers(SKCanvas canvas, SKRect viewport, bool abovePlayerOnly)
+    private void DrawLayerImages(SKCanvas canvas, SKRect viewport, bool abovePlayerOnly)
     {
-        var startX = Math.Max(0, (int)MathF.Floor(viewport.Left / TileWidth));
-        var endX = Math.Min(Width - 1, (int)MathF.Ceiling(viewport.Right / TileWidth) - 1);
-        var startY = Math.Max(0, (int)MathF.Floor(viewport.Top / TileHeight));
-        var endY = Math.Min(Height - 1, (int)MathF.Ceiling(viewport.Bottom / TileHeight) - 1);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        // Cull: intersect the viewport with the map's pixel bounds (each prerendered layer image
+        // spans exactly (0, 0, PixelWidth, PixelHeight)). When the viewport does not overlap the
+        // map nothing is drawn, so pixels outside the viewport are never touched.
+        var left = Math.Max(viewport.Left, 0f);
+        var top = Math.Max(viewport.Top, 0f);
+        var right = Math.Min(viewport.Right, (float)PixelWidth);
+        var bottom = Math.Min(viewport.Bottom, (float)PixelHeight);
+        if (left >= right || top >= bottom)
+        {
+            return;
+        }
+
+        var visible = new SKRect(left, top, right, bottom);
+
+        using var paint = new SKPaint { IsAntialias = false };
 
         for (var layerIndex = 0; layerIndex < Layers.Count; layerIndex++)
         {
-            var layer = Layers[layerIndex];
-            if (!layer.Visible || layer.AbovePlayer != abovePlayerOnly)
+            if (Layers[layerIndex].AbovePlayer != abovePlayerOnly)
             {
                 continue;
             }
 
-            using var tilePaint = new SKPaint { IsAntialias = false };
-            var applyOpacity = layer.Opacity < 1f;
-            if (applyOpacity)
+            var image = _prerenderedImages[layerIndex];
+            if (image is null)
             {
-                // Apply the layer opacity by drawing the whole layer into a temporary layer
-                // whose alpha is controlled by a dedicated paint. The tile paint keeps its
-                // full alpha so the opacity is not applied twice.
-                using var layerPaint = new SKPaint
-                {
-                    Color = SKColors.White.WithAlpha((byte)Math.Round(layer.Opacity * 255f)),
-                };
-                canvas.SaveLayer(layerPaint);
-                try
-                {
-                    DrawLayer(canvas, layer, startX, endX, startY, endY, tilePaint);
-                }
-                finally
-                {
-                    canvas.Restore();
-                }
+                continue;
             }
-            else
-            {
-                DrawLayer(canvas, layer, startX, endX, startY, endY, tilePaint);
-            }
+
+            // The source and destination rects are the same world-pixel rect: the visible part
+            // of the prerendered image is blitted in place, which preserves viewport culling.
+            canvas.DrawImage(image, visible, visible, paint);
         }
     }
 
-    private void DrawLayer(SKCanvas canvas, TileMapLayer layer, int startX, int endX, int startY, int endY, SKPaint paint)
+    /// <summary>
+    /// Prerenders every visible, non-empty tile layer into an <see cref="SKImage"/> of the map's
+    /// pixel size. Invisible layers and empty layers (no non-zero GID) produce a
+    /// <see langword="null"/> slot. Each returned image is owned by this map and released by
+    /// <see cref="Dispose"/>.
+    /// </summary>
+    private SKImage?[] PrerenderLayers()
     {
-        for (var y = startY; y <= endY; y++)
+        var images = new SKImage?[Layers.Count];
+
+        for (var layerIndex = 0; layerIndex < Layers.Count; layerIndex++)
         {
-            for (var x = startX; x <= endX; x++)
+            var layer = Layers[layerIndex];
+            if (!layer.Visible || !HasAnyTile(layer))
+            {
+                continue;
+            }
+
+            images[layerIndex] = PrerenderLayer(layer);
+        }
+
+        return images;
+    }
+
+    /// <summary>
+    /// Rasterizes one tile layer into a full map-size <see cref="SKImage"/>. The tiles are drawn
+    /// at their world pixel positions with the flip transforms from <see cref="DrawTile"/>
+    /// applied; when the layer has an opacity below 1 the whole layer is faded afterwards, so the
+    /// opacity is baked into the stored image and the draw path stays a plain image blit.
+    /// </summary>
+    private SKImage PrerenderLayer(TileMapLayer layer)
+    {
+        using var surface = SKSurface.Create(new SKImageInfo(PixelWidth, PixelHeight))
+            ?? throw new InvalidOperationException("Failed to create the raster surface used to prerender the map layers.");
+
+        var canvas = surface.Canvas;
+        canvas.Clear(SKColors.Transparent);
+
+        using var tilePaint = new SKPaint { IsAntialias = false };
+
+        for (var y = 0; y < Height; y++)
+        {
+            for (var x = 0; x < Width; x++)
             {
                 var gid = layer.GetTileId(x, y);
                 if (gid == 0)
@@ -361,9 +462,44 @@ public sealed class TileMap
                     (x + 1) * TileWidth,
                     (y + 1) * TileHeight);
 
-                DrawTile(canvas, tileImage, dest, flags, paint);
+                DrawTile(canvas, tileImage, dest, flags, tilePaint);
             }
         }
+
+        if (layer.Opacity < 1f)
+        {
+            // Bake the layer opacity into the whole layer: the tiles are composited at full
+            // alpha first and the resulting layer is then faded, matching the previous
+            // SaveLayer-based behavior. Drawing the full-alpha snapshot back onto the surface
+            // with an alpha-modulated paint produces exactly that faded layer.
+            using var fullAlphaLayer = surface.Snapshot();
+            canvas.Clear(SKColors.Transparent);
+
+            using var opacityPaint = new SKPaint
+            {
+                Color = SKColors.White.WithAlpha((byte)Math.Round(layer.Opacity * 255f)),
+                IsAntialias = false,
+            };
+            canvas.DrawImage(fullAlphaLayer, 0, 0, opacityPaint);
+        }
+
+        // The snapshot keeps the surface's pixels alive after the surface is disposed, so the
+        // surface can be released as soon as the image has been taken.
+        return surface.Snapshot();
+    }
+
+    /// <summary>Returns whether the layer contains at least one non-zero (non-empty) tile GID.</summary>
+    private static bool HasAnyTile(TileMapLayer layer)
+    {
+        foreach (var tileId in layer.TileIds)
+        {
+            if (tileId != 0)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static void DrawTile(SKCanvas canvas, SKImage image, SKRect dest, TileFlags flags, SKPaint paint)
