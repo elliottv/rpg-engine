@@ -22,10 +22,16 @@ spritesheet references used to render it.
 
 ### `Position Position`
 
-Gets or sets the top-left world position of the character's sprite, in tiles.
+Gets or sets the world position of the character's **feet** — the *middle-bottom* of the
+sprite — in tiles. The sprite is rendered above and centered on this point, so a position of
+`(8.5, 8.5)` means the character stands with its feet at the centre of tile `(8, 8)`. In world
+pixels the sprite's top-left is at `(pos.X*ts - w/2, pos.Y*ts - h)` where `ts` is the map's
+tile size and `w`/`h` the sprite's pixel size.
 
 ```csharp
-var character = new Character { Position = new Position(3, 4) };
+// Feet (middle-bottom) at the centre of tile (3, 4): the sprite is drawn above and centered
+// on this point.
+var character = new Character { Position = new Position(3.5, 4.5) };
 ```
 
 ### `Direction Direction`
