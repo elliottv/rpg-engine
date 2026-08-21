@@ -445,6 +445,25 @@ public sealed class GameEngine : IDisposable
         => _spriteSheetManager.LoadPartAsync(name, stream, partType);
 
     /// <summary>
+    /// Returns whether a spritesheet is registered under <paramref name="name"/>. Full sheets
+    /// (loaded with <see cref="LoadSpriteSheet(string, Stream)"/>) and part sheets (loaded with
+    /// <see cref="LoadPartSpriteSheet(string, Stream, CharacterPartType)"/>) share one registry,
+    /// so both are visible to this check. This is the safe way to test whether a name is already
+    /// in use without catching the <see cref="KeyNotFoundException"/> thrown by the render path.
+    /// </summary>
+    /// <param name="name">The name of the sheet to look up.</param>
+    /// <returns>
+    /// <see langword="true"/> if a full or part sheet is registered under <paramref name="name"/>;
+    /// otherwise <see langword="false"/>.
+    /// </returns>
+    /// <exception cref="ArgumentNullException"><paramref name="name"/> is <see langword="null"/>.</exception>
+    /// <remarks>
+    /// The check is case-sensitive and trims surrounding whitespace from <paramref name="name"/>
+    /// before the lookup, matching how sheets are registered.
+    /// </remarks>
+    public bool SpriteSheetExists(string name) => _spriteSheetManager.Contains(name);
+
+    /// <summary>
     /// Computes the camera origin: the world position (in tiles) that maps to the canvas' top-left
     /// corner. Let <c>ts</c> be the map's tile width. The desired origin centers the player
     /// (<c>desired = player.Position - (canvasWidth / (2*ts), canvasHeight / (2*ts))</c>); it is
