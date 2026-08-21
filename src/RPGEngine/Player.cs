@@ -19,6 +19,13 @@ namespace RPGEngine;
 /// direction derived from <see cref="GameConfig"/>. This keeps <see cref="Player"/> a thin,
 /// easily testable wrapper.
 /// </para>
+/// <para>
+/// The player exposes a movement-state machine through <see cref="OnMove"/>: it fires whenever
+/// the player <em>starts moving</em> (idle &#8594; moving), <em>stops moving</em> (moving &#8594;
+/// idle, via <see cref="Stop"/>), or <em>changes direction while moving</em>. The event is raised
+/// for both manual (key) movement and auto-walk movement, so hosts can react to the player's
+/// movement state without polling the position every frame.
+/// </para>
 /// </remarks>
 public sealed class Player
 {
@@ -30,12 +37,39 @@ public sealed class Player
     /// </summary>
     public const double DefaultBaseSpeed = 2;
 
+    private Character _character = null!;
+
+    // The player's movement-state machine. _isMoving tracks whether the engine (or a direct
+    // Move call) is currently moving the player; _lastDirection is the last facing direction the
+    // event machinery reported, used to detect direction changes and to report the facing
+    // direction in OnMove when the player stops.
+    private bool _isMoving;
+    private Direction _lastDirection = Direction.Down;
+
+    /// <summary>
+    /// Occurs when the player's movement state changes: it starts moving (idle &#8594; moving),
+    /// stops moving (moving &#8594; idle, via <see cref="Stop"/>), or changes direction while
+    /// moving. The event carries the new state (<see cref="PlayerMoveEventArgs.IsMoving"/>) and
+    /// the player's current facing direction (<see cref="PlayerMoveEventArgs.Direction"/>). It is
+    /// raised for both manual (key) movement and auto-walk movement.
+    /// </summary>
+    public event EventHandler<PlayerMoveEventArgs>? OnMove;
+
     /// <summary>Gets or sets the <see cref="Character"/> that represents the player in the game world.</summary>
     /// <remarks>
     /// All other members of <see cref="Player"/> forward to this character, so replacing it
-    /// replaces the player's position, direction, speed and spritesheets as well.
+    /// replaces the player's position, direction, speed and spritesheets as well. The movement
+    /// event state is re-synchronized to the new character's facing direction.
     /// </remarks>
-    public Character Character { get; set; }
+    public Character Character
+    {
+        get => _character;
+        set
+        {
+            _character = value;
+            _lastDirection = _character.Direction;
+        }
+    }
 
     /// <summary>
     /// Initializes a new instance of the <see cref="Player"/> class with its own
@@ -68,12 +102,17 @@ public sealed class Player
 
     /// <summary>
     /// Gets or sets the direction the player is facing. Forwards to
-    /// <see cref="Character.Direction"/>.
+    /// <see cref="Character.Direction"/> and keeps the movement event state in sync so
+    /// <see cref="OnMove"/> reports the correct facing direction.
     /// </summary>
     public Direction Direction
     {
         get => Character.Direction;
-        set => Character.Direction = value;
+        set
+        {
+            Character.Direction = value;
+            _lastDirection = value;
+        }
     }
 
     /// <summary>
@@ -90,11 +129,53 @@ public sealed class Player
     /// tiles and sets the facing direction. Forwards to
     /// <see cref="Character.Move(Direction, double, double)"/>.
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// This method also drives the movement-state machine: with <paramref name="speedFactor"/>
+    /// greater than zero the player is considered <em>moving</em> (it actually moves), so
+    /// <see cref="OnMove"/> fires with <see cref="PlayerMoveEventArgs.IsMoving"/> set to
+    /// <see langword="true"/> when the player starts moving (idle &#8594; moving) or changes
+    /// direction while moving.
+    /// </para>
+    /// <para>
+    /// With <paramref name="speedFactor"/> equal to zero the player only turns to face
+    /// <paramref name="direction"/>: <see cref="OnMove"/> fires on a direction change carrying
+    /// the current movement state (<see langword="true"/> when the player was already moving,
+    /// <see langword="false"/> when idle).
+    /// </para>
+    /// </remarks>
     /// <param name="direction">The direction to face and move towards.</param>
     /// <param name="speedFactor">A multiplier applied to the character's <see cref="Character.BaseSpeed"/>.</param>
     /// <param name="dt">The elapsed time in seconds.</param>
     public void Move(Direction direction, double speedFactor = 1, double dt = 1)
-        => Character.Move(direction, speedFactor, dt);
+    {
+        var wasMoving = _isMoving;
+        var previousDirection = _lastDirection;
+
+        // Face the requested direction first so the character, the event state and the reported
+        // facing all agree.
+        Direction = direction;
+
+        if (speedFactor == 0)
+        {
+            // Only turns: the movement state is unchanged; raise OnMove on a direction change
+            // with the current moving state.
+            if (direction != previousDirection)
+            {
+                OnMove?.Invoke(this, new PlayerMoveEventArgs(_isMoving, direction));
+            }
+
+            return;
+        }
+
+        Character.Move(direction, speedFactor, dt);
+
+        _isMoving = true;
+        if (!wasMoving || direction != previousDirection)
+        {
+            OnMove?.Invoke(this, new PlayerMoveEventArgs(true, direction));
+        }
+    }
 
     /// <summary>
     /// Moves the player in its current facing direction. Forwards to
@@ -103,5 +184,54 @@ public sealed class Player
     /// <param name="speedFactor">A multiplier applied to the character's <see cref="Character.BaseSpeed"/>.</param>
     /// <param name="dt">The elapsed time in seconds.</param>
     public void Move(double speedFactor = 1, double dt = 1)
-        => Character.Move(speedFactor, dt);
+        => Move(Direction, speedFactor, dt);
+
+    /// <summary>
+    /// Transitions the player to idle (stops moving) and raises <see cref="OnMove"/> with
+    /// <see cref="PlayerMoveEventArgs.IsMoving"/> set to <see langword="false"/>. When the player
+    /// is already idle this method is a no-op and does not raise the event. The engine calls it
+    /// when there is no key input and no auto-walk target.
+    /// </summary>
+    /// <remarks>
+    /// Stopping does not change the facing direction: the player keeps facing the direction it
+    /// was last moving, and that direction is reported in the event.
+    /// </remarks>
+    public void Stop()
+    {
+        if (!_isMoving)
+        {
+            return;
+        }
+
+        _isMoving = false;
+        OnMove?.Invoke(this, new PlayerMoveEventArgs(false, _lastDirection));
+    }
+
+    /// <summary>
+    /// Records that the player moved and raises <see cref="OnMove"/> on state transitions,
+    /// mirroring the state-machine behavior of <see cref="Move(Direction, double, double)"/>.
+    /// </summary>
+    /// <remarks>
+    /// This is the internal bridge the engine uses for movement it resolves itself (the
+    /// axis-separated collision resolution of <see cref="GameEngine"/> and the auto-walk
+    /// movement), which cannot go through <see cref="Move(Direction, double, double)"/> because
+    /// that method applies the whole displacement at once. It faces the player, marks it as
+    /// moving and raises <see cref="OnMove"/> with <see cref="PlayerMoveEventArgs.IsMoving"/>
+    /// set to <see langword="true"/> when the player starts moving or changes direction while
+    /// moving.
+    /// </remarks>
+    /// <param name="direction">The direction the player moved in (and now faces).</param>
+    internal void ReportMovement(Direction direction)
+    {
+        var wasMoving = _isMoving;
+        var previousDirection = _lastDirection;
+
+        Direction = direction;
+        _isMoving = true;
+
+        if (!wasMoving || direction != previousDirection)
+        {
+            OnMove?.Invoke(this, new PlayerMoveEventArgs(true, direction));
+        }
+    }
 }
