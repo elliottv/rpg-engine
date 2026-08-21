@@ -91,17 +91,22 @@ foreach (var layer in engine.Map?.ObjectLayers ?? [])
 > The synchronous, file-system based equivalents (`TileMap.Load(path)`, `LoadSpriteSheet(name,
 > path)`) are what the desktop sample host uses; both loading styles exercise the same rendering
 > pipeline.
+>
+> **Map ownership:** a `TileMap` is `IDisposable` — it prerenders every visible tile layer into
+> an `SKImage` on load. The engine owns the assigned map: replacing `engine.Map` disposes the
+> previous map, and disposing the engine (`using var engine = ...` or `engine.Dispose()`) disposes
+> the current one.
 
 ### Reading order
 
 | Page | What it covers |
 | --- | --- |
 | [Architecture](Architecture.md) | Composition model, camera, spritesheet layout, part ordering, rendering order and the Tiled read model. |
-| [api/GameEngine.md](api/GameEngine.md) | Root object: game loop, input (8 directions), asset loading (sync + async), camera, black background / map centering. |
+| [api/GameEngine.md](api/GameEngine.md) | Root object: game loop, input (8 directions), asset loading (sync + async), camera, black background / map centering, map ownership (`IDisposable`). |
 | [api/Character.md](api/Character.md) / [api/Player.md](api/Player.md) | In-world state, sprite references and the speed-scaled walk-cycle animation (`AnimationCycleSpeed`). |
 | [api/SpriteSheet.md](api/SpriteSheet.md) | The 12×8 sheet layout (derived cell size, e.g. 576×384 or 936×864) and the **1..8 character index** semantics. |
 | [api/SpriteSheetManager.md](api/SpriteSheetManager.md) | Loading full/part sheets by path or stream, including the async `LoadAsync`/`LoadPartAsync` overloads. |
-| [api/TileMap.md](api/TileMap.md) / [api/TileSet.md](api/TileSet.md) | Tiled TMX/TSX loading (sync + async) and rendering; map custom properties, object layers and the `above_player` flag. |
+| [api/TileMap.md](api/TileMap.md) / [api/TileSet.md](api/TileSet.md) | Tiled TMX/TSX loading (sync + async); prerendered layer images, viewport-culled image-blit rendering and `IDisposable`; map custom properties, object layers and the `above_player` flag. |
 | [api/TileMapLayer.md](api/TileMapLayer.md) | Tile-layer data and the `AbovePlayer` flag. |
 | [api/MapProperty.md](api/MapProperty.md) / [api/MapPropertyType.md](api/MapPropertyType.md) | Typed map/layer/object custom properties. |
 | [api/TileMapObject.md](api/TileMapObject.md) / [api/TileMapObjectShape.md](api/TileMapObjectShape.md) / [api/TileMapObjectLayer.md](api/TileMapObjectLayer.md) | The object-layer read model. |

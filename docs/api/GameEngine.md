@@ -26,6 +26,9 @@ registry and the pressed-keys state, and exposes the game-loop entry points `Upd
 - Movement input combines every held bound key into a single 8-direction vector: opposite keys
   cancel (`W`+`S` or `A`+`D`), and a diagonal pair combines into a diagonal (`W`+`D` → up-right)
   at the same speed as cardinal movement (see [Architecture](../Architecture.md)).
+- The engine is **`IDisposable`**: it owns the assigned map and disposes it when `Map` is
+  replaced or when the engine itself is disposed (a `TileMap` is disposable because it
+  prerenders each tile layer into an `SKImage` on load).
 - Tile sets are not loaded through the engine: a `TileMap` owns the tilesets its layers
   reference. Standalone tilesets are loaded directly through the `TileSet.Load` factories.
 
@@ -66,10 +69,12 @@ engine.Characters.Add(npc);
 ### `TileMap? Map`
 
 Gets or sets the tile map to be displayed, or `null` when no map is loaded. When changed, the
-next `Render` uses the new map immediately.
+next `Render` uses the new map immediately. The engine **owns** the assigned map: replacing the
+value disposes the previous map, and `Dispose()` releases the current one.
 
 ```csharp
 engine.Map = TileMap.Load("assets/map.tmx");
+engine.Map = TileMap.Load("assets/other.tmx"); // the first map is disposed here
 ```
 
 ### `GameConfig Config`
@@ -123,6 +128,19 @@ using (var canvas = new SKCanvas(bitmap))
     canvas.Clear(SKColors.Transparent);
     engine.Render(canvas, dt: 1.0 / 60);
 }
+```
+
+### `void Dispose()`
+
+Releases the engine's resources: the current map (if any) is disposed, which releases its
+prerendered layer images. Replacing the map through `Map` already disposes the previous map, so
+hosts only need to call this when the engine itself is being torn down. Safe to call more than
+once.
+
+```csharp
+using var engine = new GameEngine { Map = TileMap.Load("assets/map.tmx") };
+// ... game loop ...
+// engine.Dispose() runs at the end of the using block and disposes the map.
 ```
 
 ### `void LoadSpriteSheet(string name, string path)`

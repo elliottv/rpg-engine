@@ -9,6 +9,16 @@ Namespace: `RPGEngine.Tiled` — a tile map loaded from a Tiled `.tmx` file (and
   are not registered anywhere globally. Loading a map never touches the engine's tilesets.
 - Tile coordinates are 0-based. Layer data is stored row-major. Only the orthogonal map layout
   is supported by this epic.
+- **Layers are prerendered on load.** Every visible, non-empty tile layer is rasterized once
+  into its own `SKImage` of the map's pixel size (`PixelWidth × PixelHeight`) when the map is
+  loaded: the tiles are drawn at their world pixel positions with the flip transforms applied,
+  and the layer's `Opacity` is baked into the layer alpha. Invisible layers and empty layers
+  (no non-zero GID) are not prerendered. `Draw` and `DrawAbovePlayer` then only **blit** the
+  cached layer images that intersect the viewport, so a frame never re-draws tiles.
+- A `TileMap` is **`IDisposable`**: disposing it releases the prerendered layer images.
+  Replacing `GameEngine.Map` disposes the previous map, and disposing the `GameEngine` disposes
+  the current map; hosts that load maps directly are responsible for disposing them when they
+  are replaced or no longer needed.
 - Rendering happens in **two passes**: the layers **below** the player (every layer whose
   `TileMapLayer.AbovePlayer` is `false`) are drawn first, and the layers **above** the player
   (those declaring the Tiled `above_player` custom property set to `true`) are drawn afterwards,
@@ -115,6 +125,21 @@ returns `false`; collision data will be added by a later story.
 
 ```csharp
 Console.WriteLine(map.IsSolid(1, 1)); // False
+```
+
+### `void Dispose()`
+
+Releases the prerendered layer images owned by the map. This method is **idempotent** (calling
+it more than once is a no-op). After disposal, `Draw` and `DrawAbovePlayer` throw
+`ObjectDisposedException`. The engine disposes the previous map when `GameEngine.Map` is
+replaced and when the engine itself is disposed, so hosts usually do not call `Dispose`
+directly.
+
+```csharp
+// The engine owns the map: replacing it (or disposing the engine) disposes it automatically.
+var engine = new GameEngine { Map = TileMap.Load("assets/map.tmx") };
+engine.Map = TileMap.Load("assets/other.tmx"); // the first map is disposed here
+engine.Dispose();                              // the current map is disposed here
 ```
 
 ## Example

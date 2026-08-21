@@ -29,6 +29,10 @@ Every public class, property and method is XML-documented (CS1591 enforced) and 
 `docs/api/` with commented, compilable examples (`DocsExamplesTests` runs them against the real
 API).
 
+A `TileMap` is `IDisposable` (it prerenders every visible tile layer into an `SKImage` on load
+and releases them on dispose). The engine owns the assigned map: replacing `GameEngine.Map`
+disposes the previous map, and disposing the engine disposes the current one.
+
 ## Samples
 
 - **Desktop** (`samples/RPGEngine.Sample.Desktop`) — a minimal WPF host that renders the
