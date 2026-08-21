@@ -75,9 +75,13 @@ namespace RPGEngine;
 /// <para>
 /// When a map is set, the player's displacement is resolved with <em>axis-separated
 /// movement</em> against the map's solid tiles: each axis is applied in turn and reverted when
-/// the player's sprite footprint would overlap a solid tile or leave the map (the map edge is
-/// solid). This blocks the player at solid tiles, keeps wall-sliding natural and prevents
-/// diagonal corner-cutting. See <c>docs/Architecture.md</c> for the collision model.
+/// the player's collision footprint would overlap a solid tile or leave the map (the map edge
+/// is solid). The footprint is the <em>lower half</em> of the sprite anchored at the feet
+/// (<see cref="Player.Position"/> is the middle-bottom of the sprite): only the lower half is
+/// tested against solid tiles, so the upper body never collides with the ground. Clamping keeps
+/// that lower-half footprint inside the map. This blocks the player at solid tiles, keeps
+/// wall-sliding natural and prevents diagonal corner-cutting. See <c>docs/Architecture.md</c>
+/// for the collision model.
 /// </para>
 /// <para>
 /// The engine is <see cref="IDisposable"/>: it owns the assigned map and disposes it when
@@ -383,8 +387,10 @@ public sealed class GameEngine : IDisposable
 
         // Draw everything through a single camera translation in pixels (origin * ts): the map
         // blits its prerendered pixel layers in world pixels, and each character is drawn at its
-        // world pixel position (pos * ts). The net screen position of a character is therefore
-        // (pos.X*ts - origin.X*ts, pos.Y*ts - origin.Y*ts).
+        // world pixel feet position (pos * ts). The compositor anchors each sprite at its
+        // middle-bottom, so a character's sprite top-left is at
+        // (pos.X*ts - w/2 - origin.X*ts, pos.Y*ts - h - origin.Y*ts) in world pixels and its
+        // feet (anchor) at (pos.X*ts - origin.X*ts, pos.Y*ts - origin.Y*ts).
         // Draw order is: below-player map layers -> each NPC -> the player -> above-player map
         // layers, so tiles marked with the Tiled above_player property appear on top of the player.
         canvas.Save();
@@ -929,13 +935,13 @@ public sealed class GameEngine : IDisposable
     /// Moves the player in <paramref name="direction"/> by <c>BaseSpeed * dt</c> tiles and, when
     /// a map is set, resolves collisions against the map's solid tiles using
     /// <em>axis-separated movement</em>: the horizontal displacement is applied first and
-    /// reverted if the player's sprite footprint (see <see cref="PlayerFootprintOverlapsSolid"/>)
-    /// would overlap a solid tile or leave the map (the map edge is solid, see
-    /// <see cref="Tiled.TileMap.IsSolid"/>); the vertical displacement is then applied the same
-    /// way, starting from the horizontal result. This keeps wall-sliding natural (a blocked axis
-    /// reverts while the other axis still moves) and prevents diagonal corner-cutting (each axis
-    /// is resolved independently). Without a map the displacement is applied directly, matching
-    /// <see cref="Character.Move(Direction, double, double)"/>.
+    /// reverted if the player's collision footprint (the lower half of the sprite anchored at the
+    /// feet, see <see cref="PlayerFootprintOverlapsSolid"/>) would overlap a solid tile or leave
+    /// the map (the map edge is solid, see <see cref="Tiled.TileMap.IsSolid"/>); the vertical
+    /// displacement is then applied the same way, starting from the horizontal result. This keeps
+    /// wall-sliding natural (a blocked axis reverts while the other axis still moves) and prevents
+    /// diagonal corner-cutting (each axis is resolved independently). Without a map the
+    /// displacement is applied directly, matching <see cref="Character.Move(Direction, double, double)"/>.
     /// </summary>
     /// <param name="direction">The direction to face and move towards.</param>
     /// <param name="dt">The elapsed time in seconds since the previous frame.</param>
@@ -982,38 +988,54 @@ public sealed class GameEngine : IDisposable
     }
 
     /// <summary>
-    /// Returns whether the player's sprite footprint with its top-left at
-    /// <paramref name="position"/> overlaps a solid tile or leaves the map. The footprint size
-    /// is the player's sprite size in pixels (<see cref="Character.GetSpriteSize"/>) converted
-    /// to tiles with the map's tile width, and the overlap is tested with
-    /// <see cref="Tiled.TileMap.IsAreaSolid"/>.
+    /// Returns whether the player's collision footprint with its feet (middle-bottom) at
+    /// <paramref name="position"/> overlaps a solid tile or leaves the map. The footprint is the
+    /// <em>lower half</em> of the sprite: its size is half the player's sprite size in pixels
+    /// (<see cref="Character.GetSpriteSize"/>) converted to tiles with the map's tile width, and
+    /// it is anchored so the feet (the sprite's middle-bottom) sit at
+    /// <paramref name="position"/>. The upper half of the sprite (the upper body) never collides
+    /// with the ground; only this lower half is tested against solid tiles, and the map edge
+    /// (which <see cref="Tiled.TileMap.IsSolid"/> treats as solid) remains solid. The overlap is
+    /// tested with <see cref="Tiled.TileMap.IsAreaSolid"/>.
     /// </summary>
     private bool PlayerFootprintOverlapsSolid(Position position)
     {
         var ts = Map!.TileWidth;
         var (spriteWidth, spriteHeight) = Player.Character.GetSpriteSize(_spriteSheetManager);
-        return Map.IsAreaSolid(position.X, position.Y, spriteWidth / (double)ts, spriteHeight / (double)ts);
+        return Map.IsAreaSolid(
+            position.X - spriteWidth / (2.0 * ts),
+            position.Y - spriteHeight / (2.0 * ts),
+            spriteWidth / (double)ts,
+            spriteHeight / (2.0 * ts));
     }
 
     /// <summary>
-    /// Clamps the player's top-left position so its sprite stays inside the map bounds. The
-    /// sprite size is resolved in pixels from the player's configured spritesheet (see
-    /// <see cref="Character.GetSpriteSize"/>) and converted to tiles using the map's tile width;
-    /// when no sheet is configured it falls back to the 48×48 default.
-    /// <c>x ∈ [0, max(0, Map.Width - spriteWidth / ts)]</c>,
-    /// <c>y ∈ [0, max(0, Map.Height - spriteHeight / ts)]</c>, all in tiles.
+    /// Clamps the player's feet position so its collision footprint (the lower half of the sprite,
+    /// anchored at the feet) stays inside the map bounds. The sprite size is resolved in pixels
+    /// from the player's configured spritesheet (see <see cref="Character.GetSpriteSize"/>) and
+    /// converted to tiles using the map's tile width; when no sheet is configured it falls back
+    /// to the 48×48 default. With half-width <c>hw = spriteWidth / (2*ts)</c> and half-height
+    /// <c>hh = spriteHeight / (2*ts)</c> the feet are clamped to
+    /// <c>x ∈ [hw, max(hw, Map.Width - hw)]</c> and
+    /// <c>y ∈ [hh, max(hh, Map.Height)]</c>, all in tiles — the lower-half footprint
+    /// (whose bottom is the feet) never leaves the map. For the default 48×48 sprite with 48 px
+    /// tiles this is <c>x ∈ [0.5, Map.Width - 0.5]</c>, <c>y ∈ [0.5, Map.Height]</c>.
     /// Called after every move while a map is set.
     /// </summary>
     private void ClampPlayerToMap()
     {
         var ts = Map!.TileWidth;
         var (spriteWidth, spriteHeight) = Player.Character.GetSpriteSize(_spriteSheetManager);
-        var maxX = Math.Max(0, Map.Width - spriteWidth / (double)ts);
-        var maxY = Math.Max(0, Map.Height - spriteHeight / (double)ts);
+        var halfWidth = spriteWidth / (2.0 * ts);
+        var halfHeight = spriteHeight / (2.0 * ts);
+        var minX = halfWidth;
+        var maxX = Math.Max(minX, Map.Width - halfWidth);
+        var minY = halfHeight;
+        var maxY = Math.Max(minY, Map.Height);
 
         var position = Player.Position;
         Player.Position = new Position(
-            Math.Clamp(position.X, 0, maxX),
-            Math.Clamp(position.Y, 0, maxY));
+            Math.Clamp(position.X, minX, maxX),
+            Math.Clamp(position.Y, minY, maxY));
     }
 }

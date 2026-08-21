@@ -59,11 +59,12 @@ player.Character.Position = new Position(6, 6);
 
 ### `Position Position`
 
-Gets or sets the top-left world position of the player's sprite, in tiles. Forwards to
+Gets or sets the world position of the player's **feet** — the *middle-bottom* of the
+sprite — in tiles. The sprite is rendered above and centered on this point. Forwards to
 `Character.Position`.
 
 ```csharp
-player.Position = new Position(6, 6);
+player.Position = new Position(6, 6); // feet at the centre of tile (6, 6)
 ```
 
 ### `Direction Direction`

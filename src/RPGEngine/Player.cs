@@ -91,8 +91,9 @@ public sealed class Player
     }
 
     /// <summary>
-    /// Gets or sets the top-left world position of the player's sprite, in tiles. Forwards to
-    /// <see cref="Character.Position"/>.
+    /// Gets or sets the world position of the player's feet, in tiles. The feet are the
+    /// <em>middle-bottom</em> of the sprite: the sprite is rendered above and centered on this
+    /// point. Forwards to <see cref="Character.Position"/>.
     /// </summary>
     public Position Position
     {

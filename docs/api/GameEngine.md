@@ -48,8 +48,11 @@ registry and the pressed-keys state, and exposes the game-loop entry points `Upd
   See [Architecture](../Architecture.md).
 - When a map is set, the player's displacement is resolved with **axis-separated movement**
   against the map's solid tiles (layers declaring the Tiled `is_collision` bool property): each
-  axis is applied in turn and reverted when the player's sprite footprint would overlap a solid
-  tile or leave the map (the map edge is solid). See [Architecture](../Architecture.md).
+  axis is applied in turn and reverted when the player's collision footprint would overlap a
+  solid tile or leave the map (the map edge is solid). The footprint is the **lower half of the
+  sprite anchored at the feet** (`Position` is the middle-bottom of the sprite), so the upper
+  body never collides with the ground; the map-bounds clamp keeps that lower-half footprint
+  inside the map. See [Architecture](../Architecture.md).
 - A minimap can be rendered on a separate surface with `RenderMinimap`: it draws the map's
   prerendered tile layers, a green dot for the player and a yellow dot for each NPC.
   `zoomLevel` `1.0` fits the whole map to the canvas; values above `1` zoom in and pan around

@@ -791,6 +791,7 @@ public class DocsExamplesTests
             await engine.LoadSpriteSheetAsync("hero", stream);
         }
         engine.Player.SpriteSheets.Add(new SpriteSheetRef("hero", CharacterIndex: 1));
+        engine.Player.Position = new Position(0.5, 1.0); // sprite fills the 48×48 bitmap
 
         using var bitmap = new SKBitmap(48, 48);
         using (var canvas = new SKCanvas(bitmap))

@@ -30,6 +30,13 @@ namespace RPGEngine.Sprites;
 /// Hair (hair1 and hair2) is shown unless a <see cref="CharacterPartType.Head"/> sheet is present
 /// whose name contains the <c>$</c> character (the <c>$</c>-prefix rule from the epic).
 /// </para>
+/// <para>
+/// Every cell (whether a single full sheet or one part of a composition) is drawn with its
+/// <em>middle-bottom</em> at the anchor position passed to <see cref="Draw"/>: the anchor is
+/// the character's feet (where it stands), and the sprite is rendered above and centered on it.
+/// A cell's top-left is therefore at
+/// <c>(anchorPosition.X - width/2, anchorPosition.Y - height)</c> in pixels.
+/// </para>
 /// </remarks>
 internal sealed class CharacterSpriteCompositor
 {
@@ -38,10 +45,12 @@ internal sealed class CharacterSpriteCompositor
 
     /// <summary>
     /// Draws the character described by <paramref name="spriteSheetRefs"/> at
-    /// <paramref name="screenPosition"/>.
+    /// <paramref name="anchorPosition"/>.
     /// </summary>
     /// <param name="canvas">The canvas to draw onto.</param>
-    /// <param name="screenPosition">The top-left screen position of the sprite (its size is the sheet's derived cell size).</param>
+    /// <param name="anchorPosition">The middle-bottom (feet) anchor of the sprite, in pixels:
+    /// the sprite is drawn above and centered on this point, so its top-left is at
+    /// <c>(anchorPosition.X - width/2, anchorPosition.Y - height)</c>.</param>
     /// <param name="spriteSheetRefs">The spritesheet references to use (sheet name + character index).</param>
     /// <param name="direction">The direction the character faces.</param>
     /// <param name="frame">The animation frame (0..2).</param>
@@ -55,7 +64,7 @@ internal sealed class CharacterSpriteCompositor
     /// </exception>
     public void Draw(
         SKCanvas canvas,
-        Position screenPosition,
+        Position anchorPosition,
         IReadOnlyList<SpriteSheetRef> spriteSheetRefs,
         Direction direction,
         int frame,
@@ -74,7 +83,7 @@ internal sealed class CharacterSpriteCompositor
         if (fullCount == 1 && partCount == 0)
         {
             // A single full sheet: draw its cell directly, no composition.
-            DrawCell(canvas, screenPosition, resolved[0], direction, frame);
+            DrawCell(canvas, anchorPosition, resolved[0], direction, frame);
             return;
         }
 
@@ -86,7 +95,7 @@ internal sealed class CharacterSpriteCompositor
                 $"sheets; the configured list contains {fullCount} full and {partCount} part sheet(s).");
         }
 
-        ComposeParts(canvas, screenPosition, resolved, direction, frame);
+        ComposeParts(canvas, anchorPosition, resolved, direction, frame);
     }
 
     /// <summary>
@@ -119,7 +128,7 @@ internal sealed class CharacterSpriteCompositor
     /// </summary>
     private static void ComposeParts(
         SKCanvas canvas,
-        Position screenPosition,
+        Position anchorPosition,
         IReadOnlyList<ResolvedRef> parts,
         Direction direction,
         int frame)
@@ -130,35 +139,35 @@ internal sealed class CharacterSpriteCompositor
         // 1. hair2 behind everything (when hair is shown).
         if (showHair)
         {
-            DrawPart(canvas, screenPosition, FindPart(parts, CharacterPartType.Hair2), direction, frame);
+            DrawPart(canvas, anchorPosition, FindPart(parts, CharacterPartType.Hair2), direction, frame);
         }
 
         // 2. face
-        DrawPart(canvas, screenPosition, FindPart(parts, CharacterPartType.Face), direction, frame);
+        DrawPart(canvas, anchorPosition, FindPart(parts, CharacterPartType.Face), direction, frame);
 
         // 3. body
-        DrawPart(canvas, screenPosition, FindPart(parts, CharacterPartType.Body), direction, frame);
+        DrawPart(canvas, anchorPosition, FindPart(parts, CharacterPartType.Body), direction, frame);
 
         // 4. hair1 (when hair is shown)
         if (showHair)
         {
-            DrawPart(canvas, screenPosition, FindPart(parts, CharacterPartType.Hair1), direction, frame);
+            DrawPart(canvas, anchorPosition, FindPart(parts, CharacterPartType.Hair1), direction, frame);
         }
 
         // 5. face_hair
-        DrawPart(canvas, screenPosition, FindPart(parts, CharacterPartType.FaceHair), direction, frame);
+        DrawPart(canvas, anchorPosition, FindPart(parts, CharacterPartType.FaceHair), direction, frame);
 
         // 6. armour
-        DrawPart(canvas, screenPosition, FindPart(parts, CharacterPartType.Armour), direction, frame);
+        DrawPart(canvas, anchorPosition, FindPart(parts, CharacterPartType.Armour), direction, frame);
 
         // 7. hair2 again, only when facing up (rear hair drawn over the body).
         if (showHair && direction == Direction.Up)
         {
-            DrawPart(canvas, screenPosition, FindPart(parts, CharacterPartType.Hair2), direction, frame);
+            DrawPart(canvas, anchorPosition, FindPart(parts, CharacterPartType.Hair2), direction, frame);
         }
 
         // 8. head (if present)
-        DrawPart(canvas, screenPosition, head, direction, frame);
+        DrawPart(canvas, anchorPosition, head, direction, frame);
     }
 
     /// <summary>
@@ -166,7 +175,7 @@ internal sealed class CharacterSpriteCompositor
     /// </summary>
     private static void DrawPart(
         SKCanvas canvas,
-        Position screenPosition,
+        Position anchorPosition,
         ResolvedRef? part,
         Direction direction,
         int frame)
@@ -176,21 +185,28 @@ internal sealed class CharacterSpriteCompositor
             return;
         }
 
-        DrawCell(canvas, screenPosition, part.Value, direction, frame);
+        DrawCell(canvas, anchorPosition, part.Value, direction, frame);
     }
 
-    /// <summary>Draws the cell selected by the part's own character index at its native size.</summary>
+    /// <summary>
+    /// Draws the cell selected by the part's own character index at its native size, anchored so
+    /// the cell's <em>middle-bottom</em> sits exactly at <paramref name="anchorPosition"/>.
+    /// </summary>
     private static void DrawCell(
         SKCanvas canvas,
-        Position screenPosition,
+        Position anchorPosition,
         ResolvedRef part,
         Direction direction,
         int frame)
     {
         // GetSprite validates the index/frame again defensively and returns an independent
-        // image at the sheet's derived cell size that the caller owns.
+        // image at the sheet's derived cell size that the caller owns. The cell is drawn with its
+        // middle-bottom (the character's feet) at the anchor: the top-left is offset left by half
+        // the cell width and up by the full cell height, so the sprite stands on the anchor.
         using var sprite = part.Sheet.GetSprite(part.Ref.CharacterIndex, direction, frame);
-        canvas.DrawImage(sprite, new SKPoint((float)screenPosition.X, (float)screenPosition.Y));
+        canvas.DrawImage(sprite, new SKPoint(
+            (float)(anchorPosition.X - sprite.Width / 2.0),
+            (float)(anchorPosition.Y - sprite.Height)));
     }
 
     /// <summary>Returns the first resolved part of the given type, or <see langword="null"/> when absent.</summary>

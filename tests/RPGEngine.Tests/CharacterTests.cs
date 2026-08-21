@@ -585,6 +585,53 @@ public class CharacterTests
     }
 
     // ---------------------------------------------------------------------
+    // Acceptance (story 50): the sprite is anchored at its middle-bottom (the
+    // feet). Position means where the character stands; the sprite is rendered
+    // above and centered on that point.
+    // ---------------------------------------------------------------------
+    /// <summary>
+    /// Verifies the sprite's bottom-centre sits exactly at the anchor (the feet): drawing a
+    /// character whose feet are at (48, 72) places the 48×48 sprite from top-left (24, 24) to
+    /// bottom-right (72, 72), with the pixel just above the anchor still part of the sprite and
+    /// nothing drawn at or below the anchor.
+    /// </summary>
+    [Fact]
+    public void Draw_AnchorsSpriteMiddleBottom_FeetAtPosition()
+    {
+        var manager = CreateManager(
+            (Name: "hero", PartType: null, Seed: 0, Transparent: false));
+        var character = new Character();
+        character.SpriteSheets.Add(new SpriteSheetRef("hero", CharacterIndex: 1));
+        character.Move(Direction.Down, speedFactor: 0); // face down without moving
+
+        // A bitmap larger than the sprite so the anchor point itself is inside the canvas.
+        using var bitmap = new SKBitmap(96, 96);
+        using (var canvas = new SKCanvas(bitmap))
+        {
+            canvas.Clear(SKColors.Transparent);
+            // The sprite's middle-bottom (feet) sits at (48, 72): top-left (24, 24).
+            character.Draw(canvas, new Position(48, 72), dt: 1, manager);
+        }
+
+        var expected = CharacterTestHelper.SpriteColor(seed: 0, characterIndex: 1, Direction.Down, StandingFrame);
+
+        // The bottom-centre of the drawn sprite is exactly at the anchor: the pixel above the
+        // anchor is the sprite, and nothing is drawn at or below the anchor (the feet).
+        Assert.Equal(expected, bitmap.GetPixel(48, 71));
+        Assert.Equal(0, bitmap.GetPixel(48, 72).Alpha);
+        Assert.Equal(0, bitmap.GetPixel(48, 73).Alpha);
+
+        // The sprite is centered horizontally on the anchor and spans top-left (24,24) to
+        // bottom-right (72,72).
+        Assert.Equal(expected, bitmap.GetPixel(47, 71));
+        Assert.Equal(expected, bitmap.GetPixel(49, 71));
+        Assert.Equal(expected, bitmap.GetPixel(24, 24));
+        Assert.Equal(expected, bitmap.GetPixel(71, 71));
+        Assert.Equal(0, bitmap.GetPixel(23, 23).Alpha); // nothing to the left/above the sprite
+        Assert.Equal(0, bitmap.GetPixel(72, 72).Alpha); // nothing to the right of / below it
+    }
+
+    // ---------------------------------------------------------------------
     // Helpers
     // ---------------------------------------------------------------------
 
@@ -623,7 +670,11 @@ public class CharacterTests
         return manager;
     }
 
-    /// <summary>Renders the character into a fresh bitmap of the requested size at the origin.</summary>
+    /// <summary>
+    /// Renders the character into a fresh bitmap of the requested size, anchoring the sprite's
+    /// middle-bottom (feet) at <c>(width/2, height)</c> so a sprite of the same size as the bitmap
+    /// exactly fills it (its top-left lands at <c>(0, 0)</c>).
+    /// </summary>
     private static SKBitmap Render(
         Character character,
         SpriteSheetManager manager,
@@ -634,7 +685,7 @@ public class CharacterTests
         using (var canvas = new SKCanvas(bitmap))
         {
             canvas.Clear(SKColors.Transparent);
-            character.Draw(canvas, new Position(0, 0), dt: 1, manager);
+            character.Draw(canvas, new Position(width / 2.0, height), dt: 1, manager);
         }
 
         return bitmap;

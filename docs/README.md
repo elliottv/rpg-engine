@@ -49,7 +49,8 @@ using var heroStream = new MemoryStream(await http.GetByteArrayAsync("assets/cha
 await engine.LoadSpriteSheetAsync("hero", heroStream);
 
 // 3. Place the player (in tiles — the fixture map has 48 px tiles) and give it the "hero"
-//    sheet, character slot 1.
+//    sheet, character slot 1. Position is the player's FEET (the middle-bottom of the sprite,
+//    where it stands): the sprite is rendered above and centered on this point.
 engine.Player.Position = new Position(6, 6);
 engine.Player.SpriteSheets.Add(new SpriteSheetRef("hero", CharacterIndex: 1));
 

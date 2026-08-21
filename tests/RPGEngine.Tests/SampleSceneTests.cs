@@ -118,12 +118,16 @@ public class SampleSceneTests
         using var fixtures = FixtureAssets.MaterializeToTempDirectory();
         var engine = SampleScene.Create(fixtures.Root);
 
-        // The player is at (6, 6) tiles (= 288 px). The camera origin for a 640×480 view is
-        // (0, 1) tiles (= 48 px), so the player screen top-left = (288, 240); centre = (312, 264).
+        // The committed scene spawns the player at (6, 6), which with the middle-bottom anchor
+        // places the sprite inside the tree canopy: the above_player tree layer fully occludes it
+        // (the tree is drawn over the player, as designed). To verify the anchored render, stand
+        // the player on the clear path at (6, 8): the camera origin for a 640×480 view becomes
+        // (0, 2), so the feet are at (288, 288) px and the 48×48 sprite centre is (288, 264).
+        engine.Player.Position = new Position(6, 8);
         using var bitmap = Render(engine, CanvasWidth, CanvasHeight);
 
         var expected = CharacterTestHelper.SpriteColor(seed: 1, characterIndex: 1, Direction.Down, frame: 1);
-        Assert.Equal(expected, bitmap.GetPixel(312, 264));
+        Assert.Equal(expected, bitmap.GetPixel(288, 264));
     }
 
     /// <summary>Verifies the villager NPC's centre pixel is the top-most part (hair1) per the fixed composition order.</summary>
@@ -133,12 +137,13 @@ public class SampleSceneTests
         using var fixtures = FixtureAssets.MaterializeToTempDirectory();
         var engine = SampleScene.Create(fixtures.Root);
 
-        // Villager world (3, 4) tiles = (144, 192) px → screen (144, 144); centre (168, 168).
+        // Villager world (3, 4) tiles with the camera origin (0, 1) → feet at (144, 144) px;
+        // the 48×48 sprite is anchored at its middle-bottom, so its centre is (144, 120).
         using var bitmap = Render(engine, CanvasWidth, CanvasHeight);
 
         // Parts drawn: hair2 (absent), face (seed 3), body (seed 2), hair1 (seed 4, on top).
         var expected = CharacterTestHelper.SpriteColor(seed: 4, characterIndex: 2, Direction.Down, frame: 1);
-        Assert.Equal(expected, bitmap.GetPixel(168, 168));
+        Assert.Equal(expected, bitmap.GetPixel(144, 120));
     }
 
     /// <summary>Verifies the guard NPC's centre pixel is the top-most part (head) per the fixed composition order.</summary>
@@ -148,12 +153,13 @@ public class SampleSceneTests
         using var fixtures = FixtureAssets.MaterializeToTempDirectory();
         var engine = SampleScene.Create(fixtures.Root);
 
-        // Guard world (11, 8) tiles = (528, 384) px → screen (528, 336); centre (552, 360).
+        // Guard world (11, 8) tiles with the camera origin (0, 1) → feet at (528, 336) px;
+        // the 48×48 sprite is anchored at its middle-bottom, so its centre is (528, 312).
         using var bitmap = Render(engine, CanvasWidth, CanvasHeight);
 
         // Parts drawn: face (seed 3), body (seed 2), armour (seed 7), head (seed 8, on top).
         var expected = CharacterTestHelper.SpriteColor(seed: 8, characterIndex: 3, Direction.Down, frame: 1);
-        Assert.Equal(expected, bitmap.GetPixel(552, 360));
+        Assert.Equal(expected, bitmap.GetPixel(528, 312));
     }
 
     // ---------------------------------------------------------------------
@@ -171,7 +177,12 @@ public class SampleSceneTests
         engine.LoadPartSpriteSheet("face", fixtures.PathOf(FixtureAssets.PartFace), CharacterPartType.Face);
         engine.LoadPartSpriteSheet("hair1", fixtures.PathOf(FixtureAssets.PartHair1), CharacterPartType.Hair1);
 
-        var character = new Character();
+        var character = new Character
+        {
+            // Anchor the sprite's middle-bottom at (24, 48) px so the 48×48 sprite fills the
+            // 48×48 render bitmap (top-left (0, 0), centre (24, 24)).
+            Position = new Position(0.5, 1.0),
+        };
         character.SpriteSheets.Add(new SpriteSheetRef("body", CharacterIndex: 1));
         character.SpriteSheets.Add(new SpriteSheetRef("face", CharacterIndex: 1));
         character.SpriteSheets.Add(new SpriteSheetRef("hair1", CharacterIndex: 1));
@@ -224,7 +235,10 @@ public class SampleSceneTests
         {
             engine.LoadSpriteSheet("hero", full);
         }
-        engine.Player.Position = SampleScene.PlayerPosition;
+        // The committed scene spawns the player at (6, 6), which with the middle-bottom anchor
+        // is occluded by the tree canopy; stand it on the clear path at (6, 8) so the anchored
+        // sprite is visible (camera origin (0, 2), feet (288, 288), centre (288, 264)).
+        engine.Player.Position = new Position(6, 8);
         engine.Player.SpriteSheets.Add(new SpriteSheetRef("hero", CharacterIndex: 1));
 
         engine.LoadPartSpriteSheet("villager_body", FixtureAssets.DecodePngStream(FixtureAssets.PartBody), CharacterPartType.Body);
@@ -239,12 +253,14 @@ public class SampleSceneTests
 
         using var bitmap = Render(engine, CanvasWidth, CanvasHeight);
 
+        // Player centre at (288, 264) with the player at (6, 8) and origin (0, 2).
         Assert.Equal(
             CharacterTestHelper.SpriteColor(seed: 1, characterIndex: 1, Direction.Down, frame: 1),
-            bitmap.GetPixel(312, 264));
+            bitmap.GetPixel(288, 264));
+        // Villager at (3, 4) with origin (0, 2): feet (144, 96), centre (144, 72).
         Assert.Equal(
             CharacterTestHelper.SpriteColor(seed: 4, characterIndex: 2, Direction.Down, frame: 1),
-            bitmap.GetPixel(168, 168));
+            bitmap.GetPixel(144, 72));
 
         // The fetcher resolves the external tileset and its image relative to the map URI.
         static byte[] FetchAsset(Uri uri)
