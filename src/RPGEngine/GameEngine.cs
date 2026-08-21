@@ -55,6 +55,24 @@ namespace RPGEngine;
 /// animation snaps back to the standing frame.
 /// </para>
 /// <para>
+/// Click input drives the player with <em>auto-walk</em>: <see cref="Click"/> converts a
+/// host-surface click on the main canvas (using the canvas size recorded by the most recent
+/// <see cref="Render"/> call) to a world position, computes an A* tile path from the player's
+/// tile to the clicked tile over the non-solid tiles (see <c>AStarPathfinder</c>), and queues
+/// those tiles. Each <see cref="Update"/> then moves the player toward the center of the next
+/// waypoint at <see cref="Player.DefaultBaseSpeed"/>, popping waypoints as they are reached and
+/// calling <see cref="Player.Stop"/> when the path completes. Clicking a solid tile or an
+/// unreachable target cancels the walk without moving; a click that yields a path <em>replaces</em>
+/// the current walk even mid-walk.
+/// </para>
+/// <para>
+/// Input precedence during auto-walk: a <strong>key press</strong> (<c>isPressed == true</c> in
+/// <see cref="Input"/>) cancels the auto-walk path, a key <strong>release</strong> does not,
+/// and while a bound movement key is held the auto-walk does not advance (manual key movement
+/// takes priority). A <see cref="Click"/> always replaces the path unless the new target is
+/// invalid (solid / no path), in which case it cancels the walk.
+/// </para>
+/// <para>
 /// When a map is set, the player's displacement is resolved with <em>axis-separated
 /// movement</em> against the map's solid tiles: each axis is applied in turn and reverted when
 /// the player's sprite footprint would overlap a solid tile or leave the map (the map edge is
@@ -88,6 +106,12 @@ public sealed class GameEngine : IDisposable
     private readonly List<Character> _characters = [];
     private readonly HashSet<Key> _pressedKeys = [];
     private TileMap? _map;
+
+    // The queue of target tile waypoints the auto-walk is following (the A* path produced by
+    // Click). The head of the queue is the tile the player is currently walking toward; each
+    // tile is popped when the player reaches its center. A key press or an invalid click clears
+    // the queue (see the input-precedence rules in the class remarks).
+    private readonly Queue<(int X, int Y)> _autoWalkPath = new();
 
     // The canvas size (in pixels) of the most recent Render call, stored so the future
     // click-to-move story can translate host-surface coordinates with the same camera without
@@ -166,6 +190,14 @@ public sealed class GameEngine : IDisposable
     internal double LastCanvasHeight => _lastCanvasHeight;
 
     /// <summary>
+    /// Gets a snapshot of the tiles the auto-walk is currently following, in order from the tile
+    /// after the player's current tile to the clicked target tile. Internal so tests can assert
+    /// that <see cref="Click"/> computed the expected path and that the path is replaced or
+    /// cancelled by the input-precedence rules.
+    /// </summary>
+    internal IReadOnlyList<(int X, int Y)> AutoWalkPath => _autoWalkPath.ToArray();
+
+    /// <summary>
     /// Reports a key event to the engine. A value of <see langword="true"/> for
     /// <paramref name="isPressed"/> presses the key (key-down); <see langword="false"/> releases
     /// it (key-up). The engine keeps a set of currently pressed keys; the movement direction is
@@ -183,10 +215,88 @@ public sealed class GameEngine : IDisposable
         if (isPressed)
         {
             _pressedKeys.Add(key);
+
+            // Input precedence: a key press cancels any in-progress auto-walk. The path is
+            // replaced by the next Click, or the player simply stops on the next Update when no
+            // movement key is held. A key release does not cancel the walk.
+            _autoWalkPath.Clear();
         }
         else
         {
             _pressedKeys.Remove(key);
+        }
+    }
+
+    /// <summary>
+    /// Reports a click on the <em>main</em> game canvas to the engine, in host-surface (canvas)
+    /// coordinates — the same coordinate space as <see cref="SurfaceToWorld"/>. The engine
+    /// converts the click to a world position using the canvas size recorded by the most recent
+    /// <see cref="Render"/> call, computes an A* tile path from the player's tile to the clicked
+    /// tile over the non-solid tiles, and queues it for auto-walk (see the class remarks).
+    /// </summary>
+    /// <param name="surfaceX">The horizontal surface coordinate in pixels.</param>
+    /// <param name="surfaceY">The vertical surface coordinate in pixels.</param>
+    /// <remarks>
+    /// <para>
+    /// If no <see cref="Render"/> has happened yet (the recorded canvas size is zero) the click
+    /// is ignored. Without a map the click cancels any in-progress auto-walk and does nothing
+    /// else, since there is no grid to path over.
+    /// </para>
+    /// <para>
+    /// The target tile is <c>floor(world)</c> of the converted position. Clicking a solid tile
+    /// (<see cref="Tiled.TileMap.IsSolid"/>) cancels any current auto-walk without moving.
+    /// Otherwise the engine computes
+    /// <c>AStarPathfinder.FindPath(playerTile, targetTile, (x, y) =&gt; !Map.IsSolid(x, y), Map.Width, Map.Height)</c>;
+    /// an empty path (start == goal, or the target is unreachable) also cancels the walk without
+    /// moving. A valid path <em>replaces</em> the current auto-walk path, even mid-walk.
+    /// </para>
+    /// </remarks>
+    public void Click(double surfaceX, double surfaceY)
+    {
+        // Unknown canvas size: no Render has happened yet, so the surface coordinates cannot be
+        // translated with the camera. The click is ignored.
+        if (_lastCanvasWidth <= 0 || _lastCanvasHeight <= 0)
+        {
+            return;
+        }
+
+        if (Map is null)
+        {
+            // Nothing to path over without a map: cancel any in-progress auto-walk.
+            CancelAutoWalk();
+            return;
+        }
+
+        var world = SurfaceToWorld(surfaceX, surfaceY, _lastCanvasWidth, _lastCanvasHeight);
+        (int X, int Y) targetTile = ((int)Math.Floor(world.X), (int)Math.Floor(world.Y));
+
+        // A solid target is invalid: cancel any in-progress auto-walk and do not move.
+        if (Map.IsSolid(targetTile.X, targetTile.Y))
+        {
+            CancelAutoWalk();
+            return;
+        }
+
+        var path = AStarPathfinder.FindPath(
+            Player.Position.ToTile(),
+            targetTile,
+            isWalkable: (x, y) => !Map.IsSolid(x, y),
+            Map.Width,
+            Map.Height);
+
+        // An empty path means no movement is needed or the target is unreachable: cancel the
+        // walk and do not move.
+        if (path.Count == 0)
+        {
+            CancelAutoWalk();
+            return;
+        }
+
+        // A valid click always replaces the current auto-walk path, even mid-walk.
+        _autoWalkPath.Clear();
+        foreach (var tile in path)
+        {
+            _autoWalkPath.Enqueue(tile);
         }
     }
 
@@ -200,9 +310,18 @@ public sealed class GameEngine : IDisposable
     public void Update(double dt)
     {
         var direction = Config.GetMovementDirection(_pressedKeys);
+
+        // Manual key movement takes priority over auto-walk: while a bound movement key is held
+        // the auto-walk does not advance (a key press has already cancelled the path, see Input).
+        // Otherwise, when a path is queued, the player auto-walks toward the next waypoint; when
+        // there is no key input and no auto-walk target, the player stops.
         if (direction.HasValue)
         {
             MovePlayerWithCollisionResolution(direction.Value, dt);
+        }
+        else if (!TryAdvanceAutoWalk(dt))
+        {
+            Player.Stop();
         }
 
         if (Map is not null)
@@ -713,6 +832,100 @@ public sealed class GameEngine : IDisposable
     }
 
     /// <summary>
+    /// Advances the auto-walk by one frame: moves the player toward the center of the next
+    /// waypoint tile at <see cref="Player.DefaultBaseSpeed"/> (tile units), popping waypoints as
+    /// they are reached and calling <see cref="Player.Stop"/> when the queue empties.
+    /// </summary>
+    /// <param name="dt">The elapsed time in seconds since the previous frame.</param>
+    /// <returns>
+    /// <see langword="true"/> when the auto-walk advanced the player this frame (including the
+    /// frame on which the path completed and the player stopped); <see langword="false"/> when
+    /// there is no path to advance, so the caller knows to stop the player itself.
+    /// </returns>
+    private bool TryAdvanceAutoWalk(double dt)
+    {
+        if (_autoWalkPath.Count == 0)
+        {
+            return false;
+        }
+
+        var (nextX, nextY) = _autoWalkPath.Peek();
+        var target = new Position(nextX + 0.5, nextY + 0.5);
+        var toTarget = target - Player.Position;
+        var distance = Math.Sqrt((toTarget.X * toTarget.X) + (toTarget.Y * toTarget.Y));
+        var step = Player.Character.BaseSpeed * dt;
+
+        if (distance <= step)
+        {
+            // The player reaches this waypoint: snap to its center and pop it.
+            Player.Position = target;
+            _autoWalkPath.Dequeue();
+
+            if (_autoWalkPath.Count == 0)
+            {
+                // The path is complete: the player stops (raises Player.OnMove with IsMoving =
+                // false only if it was moving, which it is here).
+                Player.Stop();
+                return true;
+            }
+
+            // More waypoints remain: keep the player moving, facing the next waypoint.
+            var (nextTargetX, nextTargetY) = _autoWalkPath.Peek();
+            Player.ReportMovement(DirectionFromVector(new Position(nextTargetX + 0.5, nextTargetY + 0.5) - Player.Position));
+            return true;
+        }
+
+        // Move toward the waypoint center by at most one step, without overshooting.
+        var direction = DirectionFromVector(toTarget);
+        Player.Position += toTarget * (step / distance);
+        Player.ReportMovement(direction);
+        return true;
+    }
+
+    /// <summary>
+    /// Cancels any in-progress auto-walk by clearing the waypoint queue. The player itself stops
+    /// on the next <see cref="Update"/> (no input and no path &#8594; <see cref="Player.Stop"/>).
+    /// </summary>
+    private void CancelAutoWalk()
+    {
+        _autoWalkPath.Clear();
+    }
+
+    /// <summary>
+    /// Returns the <see cref="Direction"/> closest to <paramref name="vector"/>: the vector is
+    /// normalized and the direction whose unit delta has the largest dot product with it wins,
+    /// mirroring <see cref="GameConfig.GetMovementDirection(System.Collections.Generic.IEnumerable{Key})"/>'s
+    /// quantization. Used by the auto-walk to face the waypoint it is moving toward.
+    /// </summary>
+    /// <param name="vector">The movement vector (never the zero vector when called).</param>
+    /// <returns>The closest of the eight <see cref="Direction"/> values.</returns>
+    private static Direction DirectionFromVector(Vector2 vector)
+    {
+        var length = Math.Sqrt((vector.X * vector.X) + (vector.Y * vector.Y));
+        if (length <= 0)
+        {
+            return Direction.Down;
+        }
+
+        var normalized = new Vector2(vector.X / length, vector.Y / length);
+
+        Direction? best = null;
+        var bestDot = double.NegativeInfinity;
+        foreach (var direction in Enum.GetValues<Direction>())
+        {
+            var delta = direction.Delta();
+            var dot = (normalized.X * delta.X) + (normalized.Y * delta.Y);
+            if (dot > bestDot)
+            {
+                bestDot = dot;
+                best = direction;
+            }
+        }
+
+        return best!.Value;
+    }
+
+    /// <summary>
     /// Moves the player in <paramref name="direction"/> by <c>BaseSpeed * dt</c> tiles and, when
     /// a map is set, resolves collisions against the map's solid tiles using
     /// <em>axis-separated movement</em>: the horizontal displacement is applied first and
@@ -734,37 +947,38 @@ public sealed class GameEngine : IDisposable
     private void MovePlayerWithCollisionResolution(Direction direction, double dt)
     {
         // The engine resolves the displacement itself (axis by axis) instead of calling
-        // Player.Move, which would move both axes at once; setting the direction here keeps the
-        // facing behaviour identical to the previous Player.Move call.
-        Player.Direction = direction;
-
+        // Player.Move, which would move both axes at once; the direction is set through
+        // Player.ReportMovement at the end, which also raises Player.OnMove on state transitions.
         var delta = direction.Delta() * (Player.Character.BaseSpeed * dt);
 
         if (Map is null)
         {
             Player.Position += delta;
-            return;
         }
-
-        var position = Player.Position;
-
-        // Horizontal axis: apply the X displacement, then revert it if the resulting footprint
-        // overlaps a solid tile (or leaves the map, which IsSolid treats as solid).
-        var afterX = position.WithOffset(delta.X, 0);
-        if (!PlayerFootprintOverlapsSolid(afterX))
+        else
         {
-            position = afterX;
+            var position = Player.Position;
+
+            // Horizontal axis: apply the X displacement, then revert it if the resulting
+            // footprint overlaps a solid tile (or leaves the map, which IsSolid treats as solid).
+            var afterX = position.WithOffset(delta.X, 0);
+            if (!PlayerFootprintOverlapsSolid(afterX))
+            {
+                position = afterX;
+            }
+
+            // Vertical axis: same rule, starting from the horizontal result (this is what makes
+            // diagonal movement slide along a wall on the free axis).
+            var afterY = position.WithOffset(0, delta.Y);
+            if (!PlayerFootprintOverlapsSolid(afterY))
+            {
+                position = afterY;
+            }
+
+            Player.Position = position;
         }
 
-        // Vertical axis: same rule, starting from the horizontal result (this is what makes
-        // diagonal movement slide along a wall on the free axis).
-        var afterY = position.WithOffset(0, delta.Y);
-        if (!PlayerFootprintOverlapsSolid(afterY))
-        {
-            position = afterY;
-        }
-
-        Player.Position = position;
+        Player.ReportMovement(direction);
     }
 
     /// <summary>
