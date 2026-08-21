@@ -29,7 +29,13 @@ public partial class MainWindow : Window
         _engine = SampleScene.Create(fixtures.Root);
 
         CompositionTarget.Rendering += OnRendering;
-        Closed += (_, _) => CompositionTarget.Rendering -= OnRendering;
+        Closed += (_, _) =>
+        {
+            // The engine owns the map (a TileMap is IDisposable: it holds the prerendered
+            // layer images), so releasing the engine releases the map too.
+            CompositionTarget.Rendering -= OnRendering;
+            _engine.Dispose();
+        };
     }
 
     /// <summary>Runs the engine's update step on the UI thread at the compositor's frame rate.</summary>
