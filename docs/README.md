@@ -91,7 +91,9 @@ foreach (var layer in engine.Map?.ObjectLayers ?? [])
 
 > The synchronous, file-system based equivalents (`TileMap.Load(path)`, `LoadSpriteSheet(name,
 > path)`) are what the desktop sample host uses; both loading styles exercise the same rendering
-> pipeline.
+> pipeline. Before loading, hosts can check whether a name is already registered with
+> `SpriteSheetExists(name)` — it covers both full and part sheets and is case-sensitive and
+> trimmed.
 >
 > **Map ownership:** a `TileMap` is `IDisposable` — it prerenders every visible tile layer into
 > an `SKImage` on load. The engine owns the assigned map: replacing `engine.Map` disposes the
@@ -103,7 +105,7 @@ foreach (var layer in engine.Map?.ObjectLayers ?? [])
 | Page | What it covers |
 | --- | --- |
 | [Architecture](Architecture.md) | Composition model, camera, spritesheet layout, part ordering, rendering order and the Tiled read model. |
-| [api/GameEngine.md](api/GameEngine.md) | Root object: game loop, input (8 directions), asset loading (sync + async), camera, black background / map centering, map ownership (`IDisposable`). |
+| [api/GameEngine.md](api/GameEngine.md) | Root object: game loop, input (8 directions), asset loading (sync + async) and `SpriteSheetExists`, camera, black background / map centering, map ownership (`IDisposable`). |
 | [api/Character.md](api/Character.md) / [api/Player.md](api/Player.md) | In-world state, sprite references and the speed-scaled walk-cycle animation (`AnimationCycleSpeed`). |
 | [api/SpriteSheet.md](api/SpriteSheet.md) | The 12×8 sheet layout (derived cell size, e.g. 576×384 or 936×864) and the **1..8 character index** semantics. |
 | [api/SpriteSheetManager.md](api/SpriteSheetManager.md) | Loading full/part sheets by path or stream, including the async `LoadAsync`/`LoadPartAsync` overloads. |

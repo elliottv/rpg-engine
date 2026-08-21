@@ -241,6 +241,33 @@ using var stream = new MemoryStream(await http.GetByteArrayAsync("assets/charact
 await engine.LoadPartSpriteSheetAsync("villager_body", stream, CharacterPartType.Body);
 ```
 
+### `bool SpriteSheetExists(string name)`
+
+Returns whether a spritesheet is registered under `name`. Full sheets (loaded with
+`LoadSpriteSheet`) and part sheets (loaded with `LoadPartSpriteSheet`) share one registry, so
+both are visible to this check — it is the safe way to test whether a name is already in use
+without catching the `KeyNotFoundException` thrown by the render path. The check is
+case-sensitive and trims surrounding whitespace from `name` before the lookup, matching how
+sheets are registered; a `null` name throws `ArgumentNullException`.
+
+```csharp
+// false before loading, true after: full sheets are visible to the check.
+engine.LoadSpriteSheet("hero", "assets/characters/character_full.png");
+var hasHero = engine.SpriteSheetExists("hero"); // true
+var hasVillager = engine.SpriteSheetExists("villager"); // false
+
+// Part sheets are visible too: a "hair" part sheet registers under "hair".
+engine.LoadPartSpriteSheet("hair", "assets/characters/character_part_hair1.png", CharacterPartType.Hair1);
+var hasHair = engine.SpriteSheetExists("hair"); // true
+
+// Case-sensitive and trimmed: "Hero" is not "hero", but " hero " is.
+var hasHeroDifferentCase = engine.SpriteSheetExists("Hero"); // false
+var hasHeroTrimmed = engine.SpriteSheetExists(" hero ");     // true
+
+// null throws ArgumentNullException.
+engine.SpriteSheetExists(null); // ArgumentNullException
+```
+
 ## Full example ("hello world")
 
 ```csharp

@@ -255,6 +255,88 @@ public class GameEngineTests
     }
 
     // ---------------------------------------------------------------------
+    // Story 34: SpriteSheetExists reports whether a full or part sheet is
+    // registered under a name, without touching the render path. The check
+    // is case-sensitive, trims surrounding whitespace, and a null name
+    // throws ArgumentNullException.
+    // ---------------------------------------------------------------------
+
+    /// <summary>Verifies SpriteSheetExists returns false before a full sheet is loaded and true after LoadSpriteSheet.</summary>
+    [Fact]
+    public void SpriteSheetExists_FullSheet_ReflectsLoadState()
+    {
+        var engine = new GameEngine();
+
+        Assert.False(engine.SpriteSheetExists("hero"));
+
+        using (var stream = CharacterTestHelper.CreateSheetStream(0))
+        {
+            engine.LoadSpriteSheet("hero", stream);
+        }
+
+        Assert.True(engine.SpriteSheetExists("hero"));
+    }
+
+    /// <summary>Verifies SpriteSheetExists returns true after a part sheet is loaded (part sheets share the registry).</summary>
+    [Fact]
+    public void SpriteSheetExists_PartSheet_ReturnsTrue()
+    {
+        var engine = new GameEngine();
+        using (var stream = CharacterTestHelper.CreateSheetStream(1))
+        {
+            engine.LoadPartSpriteSheet("hair", stream, CharacterPartType.Hair1);
+        }
+
+        Assert.True(engine.SpriteSheetExists("hair"));
+    }
+
+    /// <summary>Verifies SpriteSheetExists returns false for a name that was never loaded.</summary>
+    [Fact]
+    public void SpriteSheetExists_UnknownName_ReturnsFalse()
+    {
+        var engine = new GameEngine();
+
+        Assert.False(engine.SpriteSheetExists("missing"));
+    }
+
+    /// <summary>Verifies the check is case-sensitive: after loading "hero", "Hero" is not found.</summary>
+    [Fact]
+    public void SpriteSheetExists_DifferentCase_ReturnsFalse()
+    {
+        var engine = new GameEngine();
+        using (var stream = CharacterTestHelper.CreateSheetStream(0))
+        {
+            engine.LoadSpriteSheet("hero", stream);
+        }
+
+        Assert.True(engine.SpriteSheetExists("hero"));
+        Assert.False(engine.SpriteSheetExists("Hero"));
+    }
+
+    /// <summary>Verifies surrounding whitespace is trimmed before the lookup, matching how sheets are registered.</summary>
+    [Fact]
+    public void SpriteSheetExists_SurroundingWhitespace_IsTrimmed()
+    {
+        var engine = new GameEngine();
+        using (var stream = CharacterTestHelper.CreateSheetStream(0))
+        {
+            engine.LoadSpriteSheet("hero", stream);
+        }
+
+        Assert.True(engine.SpriteSheetExists(" hero "));
+        Assert.True(engine.SpriteSheetExists("\thero\n"));
+    }
+
+    /// <summary>Verifies SpriteSheetExists(null) throws ArgumentNullException.</summary>
+    [Fact]
+    public void SpriteSheetExists_NullName_ThrowsArgumentNullException()
+    {
+        var engine = new GameEngine();
+
+        Assert.Throws<ArgumentNullException>(() => engine.SpriteSheetExists(null!));
+    }
+
+    // ---------------------------------------------------------------------
     // Async loading (story 22): the engine's LoadSpriteSheetAsync /
     // LoadPartSpriteSheetAsync delegate to the sprite sheet manager and must
     // work with streams that only support asynchronous reads.
