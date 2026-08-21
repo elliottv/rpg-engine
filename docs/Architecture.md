@@ -198,13 +198,36 @@ guard.SpriteSheets.Add(new SpriteSheetRef("guard_head", CharacterIndex: 3));
 
 ## Movement and input
 
-Movement input combines every held bound key into a single **8-direction vector**: each key that
-is bound to a movement direction (via `GameConfig.GetDirection`) contributes its unit delta, the
-deltas are summed, normalized and quantized to the nearest of the eight `Direction` values.
-Opposite keys cancel (`W`+`S` or `A`+`D`), and a diagonal pair combines into a diagonal
-(`W`+`D` → up-right) at the same speed as cardinal movement (the diagonal deltas are
-normalized, magnitude 1). When no bound key is held the player stops and the animation snaps back
-to the standing frame. The engine reads `GameConfig` at input time and never caches a snapshot.
+There are **two ways a character moves**, and both go through the same `Character.Update(dt)`
+(internal) called by the engine's update loop every frame:
+
+1. **Engine key input (the player).** `GameEngine.Update` combines every held bound key into a
+   single **8-direction vector**: each key that is bound to a movement direction (via
+   `GameConfig.GetDirection`) contributes its unit delta, the deltas are summed, normalized and
+   quantized to the nearest of the eight `Direction` values. Opposite keys cancel (`W`+`S` or
+   `A`+`D`), and a diagonal pair combines into a diagonal (`W`+`D` → up-right) at the same
+   speed as cardinal movement (the diagonal deltas are normalized, magnitude 1). When no bound
+   key is held the player stops and the animation snaps back to the standing frame. The engine
+   reads `GameConfig` at input time and never caches a snapshot. The player's displacement is
+   resolved (and collision-checked) by the engine itself, then handed to `Player.ReportMovement`.
+2. **Autonomous movement (`Character.StartMoving` / `StopMoving`).** A host starts a character
+   (typically an NPC in `GameEngine.Characters`) with `StartMoving(direction)`, which faces it
+   and sets `IsMoving = true`. While `IsMoving`, every `Character.Update(dt)` moves the character
+   towards its current `Direction` by `BaseSpeed * dt` tiles — exactly like the player while a
+   movement key is held — until `StopMoving()` is called. The engine's update loop calls
+   `Update(dt)` on every character each frame, so a started character moves automatically with no
+   per-frame host code.
+
+**Autonomous movement is not collision-resolved by the engine** (collision resolution applies to
+the player only), so hosts that drive NPCs with `StartMoving` are responsible for keeping them in
+bounds themselves. Also, do not combine `StartMoving` on the player's character with the engine's
+key-driven player movement: `GameEngine.Update` calls `Player.Character.Update(dt)` each frame,
+so both displacements would add up. `StartMoving`/`StopMoving` target characters the host drives
+itself (NPCs in `GameEngine.Characters`).
+
+The walk-cycle animation detects movement the same way for both paths: `Character.Update(dt)`
+compares `Position` to the previous update's position, so the cycle advances while a character is
+moving (however it is being driven) and snaps back to the standing frame as soon as it stops.
 
 Movement speeds are in **tiles per second**; a move of one second at the default speed
 (`Player.DefaultBaseSpeed == 2`) travels exactly **2 tiles** (96 px with 48 px tiles).
