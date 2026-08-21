@@ -221,6 +221,26 @@ so at `BaseSpeed == AnimationCycleSpeed == 2` (both in tiles/s, the defaults) on
 doubles the cycle rate; raising `AnimationCycleSpeed` (the reference speed) slows the animation
 relative to movement speed.
 
+## Pathfinding
+
+Click-to-move (next story) needs to walk a character from its current tile to a clicked tile. The
+engine's pathfinding is **tile-based** — it plans over integer tile coordinates, never
+pixel-by-pixel — so it stays cheap and independent of the renderer.
+
+`AStarPathfinder` (an **internal** static class in `RPGEngine`) exposes
+`FindPath(start, goal, isWalkable, width, height)`, which returns the ordered tiles from `start`
+(exclusive) to `goal` (inclusive), or an empty list when no path exists (including when start and
+goal coincide, or the start/goal is blocked or out of bounds). It is deliberately decoupled from
+`TileMap`: callers supply an `isWalkable(x, y)` predicate (the click-to-move story wires it to
+`TileMap` solidity), so the algorithm is unit-testable without rendering. It adds no public API.
+
+Movement is **8-direction** (cardinal + diagonal). A cardinal step costs `1`, a diagonal step costs
+`√2`, and **corner cutting is prevented**: a diagonal step `(±1, ±1)` is allowed only when both
+orthogonally adjacent cells are walkable. The heuristic is the **octile distance**
+(`max(|dx|, |dy|) + (√2 − 1) · min(|dx|, |dy|)`), which is consistent, so the returned path is
+optimal. The open set is a `PriorityQueue` keyed by `f = g + h`, and a tile is re-opened only when
+a strictly better `g` is found.
+
 ## Rendering
 
 `GameEngine.Render(canvas, dt)` draws a single frame in a fixed order:
