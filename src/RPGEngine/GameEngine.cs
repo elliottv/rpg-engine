@@ -73,20 +73,24 @@ namespace RPGEngine;
 /// invalid (solid / no path), in which case it cancels the walk.
 /// </para>
 /// <para>
-/// When a map is set, the player's displacement is resolved with <em>axis-separated movement
-/// and per-axis slide-to-boundary clamping</em> against the map's solid tiles: each axis is
-/// applied in turn and, when the player's collision footprint would overlap a solid tile or
-/// leave the map (the map edge is solid), it slides to the <em>closest legal position on that
-/// axis</em>, so the leading edge of the footprint stops <em>exactly</em> at the near edge of
-/// the first blocking solid tile (or at the map edge). The footprint is a <em>fixed 1×1 tile
-/// (48×48 px) box representing the lower body of the player sprite</em>, anchored at the feet
-/// (<see cref="Player.Position"/> is the middle-bottom of the sprite; the middle of the feet
-/// sits at the bottom-centre of the box, <c>(24, 48)</c> when the box's origin is its upper-left).
-/// The box is independent of the rendered sprite size, so a 1-tile-wide corridor always fits
-/// regardless of the spritesheet's cell size, and the feet always stop exactly at the solid
-/// tile's edge whether the tile is below, above or beside the player. Clamping keeps that
-/// 1×1 box inside the map. This blocks the player at solid tiles and prevents diagonal
-/// corner-cutting; a <em>cardinal</em> move slides a blocked axis to the exact boundary (the feet
+/// When a map is set, every character's displacement is resolved with <em>axis-separated
+/// movement and per-axis slide-to-boundary clamping</em> against the map's solid tiles: each
+/// axis is applied in turn and, when a character's collision footprint would overlap a solid
+/// tile or leave the map (the map edge is solid), it slides to the <em>closest legal position on
+/// that axis</em>, so the leading edge of the footprint stops <em>exactly</em> at the near edge
+/// of the first blocking solid tile (or at the map edge). The footprint is a <em>fixed
+/// 0.5×0.5-tile (24×24 px at 48 px tiles) box representing the lower body of the
+/// character sprite</em>, anchored at the feet (<see cref="Player.Position"/> is the
+/// middle-bottom of the sprite; the middle of the feet sits at the bottom-centre of the box,
+/// <c>(12, 24)</c> when the box's origin is its upper-left). The box is independent of the
+/// rendered sprite size, so a 1-tile-wide corridor always fits regardless of the spritesheet's
+/// cell size, and the feet always stop exactly at the solid tile's edge whether the tile is
+/// below, above or beside the character. The player's key-driven and auto-walk movement and
+/// every character's autonomous movement (the <c>StartMoving</c>/<c>Update</c> path, e.g. NPCs
+/// in <see cref="Characters"/>) are all resolved with the same shared resolver, so NPCs stop at
+/// solid tiles and at the map edge instead of walking through the world. Clamping keeps that
+/// 0.5×0.5 box inside the map for the player (the player-only post-move safety net). This
+/// blocks characters at solid tiles and prevents diagonal corner-cutting; a <em>cardinal</em> move slides a blocked axis to the exact boundary (the feet
 /// stop exactly at the solid tile's edge, matching click-to-move ("colliding with its feet"),
 /// with no one-frame-step gap and no floating-point overshoot accumulation), while a
 /// <em>diagonal</em> move is <em>all-or-nothing</em>: it is applied only when the full
@@ -151,14 +155,14 @@ public sealed class GameEngine : IDisposable
     // dots). Dots are small markers on top of the minimap map, not full sprites.
     private const float MinimapDotRadius = 3f;
 
-    // The player's collision footprint: a fixed 1x1 tile (48x48 px for a 48px-tile map) box
-    // representing the lower body of the player sprite. Player.Position (the middle-bottom of
-    // the sprite) is the middle of the feet at the bottom-centre of the box: the box spans
-    // x in [pos.X - 0.5, pos.X + 0.5] and y in [pos.Y - 1.0, pos.Y] in tiles. The box is
-    // independent of the rendered sprite size, so a 1-tile-wide corridor always fits regardless
-    // of the spritesheet's cell size, and the feet always stop exactly at the solid tile's edge.
-    internal const double CollisionBoxHalfWidth = 0.25;
-    internal const double CollisionBoxHeightAboveFeet = 0.5;
+    // The character collision footprint is defined once on MovementCollisionResolver (the
+    // footprint authority): the fixed 0.5x0.5-tile (24x24 px at 48 px tiles) lower-body box
+    // anchored at the feet. Player.Position (the middle-bottom of the sprite) is the middle of
+    // the feet at the bottom-centre of the box: the box spans x in [pos.X - 0.25, pos.X + 0.25]
+    // and y in [pos.Y - 0.5, pos.Y] in tiles. The box is independent of the rendered sprite
+    // size, so a 1-tile-wide corridor always fits regardless of the spritesheet's cell size, and
+    // the feet always stop exactly at the solid tile's edge. Player and characters share this
+    // footprint, so autonomous NPC movement collides with the world exactly like the player.
 
     /// <summary>
     /// Initializes a new instance of the <see cref="GameEngine"/> class with default state: a
@@ -340,8 +344,10 @@ public sealed class GameEngine : IDisposable
     /// <summary>
     /// Advances the simulation by <paramref name="dt"/> seconds: resolves the movement direction
     /// from the currently pressed keys, moves the player (resolving collisions against the map's
-    /// solid tiles with axis-separated movement when a map is set), clamps it inside the map, and
-    /// advances the walk-cycle animation of the player and every NPC.
+    /// solid tiles with axis-separated movement when a map is set), clamps it inside the map,
+    /// advances every character's autonomous movement (the <c>StartMoving</c>/<c>Update</c> path)
+    /// against the map's solid tiles and the map edge, and advances the walk-cycle animation of
+    /// the player and every NPC.
     /// </summary>
     /// <param name="dt">The elapsed time in seconds since the previous frame.</param>
     public void Update(double dt)
@@ -371,10 +377,14 @@ public sealed class GameEngine : IDisposable
             ClampPlayerToMap();
         }
 
-        Player.Character.Update(dt);
+        // Every character's autonomous movement (the StartMoving/Update path) is resolved
+        // against the map's solid tiles exactly like the player's key-driven movement. The
+        // player's character never uses StartMoving, so this only affects NPC autonomous
+        // movement; the player's key-driven and auto-walk movement is unchanged above.
+        Player.Character.Update(dt, Map);
         foreach (var character in _characters)
         {
-            character.Update(dt);
+            character.Update(dt, Map);
         }
     }
 
@@ -987,8 +997,8 @@ public sealed class GameEngine : IDisposable
                 move.X,
                 move.Y,
                 Map,
-                halfWidth: CollisionBoxHalfWidth,
-                heightAboveFeet: CollisionBoxHeightAboveFeet);
+                halfWidth: MovementCollisionResolver.CollisionBoxHalfWidth,
+                heightAboveFeet: MovementCollisionResolver.CollisionBoxHeightAboveFeet);
         }
 
         if (Player.Position != destination)
@@ -1055,7 +1065,7 @@ public sealed class GameEngine : IDisposable
     /// a map is set, resolves collisions against the map's solid tiles. A <em>cardinal</em>
     /// (single-axis) move uses <em>per-axis slide-to-boundary clamping</em> (see
     /// <see cref="MovementCollisionResolver.Resolve"/>): if the player's collision footprint
-    /// (the fixed 1×1 tile lower-body box anchored at the feet, see
+    /// (the fixed 0.5×0.5-tile lower-body box anchored at the feet, see
     /// <see cref="PlayerFootprintOverlapsSolid"/>) would overlap a solid tile or leave the map
     /// (the map edge is solid, see <see cref="Tiled.TileMap.IsSolid"/>), the axis slides to the
     /// <em>closest legal position</em> so the leading edge stops exactly at the near edge of the
@@ -1085,9 +1095,10 @@ public sealed class GameEngine : IDisposable
     /// actually displaced the player is reported as movement through
     /// <see cref="Player.ReportMovement(Direction)"/> as before (a diagonal move whose full
     /// displacement was clear counts as movement because both axes changed the position).
-    /// NPCs are not moved by the engine (they have no AI yet), so collision resolution only
-    /// applies to the player here; the public <see cref="Tiled.TileMap.IsSolid"/> API is
-    /// available for future NPC logic.
+    /// This method drives the player; every character's autonomous movement (the
+    /// <c>StartMoving</c>/<c>Update</c> path, e.g. NPCs in <see cref="Characters"/>) is resolved
+    /// with the same shared resolver by <see cref="Update(double)"/>, so all characters collide
+    /// with the world exactly like the player.
     /// </remarks>
     private void MovePlayerWithCollisionResolution(Direction direction, double dt)
     {
@@ -1102,35 +1113,23 @@ public sealed class GameEngine : IDisposable
         {
             Player.Position += delta;
         }
-        else if (delta.X != 0 && delta.Y != 0)
-        {
-            // A diagonal move is all-or-nothing: it is applied only when the full displacement is
-            // clear on both axes, so the player never slides along the free axis into a wall (a
-            // diagonal into a wall where only one axis is free stops the player entirely). A
-            // blocked diagonal leaves the position unchanged, so the fully-blocked collision stop
-            // is reported below (Player.Position == before -> ReportBlockedMove).
-            Player.Position = MovementCollisionResolver.ResolveDiagonal(
-                Player.Position,
-                delta.X,
-                delta.Y,
-                Map,
-                halfWidth: CollisionBoxHalfWidth,
-                heightAboveFeet: CollisionBoxHeightAboveFeet);
-        }
         else
         {
-            // A cardinal (single-axis) move keeps the per-axis slide-to-boundary clamping: each
-            // axis moves by the full requested displacement when the destination footprint is
-            // clear, otherwise it slides to the closest legal position on that axis (the leading
-            // edge of the fixed 1x1 tile lower-body box stops exactly at the near edge of the
-            // first blocking solid tile or at the map edge).
-            Player.Position = MovementCollisionResolver.Resolve(
+            // Resolve the displacement with the shared resolver: a diagonal move is all-or-nothing
+            // (applied only when the full displacement is clear on both axes, so the player never
+            // slides along the free axis into a wall), while a cardinal move keeps the per-axis
+            // slide-to-boundary clamping (each axis slides to the closest legal position on that
+            // axis, so the leading edge of the fixed 0.5x0.5-tile lower-body box stops exactly at
+            // the near edge of the first blocking solid tile or at the map edge). A blocked
+            // diagonal leaves the position unchanged, so the fully-blocked collision stop is
+            // reported below (Player.Position == before -> ReportBlockedMove).
+            Player.Position = MovementCollisionResolver.ResolveDisplacement(
                 Player.Position,
                 delta.X,
                 delta.Y,
                 Map,
-                halfWidth: CollisionBoxHalfWidth,
-                heightAboveFeet: CollisionBoxHeightAboveFeet);
+                MovementCollisionResolver.CollisionBoxHalfWidth,
+                MovementCollisionResolver.CollisionBoxHeightAboveFeet);
         }
 
         if (Player.Position == before)
@@ -1152,12 +1151,13 @@ public sealed class GameEngine : IDisposable
     /// <summary>
     /// Returns whether the player's collision footprint with its feet (middle-bottom) at
     /// <paramref name="position"/> overlaps a solid tile or leaves the map. The footprint is the
-    /// <em>fixed 1×1 tile lower-body box</em> (see <see cref="CollisionBoxHalfWidth"/> and
-    /// <see cref="CollisionBoxHeightAboveFeet"/>): it is 1 tile wide and 1 tile tall regardless
-    /// of the rendered sprite size, and it is anchored so the feet (the sprite's middle-bottom)
-    /// sit at <paramref name="position"/> with the middle of the feet at the bottom-centre of
-    /// the box. The map edge (which <see cref="Tiled.TileMap.IsSolid"/> treats as solid) remains
-    /// solid. The overlap is tested with <see cref="Tiled.TileMap.IsAreaSolid"/>, whose
+    /// <em>fixed 0.5×0.5-tile lower-body box</em> (see
+    /// <see cref="MovementCollisionResolver.CollisionBoxHalfWidth"/> and
+    /// <see cref="MovementCollisionResolver.CollisionBoxHeightAboveFeet"/>): it is half a tile
+    /// wide and half a tile tall regardless of the rendered sprite size, and it is anchored so
+    /// the feet (the sprite's middle-bottom) sit at <paramref name="position"/> with the middle
+    /// of the feet at the bottom-centre of the box. The map edge (which
+    /// <see cref="Tiled.TileMap.IsSolid"/> treats as solid) remains solid. The overlap is tested with <see cref="Tiled.TileMap.IsAreaSolid"/>, whose
     /// tile-boundary semantics (a footprint that ends exactly on a tile boundary does not overlap
     /// the next tile) define the exact boundary the per-axis slide-to-boundary clamp in
     /// <see cref="MovePlayerWithCollisionResolution(Direction, double)"/> stops at. This
@@ -1168,30 +1168,33 @@ public sealed class GameEngine : IDisposable
         => MovementCollisionResolver.FootprintOverlaps(
             position,
             Map!,
-            CollisionBoxHalfWidth,
-            CollisionBoxHeightAboveFeet);
+            MovementCollisionResolver.CollisionBoxHalfWidth,
+            MovementCollisionResolver.CollisionBoxHeightAboveFeet);
 
     /// <summary>
-    /// Clamps the player's feet position so its collision footprint (the fixed 1×1 tile
+    /// Clamps the player's feet position so its collision footprint (the fixed 0.5×0.5-tile
     /// lower-body box, see the class remarks) stays inside the map bounds. The feet are clamped
-    /// to <c>x ∈ [0.5, max(0.5, Map.Width - 0.5)]</c> and
-    /// <c>y ∈ [1.0, max(1.0, Map.Height)]</c>, all in tiles — the 1×1 box's left/right edges
-    /// stay at or inside the horizontal map edges and its top edge stays at or below the top map
-    /// edge, while the bottom edge (the feet) never goes below the bottom edge. For the default
-    /// 48×48 sprite with 48 px tiles this is <c>x ∈ [0.5, Map.Width - 0.5]</c>,
-    /// <c>y ∈ [1.0, Map.Height]</c>. Called after every move while a map is set.
+    /// to <c>x ∈ [0.25, max(0.25, Map.Width - 0.25)]</c> and
+    /// <c>y ∈ [0.5, max(0.5, Map.Height)]</c>, all in tiles — the 0.5×0.5 box's left/right
+    /// edges stay at or inside the horizontal map edges and its top edge stays at or below the
+    /// top map edge, while the bottom edge (the feet) never goes below the bottom edge. For the
+    /// default 48×48 sprite with 48 px tiles this is <c>x ∈ [0.25, Map.Width - 0.25]</c>,
+    /// <c>y ∈ [0.5, Map.Height]</c>. Called after every move while a map is set. This is the
+    /// player-only post-move safety net; NPCs are kept in bounds by the solid map edge (see
+    /// <see cref="Tiled.TileMap.IsSolid"/>) through their resolved autonomous movement.
     /// </summary>
     private void ClampPlayerToMap()
     {
-        // The fixed 1x1 tile lower-body box (see the class remarks and the collision constants)
-        // is clamped inside the map: its left/right edges stay within x in [0, Width] and its
-        // top edge (the box extends CollisionBoxHeightAboveFeet above the feet) stays at or
-        // below the top map edge, so the feet never go below the bottom edge (the feet are the
-        // box's bottom edge). For the default 48x48 sprite with 48 px tiles this is
-        // x in [0.5, Map.Width - 0.5], y in [1.0, Map.Height].
-        var minX = CollisionBoxHalfWidth;
-        var maxX = Math.Max(minX, Map!.Width - CollisionBoxHalfWidth);
-        var minY = CollisionBoxHeightAboveFeet;
+        // The fixed 0.5x0.5-tile lower-body box (see the class remarks and the shared collision
+        // constants on MovementCollisionResolver) is clamped inside the map: its left/right
+        // edges stay within x in [0, Width] and its top edge (the box extends
+        // CollisionBoxHeightAboveFeet above the feet) stays at or below the top map edge, so the
+        // feet never go below the bottom edge (the feet are the box's bottom edge). For the
+        // default 48x48 sprite with 48 px tiles this is x in [0.25, Map.Width - 0.25],
+        // y in [0.5, Map.Height].
+        var minX = MovementCollisionResolver.CollisionBoxHalfWidth;
+        var maxX = Math.Max(minX, Map!.Width - MovementCollisionResolver.CollisionBoxHalfWidth);
+        var minY = MovementCollisionResolver.CollisionBoxHeightAboveFeet;
         var maxY = Math.Max(minY, Map.Height);
 
         var position = Player.Position;

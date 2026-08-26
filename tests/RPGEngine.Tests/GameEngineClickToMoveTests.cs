@@ -137,7 +137,7 @@ public partial class GameEngineTests
 
     /// <summary>
     /// Verifies a click on a reachable target behind a wall computes a detour around the wall and
-    /// the player walks to the target. The wall is two tiles tall (rows 0-1) so the fixed 1×1
+    /// the player walks to the target. The wall is two tiles tall (rows 0-1) so the fixed 0.5×0.5
     /// tile lower-body box can pass through the gap at row 3 with its whole height clear of the
     /// wall's bottom edge.
     /// </summary>
@@ -145,8 +145,8 @@ public partial class GameEngineTests
     public void Click_OnReachableTargetBehindWall_WalksAroundTheWall()
     {
         // 7x5 map: a "walls" collision layer with a solid column at x=3 for rows 0..1, leaving a
-        // gap at rows 2-4 so the target at (5,3) is reachable only through the gap (the 1x1 box
-        // needs the whole 1-tile height clear, so it passes at row 3).
+        // gap at rows 2-4 so the target at (5,3) is reachable only through the gap (the 0.5x0.5
+        // box needs its footprint clear, so it passes at row 3).
         var gids = new uint[35];
         gids[(0 * 7) + 3] = 1;
         gids[(1 * 7) + 3] = 1;
@@ -292,9 +292,9 @@ public partial class GameEngineTests
         Assert.Equal(new Position(0, 0), engine.Player.Position);
 
         engine.Update(FrameDt);
-        // The clamp keeps the player's fixed 1x1 lower-body box in the map: the default feet
-        // start at (0, 0) and are clamped to (0.5, 1.0) (the box's left edge at x = 0 and its
+        // The clamp keeps the player's fixed 0.5x0.5 lower-body box in the map: the default feet
+        // start at (0, 0) and are clamped to (0.25, 0.5) (the box's left edge at x = 0 and its
         // top edge at y = 0).
-        Assert.Equal(new Position(0.5, 1.0), engine.Player.Position);
+        Assert.Equal(new Position(0.25, 0.5), engine.Player.Position);
     }
 }

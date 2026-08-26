@@ -102,9 +102,12 @@ foreach (var layer in engine.Map?.ObjectLayers ?? [])
 > the current one.
 >
 > **Collision layers:** a tile layer declaring the Tiled `is_collision` boolean custom property
-> set to `true` contains **solid** tiles that block the player (see `docs/Architecture.md`); the
+> set to `true` contains **solid** tiles that block characters (see `docs/Architecture.md`); the
 > map edge is solid (characters cannot leave the map), and tiles drawn from non-collision layers
-> never block.
+> never block. The player's key-driven and auto-walk movement, and every NPC moved with
+> `Character.StartMoving` (added to `GameEngine.Characters`), are collision-resolved against the
+> solid tiles and the map edge with the same fixed 0.5×0.5-tile lower-body footprint, so NPCs
+> stop at walls and at the map edge instead of walking through the world.
 >
 > **Minimap:** `engine.RenderMinimap(canvas, zoomLevel)` draws the map's prerendered layers plus a
 > green dot for the player and a yellow dot for each NPC onto a separate surface. `zoomLevel`

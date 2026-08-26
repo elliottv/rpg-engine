@@ -50,24 +50,27 @@ registry and the pressed-keys state, and exposes the game-loop entry points `Upd
   auto-walk does not advance (manual key movement takes priority). A `Click` always replaces the
   path unless the new target is invalid (solid / no path), in which case it cancels the walk.
   See [Architecture](../Architecture.md).
-- When a map is set, the player's displacement is resolved with **axis-separated movement and
-  per-axis slide-to-boundary clamping** against the map's solid tiles (layers declaring the Tiled
-  `is_collision` bool property): each axis is applied in turn and, when the player's collision
-  footprint would overlap a solid tile or leave the map (the map edge is solid), it slides to
-  the **closest legal position on that axis** — so the leading edge of the footprint stops
-  **exactly** at the near edge of the first blocking solid tile (or at the map edge). The
-  footprint is the **fixed 1×1 tile (48×48 px) lower-body box anchored at the feet**
-  (`Position` is the middle-bottom of the sprite; the middle of the feet sits at the bottom-centre
-  of the box, `(24, 48)` when the box's origin is its upper-left). The box is independent of the
-  rendered sprite size, so a 1-tile-wide corridor always fits and the feet stop exactly at the
-  solid tile's edge in every direction — below, above or beside the player; the map-bounds clamp
-  keeps that 1×1 box inside the map. Because a blocked axis slides to the exact boundary instead
-  of reverting the whole step, the feet stop exactly at the solid tile's edge, matching
-  click-to-move, with no one-frame-step gap and no floating-point overshoot accumulation. As a
-  safety net the resolver refuses a displacement whose resulting footprint would still overlap a
-  solid tile (only possible when the starting footprint was already illegal, e.g. embedded in a
-  wall), so key movement never moves the player through a solid tile. See
-  [Architecture](../Architecture.md).
+- When a map is set, every character's displacement is resolved with **axis-separated movement
+  and per-axis slide-to-boundary clamping** against the map's solid tiles (layers declaring the
+  Tiled `is_collision` bool property): each axis is applied in turn and, when a character's
+  collision footprint would overlap a solid tile or leave the map (the map edge is solid), it
+  slides to the **closest legal position on that axis** — so the leading edge of the footprint
+  stops **exactly** at the near edge of the first blocking solid tile (or at the map edge). The
+  footprint is the **fixed 0.5×0.5-tile (24×24 px at 48 px tiles) lower-body box anchored at
+  the feet** (`Position` is the middle-bottom of the sprite; the middle of the feet sits at the
+  bottom-centre of the box, `(12, 24)` when the box's origin is its upper-left). The box is
+  independent of the rendered sprite size, so a 1-tile-wide corridor always fits and the feet stop
+  exactly at the solid tile's edge in every direction — below, above or beside the character.
+  The player's key-driven and auto-walk movement and every character's autonomous movement
+  (`StartMoving`/`Update`, e.g. NPCs in `Characters`) are resolved with the same shared resolver,
+  so NPCs stop at walls and at the map edge instead of walking through the world; the player-only
+  map-bounds clamp keeps that 0.5×0.5 box inside the map as a post-move safety net. Because a
+  blocked axis slides to the exact boundary instead of reverting the whole step, the feet stop
+  exactly at the solid tile's edge, matching click-to-move, with no one-frame-step gap and no
+  floating-point overshoot accumulation. As a safety net the resolver refuses a displacement whose
+  resulting footprint would still overlap a solid tile (only possible when the starting footprint
+  was already illegal, e.g. embedded in a wall), so movement never moves a character through a
+  solid tile. See [Architecture](../Architecture.md).
 - A minimap can be rendered on a separate surface with `RenderMinimap`: it draws the map's
   prerendered tile layers, a green dot for the player and a yellow dot for each NPC.
   `zoomLevel` `1.0` fits the whole map to the canvas; values above `1` zoom in and pan around
@@ -107,6 +110,11 @@ engine.Player.SpriteSheets.Add(new SpriteSheetRef("hero", CharacterIndex: 1));
 
 Gets the mutable list of NPC characters present in the game world. The player is never in this
 list (it is rendered separately, on top).
+
+The engine's update loop calls `Character.Update(dt, Map)` on every NPC each frame, so an NPC
+started with `StartMoving` moves autonomously and its displacement is **collision-resolved**
+against the map's solid tiles and the map edge exactly like the player's key-driven movement —
+an NPC stops at walls and at the map edge instead of walking through the world.
 
 ```csharp
 var npc = new Character { Position = new Position(3, 4) };
@@ -162,8 +170,10 @@ collisions against the map's solid tiles with axis-separated movement when a map
 Otherwise, when an auto-walk path is queued (from `Click`), the player walks toward the center
 of the next waypoint tile at `BaseSpeed`, popping waypoints as they are reached and calling
 `Player.Stop()` when the path completes. When there is no key input and no auto-walk target the
-player stops. The player is then clamped inside the map and the walk-cycle animation of the
-player and every NPC advances.
+player stops. The player is then clamped inside the map, and the walk-cycle animation of the
+player and every NPC advances. Every NPC's autonomous movement (started with `StartMoving`) is
+resolved against the map's solid tiles and the map edge like the player's key-driven movement, so
+NPCs stop at walls and at the map edge instead of walking through the world.
 
 ```csharp
 engine.Update(dt: 1.0 / 60);

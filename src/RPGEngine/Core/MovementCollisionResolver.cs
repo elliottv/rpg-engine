@@ -6,28 +6,34 @@ namespace RPGEngine;
 /// Resolves a character's displacement against the map's solid tiles. A <em>cardinal</em>
 /// (single-axis) move uses <em>per-axis slide-to-boundary clamping</em> (see <see cref="Resolve"/>):
 /// for each axis the full requested displacement is applied when the resulting collision
-/// footprint (the fixed 1×1 tile lower-body box of the player, see
-/// <see cref="GameEngine.PlayerFootprintOverlapsSolid"/>) is clear; otherwise the axis is clamped
-/// to the <em>closest legal position</em> on that axis, so the leading edge of the footprint stops
-/// exactly at the near edge of the first blocking solid tile (or at the map edge, which
-/// <see cref="TileMap.IsSolid"/> treats as solid). A <em>diagonal</em> (both-axis) move is
-/// <em>all-or-nothing</em> (see <see cref="ResolveDiagonal"/>): it is applied only when the full
-/// displacement is clear on <em>both</em> axes, otherwise the character stays put — a diagonal
-/// into a wall where only one axis is free stops the character entirely instead of sliding along
-/// the free axis.
+/// footprint (the fixed 0.5×0.5-tile lower-body box of every character, see
+/// <see cref="CollisionBoxHalfWidth"/> and <see cref="CollisionBoxHeightAboveFeet"/>) is clear;
+/// otherwise the axis is clamped to the <em>closest legal position</em> on that axis, so the
+/// leading edge of the footprint stops exactly at the near edge of the first blocking solid tile
+/// (or at the map edge, which <see cref="TileMap.IsSolid"/> treats as solid). A <em>diagonal</em>
+/// (both-axis) move is <em>all-or-nothing</em> (see <see cref="ResolveDiagonal"/>): it is applied
+/// only when the full displacement is clear on <em>both</em> axes, otherwise the character stays
+/// put — a diagonal into a wall where only one axis is free stops the character entirely instead
+/// of sliding along the free axis.
 /// </summary>
 /// <remarks>
 /// <para>
-/// The footprint is the fixed 1×1 tile (48×48 px) box representing the lower body of the
-/// player sprite, anchored at the feet: with the half-width <c>hw</c> (0.5 tiles) and the height
-/// above the feet <c>heightAboveFeet</c> (1.0 tiles, i.e. <c>hw = 0.5</c> and
-/// <c>heightAboveFeet = 1.0</c> for the standard 48 px tile) the rectangle is
+/// The footprint is the fixed 0.5×0.5-tile (24×24 px at 48 px tiles) box representing the lower
+/// body of a character sprite, anchored at the feet: with the half-width <c>hw</c> (0.25 tiles)
+/// and the height above the feet <c>heightAboveFeet</c> (0.5 tiles, i.e. <c>hw = 0.25</c> and
+/// <c>heightAboveFeet = 0.5</c> for the standard 48 px tile) the rectangle is
 /// <c>x ∈ [pos.X - hw, pos.X + hw]</c>, <c>y ∈ [pos.Y - heightAboveFeet, pos.Y]</c>.
-/// The middle of the feet sits at the bottom-centre of the box (<c>(24, 48)</c> in pixels when
+/// The middle of the feet sits at the bottom-centre of the box (<c>(12, 24)</c> in pixels when
 /// the box origin is its upper-left). The box is independent of the rendered sprite size: a
 /// taller/wider spritesheet never widens the collision box, so a 1-tile-wide corridor always
 /// fits regardless of the spritesheet's cell size. Out-of-bounds tiles are solid (the map edge
 /// blocks movement), exactly like <see cref="TileMap.IsAreaSolid"/>.
+/// </para>
+/// <para>
+/// The player and every NPC share this footprint: the engine resolves the player's key-driven
+/// and auto-walk movement and every character's <c>StartMoving</c> autonomous movement with
+/// <see cref="ResolveDisplacement"/> against the map's solid tiles, so all characters collide
+/// with the world exactly alike.
 /// </para>
 /// <para>
 /// For a <em>cardinal</em> move each axis is clamped independently and the result of the X axis
@@ -36,17 +42,17 @@ namespace RPGEngine;
 /// revert-the-whole-step rule, the clamp always moves the leading edge exactly onto the boundary,
 /// so the feet stop exactly at the solid tile's edge (matching click-to-move) with no
 /// one-frame-step gap and no floating-point overshoot accumulation.
-/// <see cref="GameEngine.ClampPlayerToMap"/> remains the post-move safety net.
+/// <see cref="GameEngine.ClampPlayerToMap"/> remains the player-only post-move safety net.
 /// </para>
 /// <para>
 /// A <em>diagonal</em> move is <em>all-or-nothing</em> (<see cref="ResolveDiagonal"/>): the
-/// player moves diagonally only when the full displacement is clear on both axes. When either
-/// axis is blocked — e.g. a wall or the map edge on the X axis while Y is free — the player
+/// character moves diagonally only when the full displacement is clear on both axes. When either
+/// axis is blocked — e.g. a wall or the map edge on the X axis while Y is free — the character
 /// stops entirely (no wall-sliding along the free axis), so the engine can report a collision
-/// stop. This prevents diagonal corner-cutting and makes the player's movement state honest:
-/// pressing a diagonal pair against a wall keeps the player idle rather than reporting endless
-/// movement along the free axis. Cardinal moves keep the slide-to-boundary clamp, so a straight
-/// move into a wall still stops exactly at the boundary.
+/// stop. This prevents diagonal corner-cutting and makes the movement state honest: pressing a
+/// diagonal pair against a wall keeps the character idle rather than reporting endless movement
+/// along the free axis. Cardinal moves keep the slide-to-boundary clamp, so a straight move into
+/// a wall still stops exactly at the boundary.
 /// </para>
 /// <para>
 /// The per-axis gained-range scan assumes the starting footprint is legal (never overlapping a
@@ -61,6 +67,31 @@ namespace RPGEngine;
 /// </remarks>
 internal static class MovementCollisionResolver
 {
+    // The character collision footprint: a fixed 0.5×0.5-tile (24×24 px at 48 px tiles) lower-body
+    // box anchored at the feet. Position (the sprite's middle-bottom) is the bottom-centre of the
+    // box: x ∈ [pos.X - 0.25, pos.X + 0.25], y ∈ [pos.Y - 0.5, pos.Y] in tiles.
+    internal const double CollisionBoxHalfWidth = 0.25;
+    internal const double CollisionBoxHeightAboveFeet = 0.5;
+
+    /// <summary>
+    /// Resolves a full displacement: a <em>diagonal</em> move (both <paramref name="dx"/> and
+    /// <paramref name="dy"/> non-zero) is <em>all-or-nothing</em> (<see cref="ResolveDiagonal"/>),
+    /// while a <em>cardinal</em> move keeps the per-axis slide-to-boundary clamping
+    /// (<see cref="Resolve"/>). Mirrors the branching the engine's key-driven player movement
+    /// uses, so the player and every character's autonomous movement share one resolution path.
+    /// </summary>
+    /// <param name="from">The starting feet position, in tiles.</param>
+    /// <param name="dx">The requested horizontal displacement, in tiles.</param>
+    /// <param name="dy">The requested vertical displacement, in tiles.</param>
+    /// <param name="map">The map whose solid tiles (and edge) block movement.</param>
+    /// <param name="halfWidth">The half-width of the collision footprint (<c>hw</c>), in tiles.</param>
+    /// <param name="heightAboveFeet">The height the collision footprint extends above the feet, in tiles.</param>
+    /// <returns>The resolved feet position.</returns>
+    internal static Position ResolveDisplacement(Position from, double dx, double dy, TileMap map, double halfWidth, double heightAboveFeet)
+        => dx != 0 && dy != 0
+            ? ResolveDiagonal(from, dx, dy, map, halfWidth, heightAboveFeet)
+            : Resolve(from, dx, dy, map, halfWidth, heightAboveFeet);
+
     /// <summary>
     /// Returns the position with the X displacement applied (clamped to the boundary if it would
     /// overlap a solid tile or leave the map), then the Y displacement applied the same way,
@@ -73,10 +104,9 @@ internal static class MovementCollisionResolver
     /// <param name="dy">The requested vertical displacement, in tiles.</param>
     /// <param name="map">The map whose solid tiles (and edge) block movement.</param>
     /// <param name="halfWidth">The half-width of the collision footprint (<c>hw</c>), in tiles:
-    /// 0.5 for the player's fixed 1×1 tile lower-body box.</param>
+    /// 0.25 for the fixed 0.5×0.5-tile lower-body box.</param>
     /// <param name="heightAboveFeet">The height the collision footprint extends above the feet,
-    /// in tiles: 1.0 for the player's fixed 1×1 tile lower-body box (its bottom edge is the
-    /// feet).</param>
+    /// in tiles: 0.5 for the fixed 0.5×0.5-tile lower-body box (its bottom edge is the feet).</param>
     /// <returns>The resolved feet position: either the full requested displacement when it is
     /// legal, the closest legal position on each blocked axis, or (when the starting footprint
     /// was already illegal and the move would keep it illegal) the starting position.</returns>
@@ -138,8 +168,8 @@ internal static class MovementCollisionResolver
         // the full displacement is clear on BOTH axes - the per-axis gained-range scans below
         // detect any newly-entered solid column or row along the whole displacement, so a large
         // diagonal step cannot tunnel through a thin wall either. When either axis is blocked, the
-        // move is refused entirely rather than sliding along the free axis, so the player stops at
-        // the first position where one axis is blocked (one diagonal step short of the boundary).
+        // move is refused entirely rather than sliding along the free axis, so the character stops
+        // at the first position where one axis is blocked (one diagonal step short of the boundary).
         var horizontalClear = ClampHorizontal(from, dx, map, halfWidth, heightAboveFeet) == from.X + dx;
         var verticalClear = ClampVertical(from, dy, map, halfWidth, heightAboveFeet, xAfterX: from.X) == from.Y + dy;
 
@@ -159,8 +189,8 @@ internal static class MovementCollisionResolver
     /// overlaps a solid tile (or leaves the map). Reuses <see cref="TileMap.IsAreaSolid"/> with
     /// the same rectangle the engine's <see cref="GameEngine.PlayerFootprintOverlapsSolid"/>
     /// checks, so the resolver and the engine's footprint predicate cannot diverge (the engine's
-    /// predicate delegates here with the player's fixed 1×1 tile box). Internal so the engine
-    /// and the tests share one footprint definition.
+    /// predicate delegates here with the shared fixed 0.5×0.5-tile box). Internal so the engine,
+    /// the characters and the tests share one footprint definition.
     /// </summary>
     /// <param name="position">The feet position, in tiles.</param>
     /// <param name="map">The map whose solid tiles (and edge) block movement.</param>
