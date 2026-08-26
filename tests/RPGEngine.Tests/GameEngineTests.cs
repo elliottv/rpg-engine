@@ -1237,6 +1237,128 @@ public class GameEngineTests
         Assert.True(engine.Player.Position.X + 0.5 <= 3.0 + 1e-9, "The footprint must never overlap the solid column.");
     }
 
+    /// <summary>
+    /// Verifies the auto-walk never crosses a solid corner when the player is not tile-centred:
+    /// from a key-movement boundary position beside a wall, clicking a tile whose direct path
+    /// would cross the wall's corner cancels the walk instead of moving the player through (or
+    /// into) the solid tile, so the player is never left at an illegal footprint position.
+    /// </summary>
+    [Fact]
+    public void Click_FromWallBoundary_NearSolidCorner_CancelsInsteadOfCrossingWall()
+    {
+        // 7x5 map: a "walls" collision layer with a solid column at x=3 for rows 0..2 (wall),
+        // leaving a gap at the bottom (rows 3-4) so a path to the right exists but must detour.
+        var gids = new uint[35];
+        gids[(0 * 7) + 3] = 1;
+        gids[(1 * 7) + 3] = 1;
+        gids[(2 * 7) + 3] = 1;
+
+        using var fixture = CreateCollisionMapFixture(7, 5, gids);
+        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        ConfigurePlayerSprite(engine, seed: 1);
+
+        // The player stands at the wall's left boundary, below the wall's bottom corner:
+        // (2.5, 3.0). This is a legal position reachable by keys (walk right into the wall, then
+        // down). From here the direct displacement toward waypoint (3,3) centre (3.5, 3.5) would
+        // cross the solid corner at (3,2), so the auto-walk must cancel rather than cross it.
+        engine.Player.Position = new Position(2.5, 3.0);
+
+        const int canvas = 336; // 7 tiles x 48 px
+        ClickOnTile(engine, 5, 3, canvas, canvas);
+        Assert.NotEmpty(engine.AutoWalkPath);
+
+        var before = engine.Player.Position;
+        var illegalFrames = 0;
+        for (var frame = 0; frame < 600; frame++)
+        {
+            engine.Update(FrameDt);
+            var p = engine.Player.Position;
+            if (engine.Map!.IsAreaSolid(p.X - 0.5, p.Y - 0.5, 1.0, 0.5))
+            {
+                illegalFrames++;
+            }
+
+            if (engine.AutoWalkPath.Count == 0)
+            {
+                break;
+            }
+        }
+
+        // The auto-walk must never place the player on an illegal footprint, and because the
+        // direct path is blocked the walk is cancelled without moving the player.
+        Assert.Equal(0, illegalFrames);
+        Assert.Equal(before, engine.Player.Position);
+        Assert.Empty(engine.AutoWalkPath);
+    }
+
+    /// <summary>
+    /// Verifies key movement from a position whose footprint already overlaps a solid tile (e.g.
+    /// left there by an external teleport/click) never moves the player through the wall: the
+    /// displacement is refused instead of tunnelling to the other side.
+    /// </summary>
+    [Fact]
+    public void Update_KeyMovementFromIllegalPosition_DoesNotMoveThroughWall()
+    {
+        // 6x6 map: a "walls" collision layer with a solid row at y=2 for every column.
+        var gids = new uint[36];
+        for (var x = 0; x < 6; x++)
+        {
+            gids[(2 * 6) + x] = 1;
+        }
+
+        using var fixture = CreateCollisionMapFixture(6, 6, gids);
+        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        ConfigurePlayerSprite(engine, seed: 1);
+
+        // Place the player at an illegal position: feet at y=3.49, so the lower-half footprint
+        // [2.99, 3.49] already overlaps the solid row at y=2 (its top edge is inside the wall).
+        engine.Player.Position = new Position(2.0, 3.49);
+        Assert.True(engine.Map!.IsAreaSolid(2.0 - 0.5, 3.49 - 0.5, 1.0, 0.5), "sanity: the start is illegal");
+
+        // Hold W (up, deeper into the wall): the move must be refused, never tunnelling through.
+        engine.Input(Key.W, true);
+        for (var frame = 0; frame < 60; frame++)
+        {
+            engine.Update(FrameDt);
+        }
+
+        // The player must stay at (or be pushed back to) a position whose top edge never passes
+        // above the wall's bottom edge (y=3.0).
+        Assert.True(engine.Player.Position.Y >= 3.0 - 1e-9, $"The player tunnelled through the wall: Y={engine.Player.Position.Y}");
+    }
+
+    /// <summary>
+    /// Verifies key movement from an illegal position can escape <em>away</em> from the wall
+    /// (moving down clears the overlapping footprint), so an embedded player is never stuck.
+    /// </summary>
+    [Fact]
+    public void Update_KeyMovementFromIllegalPosition_CanEscapeAwayFromWall()
+    {
+        // 6x6 map: a "walls" collision layer with a solid row at y=2 for every column.
+        var gids = new uint[36];
+        for (var x = 0; x < 6; x++)
+        {
+            gids[(2 * 6) + x] = 1;
+        }
+
+        using var fixture = CreateCollisionMapFixture(6, 6, gids);
+        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        ConfigurePlayerSprite(engine, seed: 1);
+
+        engine.Player.Position = new Position(2.0, 3.49);
+        engine.Input(Key.S, true); // move down, away from the solid row above
+
+        for (var frame = 0; frame < 60; frame++)
+        {
+            engine.Update(FrameDt);
+        }
+
+        Assert.True(engine.Player.Position.Y > 3.49, $"The player did not escape: Y={engine.Player.Position.Y}");
+        Assert.False(
+            engine.Map!.IsAreaSolid(engine.Player.Position.X - 0.5, engine.Player.Position.Y - 0.5, 1.0, 0.5),
+            "The footprint must be legal after escaping.");
+    }
+
     // ---------------------------------------------------------------------
     // Story 36: minimap rendering. RenderMinimap draws the map's prerendered
     // tile layers (both below- and above-player layers, in file order), a
