@@ -1,4 +1,5 @@
 using RPGEngine.Sprites;
+using RPGEngine.Tiled;
 using SkiaSharp;
 
 namespace RPGEngine;
@@ -28,14 +29,16 @@ namespace RPGEngine;
 /// the engine resolves in <c>GameEngine.Update</c>) or by this class's autonomous state machine
 /// (<see cref="StartMoving"/>/<see cref="StopMoving"/> and <see cref="IsMoving"/>, suitable
 /// for any character, e.g. NPCs). While <see cref="IsMoving"/> is <see langword="true"/>, every
-/// <see cref="Update(double)"/> moves the character towards its current <see cref="Direction"/>
-/// by <c>BaseSpeed * dt</c> tiles. Autonomous movement is <em>not</em> collision-resolved by the
-/// engine (collision resolution applies to the player only), so hosts that move NPCs with
-/// <see cref="StartMoving"/> are responsible for keeping them in bounds themselves.
+/// <see cref="Update(double, TileMap)"/> moves the character towards its current
+/// <see cref="Direction"/> by <c>BaseSpeed * dt</c> tiles. When the engine supplies a map (as it
+/// does for every character in <c>GameEngine.Update</c>), the autonomous displacement is
+/// collision-resolved against the map's solid tiles exactly like the player's key-driven
+/// movement (see <see cref="MovementCollisionResolver.ResolveDisplacement(RPGEngine.Position, double, double, TileMap, double, double)"/>),
+/// so NPCs stop at solid tiles and at the map edge instead of walking through the world.
 /// </para>
 /// <para>
 /// Do not combine <see cref="StartMoving"/> on the player's character with the engine's
-/// key-driven player movement: <c>GameEngine.Update</c> calls <c>Player.Character.Update(dt)</c>
+/// key-driven player movement: <c>GameEngine.Update</c> calls <c>Player.Character.Update(dt, map)</c>
 /// each frame, so both displacements would add up. <see cref="StartMoving"/>/<see cref="StopMoving"/>
 /// target characters the host drives itself (NPCs in <c>GameEngine.Characters</c>).
 /// </para>
@@ -81,12 +84,13 @@ public sealed class Character
     /// <see cref="StartMoving"/> and not yet stopped with <see cref="StopMoving"/>).
     /// </summary>
     /// <remarks>
-    /// While <see langword="true"/>, every <see cref="Update(double)"/> moves the character
-    /// towards its current <see cref="Direction"/> by <c>BaseSpeed * dt</c> tiles. This is
-    /// independent of the engine's key-driven player movement: it targets characters the host
-    /// drives itself (e.g. NPCs in <c>GameEngine.Characters</c>). Do not combine it with the
-    /// engine's key-driven player movement on the player's character, or the two displacements
-    /// would add up.
+    /// While <see langword="true"/>, every <see cref="Update(double, TileMap)"/> moves the character
+    /// towards its current <see cref="Direction"/> by <c>BaseSpeed * dt</c> tiles. When the engine
+    /// supplies a map, that displacement is collision-resolved against the map's solid tiles and
+    /// the map edge, exactly like the player's key-driven movement. This is independent of the
+    /// engine's key-driven player movement: it targets characters the host drives itself (e.g.
+    /// NPCs in <c>GameEngine.Characters</c>). Do not combine it with the engine's key-driven
+    /// player movement on the player's character, or the two displacements would add up.
     /// </remarks>
     public bool IsMoving { get; private set; }
 
@@ -114,7 +118,7 @@ public sealed class Character
 
     /// <summary>
     /// Gets the current walk-cycle animation frame (0..2). The middle frame (1) is the standing
-    /// frame. The frame advances on a time/speed basis (see <see cref="Update(double)"/>). This
+    /// frame. The frame advances on a time/speed basis (see <see cref="Update(double, TileMap)"/>). This
     /// accessor is internal so tests can verify animation advancement.
     /// </summary>
     internal int AnimationFrame => _animationFrame;
@@ -134,6 +138,13 @@ public sealed class Character
     /// character only turns to face <paramref name="direction"/> without moving.</param>
     /// <param name="dt">The elapsed time in seconds (defaults to 1, so calling
     /// <c>Move(d, factor)</c> moves <c>BaseSpeed * factor</c> tiles, i.e. per-second semantics).</param>
+    /// <remarks>
+    /// <see cref="Move(Direction, double, double)"/> is a raw one-shot displacement: it applies
+    /// the displacement directly and is <em>not</em> collision-resolved against the map's solid
+    /// tiles (only the autonomous <see cref="StartMoving"/>/<see cref="Update(double, TileMap)"/>
+    /// path is resolved, per the engine's movement model). Hosts using <c>Move</c> for a
+    /// one-shot displacement are responsible for keeping the character in bounds themselves.
+    /// </remarks>
     public void Move(Direction direction, double speedFactor = 1, double dt = 1)
     {
         Direction = direction;
@@ -157,16 +168,19 @@ public sealed class Character
 
     /// <summary>
     /// Starts autonomous movement: the character faces <paramref name="direction"/> and moves
-    /// towards it on every <see cref="Update(double)"/> until <see cref="StopMoving"/> is
+    /// towards it on every <see cref="Update(double, TileMap)"/> until <see cref="StopMoving"/> is
     /// called.
     /// </summary>
     /// <param name="direction">The direction to face and move towards.</param>
     /// <remarks>
-    /// The character starts moving on the <em>next</em> <see cref="Update(double)"/>: this
+    /// The character starts moving on the <em>next</em> <see cref="Update(double, TileMap)"/>: this
     /// method only sets the facing direction and the <see cref="IsMoving"/> state and never
     /// changes <see cref="Position"/> itself. The engine's update loop calls
-    /// <see cref="Update(double)"/> on every character each frame, so a started character moves
-    /// automatically. Autonomous movement is not collision-resolved by the engine.
+    /// <see cref="Update(double, TileMap)"/> on every character each frame (supplying the map), so a
+    /// started character moves automatically. The autonomous displacement is collision-resolved
+    /// against the map's solid tiles and the map edge when a map is supplied, exactly like the
+    /// player's key-driven movement; a fully blocked character simply stays put (and its walk
+    /// cycle snaps back to the standing frame).
     /// </remarks>
     public void StartMoving(Direction direction)
     {
@@ -177,34 +191,48 @@ public sealed class Character
     /// <summary>
     /// Stops autonomous movement started with <see cref="StartMoving"/>. The character stays
     /// where it is and the walk-cycle animation snaps back to the standing frame on the next
-    /// <see cref="Update(double)"/>.
+    /// <see cref="Update(double, TileMap)"/>.
     /// </summary>
     public void StopMoving() => IsMoving = false;
 
     /// <summary>
     /// Advances the simulation of the character by <paramref name="dt"/> seconds. When
     /// <see cref="IsMoving"/> is <see langword="true"/> the character first moves towards its
-    /// current <see cref="Direction"/> by <c>BaseSpeed * dt</c> tiles; the walk-cycle animation
-    /// is then advanced based on elapsed time and movement speed. If the character moved since
-    /// the previous update, the animation accumulator is advanced by <paramref name="dt"/> and
-    /// the number of whole frames due (scaled by <see cref="BaseSpeed"/> and
-    /// <see cref="AnimationCycleSpeed"/>) are stepped, keeping the remainder for the next
-    /// update. If the character did not move, the animation snaps back to the standing frame and
-    /// the accumulator is reset. Called by the engine's update loop once per frame.
+    /// current <see cref="Direction"/> by <c>BaseSpeed * dt</c> tiles; when a map is supplied the
+    /// displacement is resolved against the map's solid tiles and the map edge exactly like the
+    /// player's key-driven movement (see
+    /// <see cref="MovementCollisionResolver.ResolveDisplacement(RPGEngine.Position, double, double, TileMap, double, double)"/>),
+    /// so a fully blocked character stays put. The walk-cycle animation is then advanced based on
+    /// elapsed time and movement speed. If the character moved since the previous update, the
+    /// animation accumulator is advanced by <paramref name="dt"/> and the number of whole frames
+    /// due (scaled by <see cref="BaseSpeed"/> and <see cref="AnimationCycleSpeed"/>) are stepped,
+    /// keeping the remainder for the next update. If the character did not move, the animation
+    /// snaps back to the standing frame and the accumulator is reset. Called by the engine's
+    /// update loop once per frame.
     /// </summary>
     /// <param name="dt">The elapsed time in seconds.</param>
+    /// <param name="map">The map whose solid tiles (and edge) resolve the autonomous
+    /// displacement. When <see langword="null"/> (no map), the displacement is applied raw.</param>
     /// <remarks>
     /// The existing animation logic detects movement via <c>Position != _lastUpdatePosition</c>,
     /// so the walk cycle advances while the character is moving (whether driven by
     /// <see cref="StartMoving"/> or by the engine's key input) and snaps to the standing frame
-    /// once it stops. Autonomous movement applied here is <em>not</em> collision-resolved by the
-    /// engine (collision resolution applies to the player only).
+    /// once it stops (including when a fully blocked character is resolved to the same position).
+    /// Autonomous movement is collision-resolved when the engine supplies a map; without a map the
+    /// displacement is applied raw, preserving the historical behavior for hosts that drive
+    /// characters without an engine map.
     /// </remarks>
-    internal void Update(double dt)
+    internal void Update(double dt, TileMap? map = null)
     {
         if (IsMoving)
         {
-            Position += Direction.Delta() * (BaseSpeed * dt);
+            var delta = Direction.Delta() * (BaseSpeed * dt);
+            Position = map is null
+                ? Position + delta
+                : MovementCollisionResolver.ResolveDisplacement(
+                    Position, delta.X, delta.Y, map,
+                    MovementCollisionResolver.CollisionBoxHalfWidth,
+                    MovementCollisionResolver.CollisionBoxHeightAboveFeet);
         }
 
         var moved = Position != _lastUpdatePosition;
