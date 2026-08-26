@@ -272,19 +272,32 @@ in tile units:
 - `TileMap.IsAreaSolid(x, y, width, height)` (internal) tests the tiles overlapped by that
   tile-unit rectangle: the bounds are floored to the containing cells, and a rectangle that ends
   exactly on a tile boundary does not count the next tile.
-- Each frame the engine applies the **X displacement first**, then reverts it if the resulting
-  footprint overlaps a solid tile or leaves the map (the map edge is solid); it then applies the
-  **Y displacement the same way**, starting from the horizontal result.
+- Each frame the engine applies the **X displacement first**, then the **Y displacement** the same
+  way, starting from the horizontal result. On each axis the displacement uses **per-axis
+  slide-to-boundary clamping** (see `MovementCollisionResolver`): when the destination footprint
+  is clear the full requested displacement is applied; otherwise the axis slides to the
+  **closest legal position on that axis**, so the leading edge of the footprint stops **exactly**
+  at the near edge of the first blocking solid tile (or at the map edge, which is solid). With
+  the lower-half footprint `x ∈ [pos.X - hw, pos.X + hw]`, `y ∈ [pos.Y - hh, pos.Y]` (where
+  `hw = w/(2·ts)`, `hh = h/(2·ts)`), the exact boundaries are: moving **right**, the right edge
+  stops at `x = c - hw` (first solid gained column `c`; the right map edge is `c = Width`);
+  moving **left**, the left edge stops at `x = c + 1 + hw` (last solid gained column `c`; the
+  left map edge is `c = -1`); moving **down**, the feet stop at `y = r` (first solid gained row
+  `r`; the bottom map edge is `r = Height`); moving **up**, the top edge stops at
+  `y = r + 1 + hh` (last solid gained row `r`; the top map edge is `r = -1`). Because a blocked
+  axis slides to the exact boundary instead of reverting the whole step, the **feet stop exactly
+  at the solid tile's edge** (or the map edge) — matching click-to-move — with no one-frame-step
+  gap and no floating-point overshoot accumulation.
 
-This keeps **wall-sliding** natural (a blocked axis reverts while the other axis still moves, so
-a diagonal move into a wall slides along the wall on the free axis) and prevents **diagonal
-corner-cutting** (each axis is resolved independently, so a diagonal cannot squeeze diagonally
-through a corner). After the resolution the engine reports the outcome to the player: a move with
-**no net displacement** (fully blocked on every axis, e.g. walking straight into a wall or into a
-corner) is reported as a **collision stop** through `Player.ReportBlockedMove`, so `Player.OnMove`
-fires with `IsMoving = false` even while the movement key is held against the wall (exactly once,
-with the direction the player tried to move in); any move that actually displaced the player
-(including a diagonal slide, whose free axis moved) is reported as movement through
+This keeps **wall-sliding** natural (a blocked axis clamps to the boundary while the other axis
+still moves, so a diagonal move into a wall slides along the wall on the free axis) and prevents
+**diagonal corner-cutting** (each axis is resolved independently, so a diagonal cannot squeeze
+diagonally through a corner). After the resolution the engine reports the outcome to the player: a
+move with **no net displacement** (fully blocked on every axis, e.g. walking straight into a wall
+or into a corner) is reported as a **collision stop** through `Player.ReportBlockedMove`, so
+`Player.OnMove` fires with `IsMoving = false` even while the movement key is held against the wall
+(exactly once, with the direction the player tried to move in); any move that actually displaced
+the player (including a diagonal slide, whose free axis moved) is reported as movement through
 `Player.ReportMovement` as before. The map-bounds clamp (`ClampPlayerToMap`) keeps the
 **lower-half footprint** inside the map (the feet clamp to
 `x ∈ [halfWidth, max(halfWidth, Map.Width - halfWidth)]`,

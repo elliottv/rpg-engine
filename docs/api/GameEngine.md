@@ -46,13 +46,17 @@ registry and the pressed-keys state, and exposes the game-loop entry points `Upd
   auto-walk does not advance (manual key movement takes priority). A `Click` always replaces the
   path unless the new target is invalid (solid / no path), in which case it cancels the walk.
   See [Architecture](../Architecture.md).
-- When a map is set, the player's displacement is resolved with **axis-separated movement**
-  against the map's solid tiles (layers declaring the Tiled `is_collision` bool property): each
-  axis is applied in turn and reverted when the player's collision footprint would overlap a
-  solid tile or leave the map (the map edge is solid). The footprint is the **lower half of the
-  sprite anchored at the feet** (`Position` is the middle-bottom of the sprite), so the upper
-  body never collides with the ground; the map-bounds clamp keeps that lower-half footprint
-  inside the map. See [Architecture](../Architecture.md).
+- When a map is set, the player's displacement is resolved with **axis-separated movement and
+  per-axis slide-to-boundary clamping** against the map's solid tiles (layers declaring the Tiled
+  `is_collision` bool property): each axis is applied in turn and, when the player's collision
+  footprint would overlap a solid tile or leave the map (the map edge is solid), it slides to
+  the **closest legal position on that axis** — so the leading edge of the footprint stops
+  **exactly** at the near edge of the first blocking solid tile (or at the map edge). The
+  footprint is the **lower half of the sprite anchored at the feet** (`Position` is the
+  middle-bottom of the sprite), so the upper body never collides with the ground; the map-bounds
+  clamp keeps that lower-half footprint inside the map. Because a blocked axis slides to the
+  exact boundary instead of reverting the whole step, the feet stop exactly at the solid tile's
+  edge, matching click-to-move, with no one-frame-step gap. See [Architecture](../Architecture.md).
 - A minimap can be rendered on a separate surface with `RenderMinimap`: it draws the map's
   prerendered tile layers, a green dot for the player and a yellow dot for each NPC.
   `zoomLevel` `1.0` fits the whole map to the canvas; values above `1` zoom in and pan around
