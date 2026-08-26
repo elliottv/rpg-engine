@@ -288,6 +288,12 @@ in tile units:
   axis slides to the exact boundary instead of reverting the whole step, the **feet stop exactly
   at the solid tile's edge** (or the map edge) — matching click-to-move — with no one-frame-step
   gap and no floating-point overshoot accumulation.
+- The per-axis gained-range scan assumes the starting footprint is legal; as a safety net the
+  resolver re-validates the resulting footprint with `TileMap.IsAreaSolid` and **refuses the
+  displacement** (returning the starting position) if it would still overlap a solid tile — this
+  can only happen when the starting footprint was already illegal (e.g. left embedded in a wall),
+  and it guarantees key movement never moves the player through or deeper into a solid tile. A
+  move that clears the overlap (escaping the wall) is still allowed.
 
 This keeps **wall-sliding** natural (a blocked axis clamps to the boundary while the other axis
 still moves, so a diagonal move into a wall slides along the wall on the free axis) and prevents
@@ -357,8 +363,13 @@ non-empty, it moves the player toward the center of the next waypoint tile
 (`(tileX + 0.5, tileY + 0.5)`) at `BaseSpeed` (tile units). When the distance to the waypoint
 center is ≤ the frame's step, the player snaps to the center, the waypoint is popped, and the
 walk continues; when the queue empties, the engine calls `Player.Stop()`. The path is computed
-over walkable tiles (no corner cutting), so the direct movement toward each waypoint center never
-crosses a solid tile and no per-frame collision resolution is needed.
+over walkable tiles (no corner cutting), so between tile centres the movement is clear; to cover
+the case where the player starts a walk from a **non-tile-centred** position (e.g. a key-movement
+boundary beside a wall), each auto-walk displacement is resolved with the **same per-axis
+slide-to-boundary clamping** as key movement (see `MovementCollisionResolver`). A displacement
+that would cross a solid corner is clamped, and because the waypoint then cannot be reached
+without crossing a solid tile, the walk is **cancelled** and the player is not displaced — the
+auto-walk never moves the player through or into a solid tile.
 
 **Input precedence during auto-walk**:
 
