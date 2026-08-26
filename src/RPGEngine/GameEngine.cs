@@ -85,18 +85,22 @@ namespace RPGEngine;
 /// The box is independent of the rendered sprite size, so a 1-tile-wide corridor always fits
 /// regardless of the spritesheet's cell size, and the feet always stop exactly at the solid
 /// tile's edge whether the tile is below, above or beside the player. Clamping keeps that
-/// 1×1 box inside the map. This blocks the player at solid tiles, keeps wall-sliding natural
-/// and prevents diagonal corner-cutting; and because a blocked axis slides to the exact boundary
-/// instead of reverting the whole step, the feet stop exactly at the solid tile's edge, matching
-/// click-to-move ("colliding with its feet") with no one-frame-step gap and no floating-point
-/// overshoot accumulation. The resolver re-validates the resulting footprint as a safety net and
+/// 1×1 box inside the map. This blocks the player at solid tiles and prevents diagonal
+/// corner-cutting; a <em>cardinal</em> move slides a blocked axis to the exact boundary (the feet
+/// stop exactly at the solid tile's edge, matching click-to-move ("colliding with its feet"),
+/// with no one-frame-step gap and no floating-point overshoot accumulation), while a
+/// <em>diagonal</em> move is <em>all-or-nothing</em>: it is applied only when the full
+/// displacement is clear on both axes, so a diagonal into a wall where only one axis is free
+/// stops the player entirely instead of sliding along the free axis. The resolver re-validates
+/// the resulting footprint as a safety net and
 /// refuses a displacement that would still overlap a solid tile (only possible when the starting
 /// footprint was already illegal, e.g. embedded in a wall), so key movement never moves the
 /// player through a solid tile. The auto-walk (see <see cref="Click(double, double)"/>) resolves
 /// each displacement the same way, so it never crosses a solid corner either: a blocked auto-walk
 /// step cancels the walk instead of moving the player into the wall. When a move
 /// is <em>fully blocked</em> (no net displacement after the axis-separated resolution, e.g.
-/// walking straight into a wall or into a corner), the engine reports a <em>collision stop</em>
+/// walking straight into a wall, into a corner, or a diagonal whose single free axis is also
+/// stopped), the engine reports a <em>collision stop</em>
 /// to the player (<see cref="Player.ReportBlockedMove(Direction)"/>), so <see cref="Player.OnMove"/>
 /// fires with <see cref="PlayerMoveEventArgs.IsMoving"/> set to <see langword="false"/> even
 /// while the movement key is held against the wall. See <c>docs/Architecture.md</c> for the
@@ -153,8 +157,8 @@ public sealed class GameEngine : IDisposable
     // x in [pos.X - 0.5, pos.X + 0.5] and y in [pos.Y - 1.0, pos.Y] in tiles. The box is
     // independent of the rendered sprite size, so a 1-tile-wide corridor always fits regardless
     // of the spritesheet's cell size, and the feet always stop exactly at the solid tile's edge.
-    internal const double CollisionBoxHalfWidth = 0.25;
-    internal const double CollisionBoxHeightAboveFeet = 0.5;
+    internal const double CollisionBoxHalfWidth = 0.5;
+    internal const double CollisionBoxHeightAboveFeet = 1.0;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="GameEngine"/> class with default state: a
@@ -1048,21 +1052,22 @@ public sealed class GameEngine : IDisposable
 
     /// <summary>
     /// Moves the player in <paramref name="direction"/> by <c>BaseSpeed * dt</c> tiles and, when
-    /// a map is set, resolves collisions against the map's solid tiles using
-    /// <em>axis-separated movement with per-axis slide-to-boundary clamping</em>: the horizontal
-    /// displacement is applied first and, if the player's collision footprint (the fixed 1×1
-    /// tile lower-body box anchored at the feet, see <see cref="PlayerFootprintOverlapsSolid"/>)
-    /// would overlap a solid tile or leave the map (the map edge is solid, see
-    /// <see cref="Tiled.TileMap.IsSolid"/>), it slides to the <em>closest legal position on that
-    /// axis</em> so the leading edge stops exactly at the near edge of the first blocking solid
-    /// tile (or at the map edge); the vertical displacement is then applied the same way,
-    /// starting from the horizontal result. This keeps wall-sliding natural (a blocked axis
-    /// clamps to the boundary while the other axis still moves) and prevents diagonal
-    /// corner-cutting (each axis is resolved independently). Because a blocked axis slides to the
-    /// exact boundary instead of reverting the whole step, the feet stop exactly at the solid
-    /// tile's edge, matching click-to-move ("colliding with its feet") with no one-frame-step gap
-    /// and no floating-point overshoot accumulation. Without a map the displacement is applied
-    /// directly, matching <see cref="Character.Move(Direction, double, double)"/>.
+    /// a map is set, resolves collisions against the map's solid tiles. A <em>cardinal</em>
+    /// (single-axis) move uses <em>per-axis slide-to-boundary clamping</em> (see
+    /// <see cref="MovementCollisionResolver.Resolve"/>): if the player's collision footprint
+    /// (the fixed 1×1 tile lower-body box anchored at the feet, see
+    /// <see cref="PlayerFootprintOverlapsSolid"/>) would overlap a solid tile or leave the map
+    /// (the map edge is solid, see <see cref="Tiled.TileMap.IsSolid"/>), the axis slides to the
+    /// <em>closest legal position</em> so the leading edge stops exactly at the near edge of the
+    /// first blocking solid tile (or at the map edge). A <em>diagonal</em> (both-axis) move is
+    /// <em>all-or-nothing</em> (see <see cref="MovementCollisionResolver.ResolveDiagonal"/>):
+    /// it is applied only when the full displacement is clear on both axes, otherwise the player
+    /// stays put — a diagonal into a wall where only one axis is free stops the player entirely
+    /// instead of sliding along the free axis. Because a blocked cardinal axis slides to the exact
+    /// boundary instead of reverting the whole step, the feet stop exactly at the solid tile's
+    /// edge, matching click-to-move ("colliding with its feet") with no one-frame-step gap and no
+    /// floating-point overshoot accumulation. Without a map the displacement is applied directly,
+    /// matching <see cref="Character.Move(Direction, double, double)"/>.
     /// </summary>
     /// <param name="direction">The direction to face and move towards.</param>
     /// <param name="dt">The elapsed time in seconds since the previous frame.</param>
@@ -1078,8 +1083,8 @@ public sealed class GameEngine : IDisposable
     /// so <see cref="Player.OnMove"/> fires with <see cref="PlayerMoveEventArgs.IsMoving"/>
     /// set to <see langword="false"/> even while the movement key stays held; a move that
     /// actually displaced the player is reported as movement through
-    /// <see cref="Player.ReportMovement(Direction)"/> as before (a diagonal slide along a wall
-    /// still counts as movement because the free axis changed the position).
+    /// <see cref="Player.ReportMovement(Direction)"/> as before (a diagonal move whose full
+    /// displacement was clear counts as movement because both axes changed the position).
     /// NPCs are not moved by the engine (they have no AI yet), so collision resolution only
     /// applies to the player here; the public <see cref="Tiled.TileMap.IsSolid"/> API is
     /// available for future NPC logic.
@@ -1097,15 +1102,28 @@ public sealed class GameEngine : IDisposable
         {
             Player.Position += delta;
         }
+        else if (delta.X != 0 && delta.Y != 0)
+        {
+            // A diagonal move is all-or-nothing: it is applied only when the full displacement is
+            // clear on both axes, so the player never slides along the free axis into a wall (a
+            // diagonal into a wall where only one axis is free stops the player entirely). A
+            // blocked diagonal leaves the position unchanged, so the fully-blocked collision stop
+            // is reported below (Player.Position == before -> ReportBlockedMove).
+            Player.Position = MovementCollisionResolver.ResolveDiagonal(
+                Player.Position,
+                delta.X,
+                delta.Y,
+                Map,
+                halfWidth: CollisionBoxHalfWidth,
+                heightAboveFeet: CollisionBoxHeightAboveFeet);
+        }
         else
         {
-            // Resolve the displacement with per-axis slide-to-boundary clamping: each axis moves
-            // by the full requested displacement when the destination footprint is clear,
-            // otherwise it slides to the closest legal position on that axis (the leading edge
-            // of the fixed 1x1 tile lower-body box stops exactly at the near edge of the first
-            // blocking solid tile or at the map edge). The horizontal result feeds the vertical
-            // axis (axis-separated movement preserved), which is what makes diagonal movement
-            // slide along a wall on the free axis.
+            // A cardinal (single-axis) move keeps the per-axis slide-to-boundary clamping: each
+            // axis moves by the full requested displacement when the destination footprint is
+            // clear, otherwise it slides to the closest legal position on that axis (the leading
+            // edge of the fixed 1x1 tile lower-body box stops exactly at the near edge of the
+            // first blocking solid tile or at the map edge).
             Player.Position = MovementCollisionResolver.Resolve(
                 Player.Position,
                 delta.X,
@@ -1125,8 +1143,8 @@ public sealed class GameEngine : IDisposable
         }
         else
         {
-            // The player actually displaced: report movement as before (a diagonal slide along
-            // a wall still counts as movement because the free axis changed the position).
+            // The player actually displaced: report movement as before (a diagonal whose full
+            // displacement was clear counts as movement because both axes changed the position).
             Player.ReportMovement(direction);
         }
     }
