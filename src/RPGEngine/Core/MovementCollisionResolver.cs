@@ -30,13 +30,26 @@ namespace RPGEngine;
 /// (matching click-to-move) with no one-frame-step gap and no floating-point overshoot
 /// accumulation. <see cref="GameEngine.ClampPlayerToMap"/> remains the post-move safety net.
 /// </para>
+/// <para>
+/// The per-axis gained-range scan assumes the starting footprint is legal (never overlapping a
+/// solid tile): it detects the <em>newly entered</em> solid columns/rows. When the starting
+/// footprint is <em>already</em> illegal &#8212; which can happen if a previous frame placed the
+/// character inside a solid tile (e.g. the auto-walk, which does no per-frame collision check,
+/// crossing a solid corner from a non-tile-centred start) &#8212; the scan cannot see the
+/// already-overlapped tile, so the resolved position is re-validated with
+/// <see cref="TileMap.IsAreaSolid"/> and the displacement is refused (the starting position is
+/// returned) rather than moving the character deeper into or through the solid tile. A move
+/// that leads to a legal footprint (escaping the overlap) is still allowed.
+/// </para>
 /// </remarks>
 internal static class MovementCollisionResolver
 {
     /// <summary>
     /// Returns the position with the X displacement applied (clamped to the boundary if it would
     /// overlap a solid tile or leave the map), then the Y displacement applied the same way,
-    /// starting from the clamped X result.
+    /// starting from the clamped X result. When the resolved footprint would still overlap a
+    /// solid tile (only possible when <paramref name="from"/> was already illegal), the starting
+    /// position is returned unchanged so the character is never displaced through a solid tile.
     /// </summary>
     /// <param name="from">The starting feet position, in tiles.</param>
     /// <param name="dx">The requested horizontal displacement, in tiles.</param>
@@ -45,13 +58,43 @@ internal static class MovementCollisionResolver
     /// <param name="halfWidth">The half-width of the collision footprint (<c>hw</c>), in tiles.</param>
     /// <param name="halfHeight">The half-height of the collision footprint (<c>hh</c>), in tiles.</param>
     /// <returns>The resolved feet position: either the full requested displacement when it is
-    /// legal, or the closest legal position on each blocked axis.</returns>
+    /// legal, the closest legal position on each blocked axis, or (when the starting footprint
+    /// was already illegal and the move would keep it illegal) the starting position.</returns>
     internal static Position Resolve(Position from, double dx, double dy, TileMap map, double halfWidth, double halfHeight)
     {
         var x = ClampHorizontal(from, dx, map, halfWidth, halfHeight);
         var y = ClampVertical(from, dy, map, halfWidth, halfHeight, xAfterX: x);
-        return new Position(x, y);
+        var resolved = new Position(x, y);
+
+        // Safety net: for a legal starting footprint the per-axis clamps above always produce a
+        // legal result. When the starting footprint was already illegal the gained-range scan
+        // cannot detect the tile the character is already overlapping, so re-validate the
+        // resolved footprint and refuse the displacement rather than moving through the wall.
+        if (FootprintOverlaps(resolved, map, halfWidth, halfHeight))
+        {
+            return from;
+        }
+
+        return resolved;
     }
+
+    /// <summary>
+    /// Returns whether the lower-half footprint anchored at <paramref name="position"/> overlaps
+    /// a solid tile (or leaves the map). Reuses <see cref="TileMap.IsAreaSolid"/> with the same
+    /// rectangle the engine's <see cref="GameEngine.PlayerFootprintOverlapsSolid"/> checks, so the
+    /// resolver and the engine's footprint predicate cannot diverge.
+    /// </summary>
+    /// <param name="position">The feet position, in tiles.</param>
+    /// <param name="map">The map whose solid tiles (and edge) block movement.</param>
+    /// <param name="halfWidth">The half-width of the collision footprint (<c>hw</c>), in tiles.</param>
+    /// <param name="halfHeight">The half-height of the collision footprint (<c>hh</c>), in tiles.</param>
+    /// <returns><see langword="true"/> when the footprint overlaps a solid tile.</returns>
+    private static bool FootprintOverlaps(Position position, TileMap map, double halfWidth, double halfHeight)
+        => map.IsAreaSolid(
+            position.X - halfWidth,
+            position.Y - halfHeight,
+            halfWidth * 2,
+            halfHeight);
 
     /// <summary>
     /// Applies the horizontal displacement <paramref name="dx"/> with slide-to-boundary
