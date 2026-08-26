@@ -17,6 +17,11 @@ spritesheet references used to render it.
   draw time. A `SpriteSheetRef` whose `CharacterIndex` is outside 1..8 is rejected when used.
 - All world coordinates are in tiles. Pixels are produced only at the canvas boundary (the
   engine multiplies by the map's tile size when rendering).
+- Autonomous movement started with `StartMoving` (the `Update` path) is **collision-resolved**
+  against the map's solid tiles and the map edge when the engine supplies a map — exactly like
+  the player's key-driven movement — so NPCs stop at walls and at the map edge instead of
+  walking through the world. The one-shot `Move(...)` displacement stays a raw displacement
+  (only the `StartMoving`/`Update` path is resolved).
 
 ## Properties
 
@@ -54,12 +59,15 @@ var character = new Character { BaseSpeed = 2 };
 
 Gets whether the character is currently moving **autonomously** — started with
 `StartMoving(direction)` and not yet stopped with `StopMoving()`. While `true`, every
-`Update(dt)` moves the character towards its current `Direction` by `BaseSpeed * dt` tiles.
+`Update(dt)` moves the character towards its current `Direction` by `BaseSpeed * dt` tiles. When
+the engine supplies a map, that displacement is collision-resolved against the map's solid tiles
+and the map edge exactly like the player's key-driven movement; a fully blocked character simply
+stays put (and its walk cycle snaps back to the standing frame).
 
 This is independent of the engine's key-driven player movement: it targets characters the host
 drives itself (e.g. NPCs in `GameEngine.Characters`). Do **not** combine `StartMoving` on the
 player's character with the engine's key-driven player movement — `GameEngine.Update` calls
-`Player.Character.Update(dt)` each frame, so both displacements would add up.
+`Player.Character.Update(dt, map)` each frame, so both displacements would add up.
 
 ```csharp
 var npc = new Character { BaseSpeed = 2 };
@@ -126,13 +134,11 @@ Starts **autonomous movement**: the character faces `direction` and moves toward
 `Update(dt)` — exactly like the player does while a movement key is held — until
 `StopMoving()` is called. The character starts moving on the *next* `Update`: this method only
 sets the facing direction and the `IsMoving` state, and never changes `Position` itself. The
-engine's update loop calls `Update(dt)` on every character each frame, so a started character
-moves automatically.
-
-Autonomous movement is **not** collision-resolved by the engine (collision resolution applies
-to the player only), so hosts that move NPCs with `StartMoving` are responsible for keeping
-them in bounds themselves. Do not combine `StartMoving` on the player's character with the
-engine's key-driven player movement.
+engine's update loop calls `Update(dt, map)` on every character each frame (supplying the map),
+so a started character moves automatically. The autonomous displacement is collision-resolved
+against the map's solid tiles and the map edge when the engine supplies a map, exactly like the
+player's key-driven movement; a fully blocked character simply stays put. Do not combine
+`StartMoving` on the player's character with the engine's key-driven player movement.
 
 ```csharp
 var npc = new Character { BaseSpeed = 2, Position = new Position(3, 4) };
@@ -184,6 +190,7 @@ npc.StopMoving();                 // stays put; walk cycle snaps to the standing
 npc.StartMoving(Direction.Left);  // turns around and starts moving left
 ```
 
-> Note: `Character.Update(dt)` is internal — hosts do not call it directly. The engine calls it
-> on the player and every NPC in `GameEngine.Characters` each frame, which is what makes a
-> started character move automatically.
+> Note: `Character.Update(dt, map)` is internal — hosts do not call it directly. The engine calls
+> it on the player and every NPC in `GameEngine.Characters` each frame (supplying the current
+> map), which is what makes a started character move automatically and collide with the world
+> like the player. `Move(...)` remains a raw one-shot displacement that is not collision-resolved.
