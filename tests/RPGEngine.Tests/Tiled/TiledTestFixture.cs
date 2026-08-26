@@ -144,7 +144,9 @@ internal sealed class TiledTestFixture : IDisposable
         TilePattern pattern = TilePattern.Solid,
         IReadOnlyList<SKColor>? tileColors = null,
         IReadOnlyList<FixtureProperty>? mapProperties = null,
-        IReadOnlyList<ObjectLayerSpec>? objectLayers = null)
+        IReadOnlyList<ObjectLayerSpec>? objectLayers = null,
+        IReadOnlyDictionary<uint, IReadOnlyList<(uint FrameTileId, int DurationMs)>>? animations = null,
+        IReadOnlyList<TilePattern>? tilePatterns = null)
     {
         Width = width;
         Height = height;
@@ -155,8 +157,8 @@ internal sealed class TiledTestFixture : IDisposable
         TilesetPath = Path.Combine(_root, "tiles.tsx");
         MapPath = Path.Combine(_root, "map.tmx");
 
-        CreateTileImage(ImagePath, pattern, tileColors);
-        File.WriteAllText(TilesetPath, TilesetXml(tileColors));
+        CreateTileImage(ImagePath, pattern, tileColors, tilePatterns);
+        File.WriteAllText(TilesetPath, TilesetXml(tileColors, animations));
         File.WriteAllText(MapPath, MapXml(layers, mapProperties, objectLayers));
     }
 
@@ -165,8 +167,9 @@ internal sealed class TiledTestFixture : IDisposable
         IReadOnlyList<TileLayerSpec> layers,
         TilePattern pattern = TilePattern.Solid,
         IReadOnlyList<FixtureProperty>? mapProperties = null,
-        IReadOnlyList<ObjectLayerSpec>? objectLayers = null)
-        => new(2, 2, layers, pattern, mapProperties: mapProperties, objectLayers: objectLayers);
+        IReadOnlyList<ObjectLayerSpec>? objectLayers = null,
+        IReadOnlyDictionary<uint, IReadOnlyList<(uint FrameTileId, int DurationMs)>>? animations = null)
+        => new(2, 2, layers, pattern, mapProperties: mapProperties, objectLayers: objectLayers, animations: animations);
 
     public void Dispose()
     {
@@ -180,11 +183,18 @@ internal sealed class TiledTestFixture : IDisposable
         }
     }
 
-    private static void CreateTileImage(string path, TilePattern pattern, IReadOnlyList<SKColor>? tileColors)
+    private static void CreateTileImage(
+        string path,
+        TilePattern pattern,
+        IReadOnlyList<SKColor>? tileColors,
+        IReadOnlyList<TilePattern>? tilePatterns = null)
     {
         if (tileColors is { Count: > 0 })
         {
-            // Multi-tile solid-color image: one 48×48 tile per color, laid out in a single row.
+            // Multi-tile image: one 48×48 tile per color, laid out in a single row. By default
+            // each tile is solid in its color; passing tilePatterns draws the marker pattern in
+            // the selected tiles instead (the marker is not symmetric under any flip, so flips
+            // are pixel-verifiable on animated tiles too).
             using var bitmap = new SKBitmap(TileSize * tileColors.Count, TileSize);
             using (var canvas = new SKCanvas(bitmap))
             {
@@ -193,7 +203,17 @@ internal sealed class TiledTestFixture : IDisposable
                 for (var i = 0; i < tileColors.Count; i++)
                 {
                     paint.Color = tileColors[i];
-                    canvas.DrawRect(new SKRect(i * TileSize, 0, (i + 1) * TileSize, TileSize), paint);
+                    if (tilePatterns is { Count: > 0 } && i < tilePatterns.Count && tilePatterns[i] == TilePattern.Marker)
+                    {
+                        // Marker in the top-right area of the tile (mirrors the single-tile
+                        // marker at 36..39, 12..15). Flipped positions are the same as the
+                        // single-tile marker test: horizontal → 8..11, 12..15.
+                        canvas.DrawRect(new SKRect((i * TileSize) + 36, 12, (i * TileSize) + 40, 16), paint);
+                    }
+                    else
+                    {
+                        canvas.DrawRect(new SKRect(i * TileSize, 0, (i + 1) * TileSize, TileSize), paint);
+                    }
                 }
             }
 
@@ -231,17 +251,37 @@ internal sealed class TiledTestFixture : IDisposable
         data.SaveTo(stream);
     }
 
-    private string TilesetXml(IReadOnlyList<SKColor>? tileColors)
+    private string TilesetXml(
+        IReadOnlyList<SKColor>? tileColors,
+        IReadOnlyDictionary<uint, IReadOnlyList<(uint FrameTileId, int DurationMs)>>? animations)
     {
         var tileCount = tileColors?.Count ?? 1;
         var columns = tileCount;
         var imageWidth = TileSize * columns;
-        return $"""
-            <?xml version="1.0" encoding="UTF-8"?>
-            <tileset version="1.10" tiledversion="1.10.2" name="test_tiles" tilewidth="{TileSize}" tileheight="{TileSize}" tilecount="{tileCount}" columns="{columns}">
-              <image source="tiles.png" width="{imageWidth}" height="{TileSize}"/>
-            </tileset>
-            """;
+        var sb = new StringBuilder();
+        sb.AppendLine("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
+        sb.AppendLine(
+            $"""<tileset version="1.10" tiledversion="1.10.2" name="test_tiles" tilewidth="{TileSize}" tileheight="{TileSize}" tilecount="{tileCount}" columns="{columns}">""");
+        sb.AppendLine($"""  <image source="tiles.png" width="{imageWidth}" height="{TileSize}"/>""");
+
+        if (animations is { Count: > 0 })
+        {
+            foreach (var (tileId, frames) in animations)
+            {
+                sb.AppendLine($"""  <tile id="{tileId}">""");
+                sb.AppendLine("    <animation>");
+                foreach (var (frameTileId, durationMs) in frames)
+                {
+                    sb.AppendLine($"""      <frame tileid="{frameTileId}" duration="{durationMs}"/>""");
+                }
+
+                sb.AppendLine("    </animation>");
+                sb.AppendLine("  </tile>");
+            }
+        }
+
+        sb.AppendLine("</tileset>");
+        return sb.ToString();
     }
 
     private string MapXml(

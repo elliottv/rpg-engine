@@ -264,33 +264,55 @@ a map has no collision layer, every in-bounds cell is walkable. Non-collision la
 The engine resolves the player's movement with **axis-separated movement** against a footprint
 in tile units:
 
-- The footprint is the **lower half** of the sprite **anchored at the feet** (`Position` is the
-  sprite's middle-bottom). With the sprite size in pixels (`Character.GetSpriteSize`) converted
-  to tiles (`px / ts`, where `ts` is the map's tile width), the footprint rectangle is
-  `(pos.X - w/(2*ts), pos.Y - h/(2*ts))` with size `(w/ts, h/(2*ts))` — the upper half of the
-  sprite (the upper body) never collides with the ground.
+- The footprint is the **fixed 1×1 tile (48×48 px) lower-body box** of the player sprite,
+  **anchored at the feet** (`Position` is the sprite's middle-bottom, and the middle of the feet
+  sits at the bottom-centre of the box — `(24, 48)` when the box's origin is its upper-left).
+  The rectangle is `x ∈ [pos.X - 0.5, pos.X + 0.5]`, `y ∈ [pos.Y - 1.0, pos.Y]` in tiles,
+  **independent of the rendered sprite size**: a taller/wider spritesheet never widens or raises
+  the box, so a **1-tile-wide corridor always fits** (the previous sprite-derived footprint could
+  be wider than 1 tile for larger sprites, which stopped the player before the corridor entrance),
+  and the feet always stop at the solid tile's edge whether the tile is below, above or beside the
+  player. For the default 48×48 sprite the box covers the whole body.
 - `TileMap.IsAreaSolid(x, y, width, height)` (internal) tests the tiles overlapped by that
   tile-unit rectangle: the bounds are floored to the containing cells, and a rectangle that ends
   exactly on a tile boundary does not count the next tile.
-- Each frame the engine applies the **X displacement first**, then reverts it if the resulting
-  footprint overlaps a solid tile or leaves the map (the map edge is solid); it then applies the
-  **Y displacement the same way**, starting from the horizontal result.
+- Each frame the engine applies the **X displacement first**, then the **Y displacement** the same
+  way, starting from the horizontal result. On each axis the displacement uses **per-axis
+  slide-to-boundary clamping** (see `MovementCollisionResolver`): when the destination footprint
+  is clear the full requested displacement is applied; otherwise the axis slides to the
+  **closest legal position on that axis**, so the leading edge of the footprint stops **exactly**
+  at the near edge of the first blocking solid tile (or at the map edge, which is solid). With
+  the 1×1 box (half-width `hw = 0.5`, height above the feet `heightAboveFeet = 1.0`), the exact
+  boundaries are: moving **right**, the right edge stops at `x = c - hw` (first solid gained
+  column `c`; the right map edge is `c = Width`); moving **left**, the left edge stops at
+  `x = c + 1 + hw` (last solid gained column `c`; the left map edge is `c = -1`); moving **down**,
+  the feet stop at `y = r` (first solid gained row `r`; the bottom map edge is `r = Height`);
+  moving **up**, the top edge stops at `y = r + 1 + heightAboveFeet` (last solid gained row `r`;
+  the top map edge is `r = -1`). Because a blocked axis slides to the exact boundary instead of
+  reverting the whole step, the **feet stop exactly at the solid tile's edge** (or the map edge)
+  — matching click-to-move — with no one-frame-step gap and no floating-point overshoot
+  accumulation, in every direction (not just downward).
+- The per-axis gained-range scan assumes the starting footprint is legal; as a safety net the
+  resolver re-validates the resulting footprint with `TileMap.IsAreaSolid` and **refuses the
+  displacement** (returning the starting position) if it would still overlap a solid tile — this
+  can only happen when the starting footprint was already illegal (e.g. left embedded in a wall),
+  and it guarantees key movement never moves the player through or deeper into a solid tile. A
+  move that clears the overlap (escaping the wall) is still allowed.
 
-This keeps **wall-sliding** natural (a blocked axis reverts while the other axis still moves, so
-a diagonal move into a wall slides along the wall on the free axis) and prevents **diagonal
-corner-cutting** (each axis is resolved independently, so a diagonal cannot squeeze diagonally
-through a corner). After the resolution the engine reports the outcome to the player: a move with
-**no net displacement** (fully blocked on every axis, e.g. walking straight into a wall or into a
-corner) is reported as a **collision stop** through `Player.ReportBlockedMove`, so `Player.OnMove`
-fires with `IsMoving = false` even while the movement key is held against the wall (exactly once,
-with the direction the player tried to move in); any move that actually displaced the player
-(including a diagonal slide, whose free axis moved) is reported as movement through
-`Player.ReportMovement` as before. The map-bounds clamp (`ClampPlayerToMap`) keeps the
-**lower-half footprint** inside the map (the feet clamp to
-`x ∈ [halfWidth, max(halfWidth, Map.Width - halfWidth)]`,
-`y ∈ [halfHeight, max(halfHeight, Map.Height)]` — for the default 48×48 sprite with 48 px
-tiles this is `x ∈ [0.5, Map.Width - 0.5]`, `y ∈ [0.5, Map.Height]`) and remains as a
-safety net for positions placed outside the map by other means. The map edge is solid.
+This keeps **wall-sliding** natural (a blocked axis clamps to the boundary while the other axis
+still moves, so a diagonal move into a wall slides along the wall on the free axis) and prevents
+**diagonal corner-cutting** (each axis is resolved independently, so a diagonal cannot squeeze
+diagonally through a corner). After the resolution the engine reports the outcome to the player: a
+move with **no net displacement** (fully blocked on every axis, e.g. walking straight into a wall
+or into a corner) is reported as a **collision stop** through `Player.ReportBlockedMove`, so
+`Player.OnMove` fires with `IsMoving = false` even while the movement key is held against the wall
+(exactly once, with the direction the player tried to move in); any move that actually displaced
+the player (including a diagonal slide, whose free axis moved) is reported as movement through
+`Player.ReportMovement` as before. The map-bounds clamp (`ClampPlayerToMap`) keeps the **fixed
+1×1 box** inside the map (the feet clamp to
+`x ∈ [0.5, max(0.5, Map.Width - 0.5)]`,
+`y ∈ [1.0, max(1.0, Map.Height)]`) and remains as a safety net for positions placed outside the
+map by other means. The map edge is solid.
 
 NPCs are not moved by the engine (they have no AI yet), so collision resolution currently only
 applies to the player; the public `TileMap.IsSolid` API is available for future NPC logic.
@@ -344,8 +366,13 @@ non-empty, it moves the player toward the center of the next waypoint tile
 (`(tileX + 0.5, tileY + 0.5)`) at `BaseSpeed` (tile units). When the distance to the waypoint
 center is ≤ the frame's step, the player snaps to the center, the waypoint is popped, and the
 walk continues; when the queue empties, the engine calls `Player.Stop()`. The path is computed
-over walkable tiles (no corner cutting), so the direct movement toward each waypoint center never
-crosses a solid tile and no per-frame collision resolution is needed.
+over walkable tiles (no corner cutting), so between tile centres the movement is clear; to cover
+the case where the player starts a walk from a **non-tile-centred** position (e.g. a key-movement
+boundary beside a wall), each auto-walk displacement is resolved with the **same per-axis
+slide-to-boundary clamping** as key movement (see `MovementCollisionResolver`). A displacement
+that would cross a solid corner is clamped, and because the waypoint then cannot be reached
+without crossing a solid tile, the walk is **cancelled** and the player is not displaced — the
+auto-walk never moves the player through or into a solid tile.
 
 **Input precedence during auto-walk**:
 
@@ -401,6 +428,50 @@ below-player layers → NPCs → player → above-player layers
   the area around it stays black (`offset = max(0, (canvasSize − mapPixelSize) / (2*ts))` tiles),
   so a small map is never letterboxed with transparent or leftover pixels. When the map fills
   (or exceeds) the canvas, the behaviour is the classic follow-and-clamp camera.
+
+## Animated tiles
+
+`TileMap` and `TileSet` support **animated tiles** as defined by the Tiled format: a tileset tile
+may declare
+
+```xml
+<tile id="5">
+  <animation>
+    <frame tileid="5" duration="100"/>
+    <frame tileid="6" duration="100"/>
+    <frame tileid="7" duration="100"/>
+  </animation>
+</tile>
+```
+
+Each `<frame>` references a **local tile ID** within the tileset and a **duration in
+milliseconds**. Every layer cell that uses such a tile plays the frame sequence, looping forever.
+This is parsed at load time into an internal `TileAnimation` (frames in file order plus the total
+cycle duration) keyed by local tile ID on the owning `TileSet`.
+
+- **An internal clock.** `TileMap` keeps an animation clock in seconds. `GameEngine.Update`
+  calls `TileMap.UpdateAnimations(dt)` once per frame, so animated tiles advance with game time.
+  The current frame of a cell is derived from the clock with `elapsedMs % TotalDurationMs` and a
+  short walk over the frames (`GetFrameTileId`); a sequence whose total duration is zero is
+  treated as its first frame only.
+- **Animated cells are detected per layer at load time.** For every non-empty cell the owning
+  tileset and local tile ID are resolved (the same `ResolveTileSet` logic used for prerendering)
+  and cells whose tile declares an animation are recorded as `AnimatedTileCell`s.
+- **They are excluded from the prerendered layer images.** A static prerendered `SKImage` cannot
+  bake an animation, so `PrerenderLayer` leaves animated cells transparent. The render passes
+  (`DrawLayerImages`, both the below- and above-player passes) draw each layer's animated cells
+  **on top of that layer's own prerendered image**, at the cell rect, applying the layer's flip
+  flags (`TileMapLayer.GetTileFlags`) and the layer's `Opacity` (via the paint alpha) with the
+  same `DrawTile` transform used for static tiles. Because the animated cells are drawn inside
+  the per-layer loop, they stay above their own layer and below the layers above, preserving the
+  layer z-order.
+- **The minimap shows them too.** `GameEngine.RenderMinimap` draws each layer's animated cells
+  after its prerendered blit using the same scale/origin mapping as the layer blits, so the
+  minimap is not left with holes where animated tiles are.
+- **Performance note.** Frame images are resolved per frame (`GetAnimatedTileId` →
+  `TileSet.GetTileImage`); a later optimization can cache the per-tile frame images. This is
+  acceptable for the first implementation because animation sequences are short and maps
+  typically contain few animated cells.
 
 ## Minimap
 

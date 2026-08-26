@@ -23,6 +23,13 @@ namespace RPGEngine.Tiled;
 /// single tile; each call produces an independent image that the caller owns and may
 /// dispose freely.
 /// </para>
+/// <para>
+/// Per-tile animations declared by the tileset (a Tiled <c>&lt;tile&gt;&lt;animation&gt;</c>
+/// block) are parsed at load time and honoured by rendering: every layer cell that uses an
+/// animated tile plays its frame sequence (see <see cref="TileAnimation"/> and
+/// <c>TileMap.UpdateAnimations</c>). The animation data itself is internal; it is never
+/// exposed through the public API.
+/// </para>
 /// </remarks>
 public sealed class TileSet
 {
@@ -31,6 +38,7 @@ public sealed class TileSet
     private readonly int _columns;
     private readonly int _spacing;
     private readonly int _margin;
+    private readonly IReadOnlyDictionary<uint, TileAnimation> _animations;
 
     /// <summary>Gets the name of the tileset.</summary>
     public string Name { get; }
@@ -57,7 +65,8 @@ public sealed class TileSet
         int tileCount,
         int columns,
         int spacing = 0,
-        int margin = 0)
+        int margin = 0,
+        IReadOnlyDictionary<uint, TileAnimation>? animations = null)
     {
         Name = name;
         FirstGid = firstGid;
@@ -68,7 +77,22 @@ public sealed class TileSet
         _columns = columns;
         _spacing = spacing;
         _margin = margin;
+        _animations = animations is null
+            ? new Dictionary<uint, TileAnimation>()
+            : new Dictionary<uint, TileAnimation>(animations);
     }
+
+    /// <summary>
+    /// Looks up the animation declared for the tile with the given local tile ID.
+    /// </summary>
+    /// <param name="localTileId">The 0-based local tile ID within this tileset.</param>
+    /// <param name="animation">The tile's <see cref="TileAnimation"/> when one is declared.</param>
+    /// <returns>
+    /// <see langword="true"/> when the tile declares an animation and <paramref name="animation"/>
+    /// receives it; otherwise <see langword="false"/>.
+    /// </returns>
+    internal bool TryGetAnimation(uint localTileId, out TileAnimation animation)
+        => _animations.TryGetValue(localTileId, out animation!);
 
     /// <summary>
     /// Loads the Tiled tileset (<c>.tsx</c>) at <paramref name="path"/> and decodes its
@@ -277,7 +301,8 @@ public sealed class TileSet
             tileset.TileCount,
             tileset.Columns,
             tileset.Spacing,
-            tileset.Margin);
+            tileset.Margin,
+            ParseAnimations(tileset));
     }
 
     /// <summary>
@@ -333,7 +358,36 @@ public sealed class TileSet
             tileset.TileCount,
             tileset.Columns,
             tileset.Spacing,
-            tileset.Margin);
+            tileset.Margin,
+            ParseAnimations(tileset));
+    }
+
+    /// <summary>
+    /// Builds the per-tile animation map of a DotTiled <see cref="Tileset"/>: every tile that
+    /// declares an <c>&lt;animation&gt;</c> (more than one frame entry) is keyed by its local
+    /// tile ID and mapped to a <see cref="TileAnimation"/> built from its frames, in file order.
+    /// </summary>
+    private static IReadOnlyDictionary<uint, TileAnimation> ParseAnimations(Tileset tileset)
+    {
+        var animations = new Dictionary<uint, TileAnimation>();
+
+        foreach (var tile in tileset.Tiles)
+        {
+            if (tile.Animation.Count == 0)
+            {
+                continue;
+            }
+
+            var frames = new List<TileAnimationFrame>(tile.Animation.Count);
+            foreach (var frame in tile.Animation)
+            {
+                frames.Add(new TileAnimationFrame(frame.TileID, frame.Duration));
+            }
+
+            animations[tile.ID] = new TileAnimation(frames);
+        }
+
+        return animations;
     }
 
     private static Tileset ParseTilesetContent(string content)

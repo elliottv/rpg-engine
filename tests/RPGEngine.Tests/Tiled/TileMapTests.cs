@@ -1007,6 +1007,262 @@ public class TileMapTests
         Assert.InRange(alpha, 96, 160);
     }
 
+    // ---------------------------------------------------------------------
+    // Story 57: animated tiles (Tiled <tile><animation>). The tileset's per-tile
+    // animations are parsed at load time (TileSet.TryGetAnimation), animated cells are
+    // detected per layer at build time (TileMap.GetAnimatedCells), excluded from the
+    // prerendered layer images, and drawn dynamically by the render passes using the
+    // map's animation clock (TileMap.UpdateAnimations / GetAnimatedTileId).
+    // ---------------------------------------------------------------------
+
+    /// <summary>Verifies a TSX animation is parsed: frames keep file order and durations, TotalDurationMs is the sum, and tiles without an animation report false.</summary>
+    [Fact]
+    public void TileSet_ParsesAnimations_FromTsx()
+    {
+        using var fixture = new TiledTestFixture(
+            2,
+            2,
+            new[] { Ground },
+            tileColors: new[] { SKColors.Red, SKColors.Green, SKColors.Blue },
+            animations: new Dictionary<uint, IReadOnlyList<(uint FrameTileId, int DurationMs)>>
+            {
+                [0] = new List<(uint FrameTileId, int DurationMs)> { (0, 100), (1, 200), (2, 100) },
+            });
+
+        var tileSet = TileSet.Load(fixture.TilesetPath);
+
+        Assert.True(tileSet.TryGetAnimation(0, out var animation));
+        Assert.Equal(3, animation.Frames.Count);
+        Assert.Equal(new TileAnimationFrame(0, 100), animation.Frames[0]);
+        Assert.Equal(new TileAnimationFrame(1, 200), animation.Frames[1]);
+        Assert.Equal(new TileAnimationFrame(2, 100), animation.Frames[2]);
+        Assert.Equal(400, animation.TotalDurationMs);
+
+        // Tiles without an animation report false.
+        Assert.False(tileSet.TryGetAnimation(1, out _));
+        Assert.False(tileSet.TryGetAnimation(2, out _));
+    }
+
+    /// <summary>Verifies TileMap.Load also exposes the animation: animated cells are detected per layer and the current frame resolves through the map clock.</summary>
+    [Fact]
+    public void TileMap_Load_DetectsAnimatedCells_FromReferencedTileset()
+    {
+        using var fixture = new TiledTestFixture(
+            2,
+            2,
+            new[] { new TileLayerSpec("ground", new uint[] { 1, 0, 0, 0 }), new TileLayerSpec("decor", new uint[4]) },
+            tileColors: new[] { SKColors.Red, SKColors.Green },
+            animations: new Dictionary<uint, IReadOnlyList<(uint FrameTileId, int DurationMs)>>
+            {
+                [0] = new List<(uint FrameTileId, int DurationMs)> { (0, 100), (1, 100) },
+            });
+
+        var map = TileMap.Load(fixture.MapPath);
+
+        var cells = map.GetAnimatedCells(0);
+        Assert.Single(cells);
+        Assert.Equal(0, cells[0].X);
+        Assert.Equal(0, cells[0].Y);
+        Assert.Equal(0u, cells[0].LocalTileId);
+
+        // At t = 0 the current frame is the first frame (the tile itself).
+        Assert.Equal(0u, map.GetAnimatedTileId(cells[0]));
+
+        // Layers without animated tiles (e.g. the empty decor layer) report no cells.
+        Assert.Empty(map.GetAnimatedCells(1));
+    }
+
+    /// <summary>Verifies a tile that declares only properties (no animation) is not treated as animated.</summary>
+    [Fact]
+    public void TileSet_TilesWithOnlyProperties_AreNotAnimated()
+    {
+        using var fixture = new TiledTestFixture(
+            2,
+            2,
+            new[] { Ground },
+            tileColors: new[] { SKColors.Red, SKColors.Green });
+
+        // Overwrite the generated TSX with one that declares a properties-only tile (no
+        // <animation>) alongside the plain image tiles.
+        var tsx = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <tileset version="1.10" tiledversion="1.10.2" name="test_tiles" tilewidth="48" tileheight="48" tilecount="2" columns="2">
+              <image source="tiles.png" width="96" height="48"/>
+              <tile id="0">
+                <properties>
+                  <property name="solid" type="bool" value="true"/>
+                </properties>
+              </tile>
+            </tileset>
+            """;
+        File.WriteAllText(fixture.TilesetPath, tsx);
+
+        var tileSet = TileSet.Load(fixture.TilesetPath);
+
+        // The properties-only tile is not animated; the other tile is not animated either.
+        Assert.False(tileSet.TryGetAnimation(0, out _));
+        Assert.False(tileSet.TryGetAnimation(1, out _));
+    }
+
+    /// <summary>Verifies TileAnimation.GetFrameTileId loops the clock over the cycle and falls back to the first frame for a zero-duration sequence.</summary>
+    [Fact]
+    public void TileAnimation_GetFrameTileId_LoopsAndHandlesZeroDuration()
+    {
+        var animation = new TileAnimation(new[]
+        {
+            new TileAnimationFrame(0, 100),
+            new TileAnimationFrame(1, 200),
+            new TileAnimationFrame(2, 100),
+        });
+
+        Assert.Equal(400, animation.TotalDurationMs);
+        Assert.Equal(0u, animation.GetFrameTileId(0.0));    // start of the cycle
+        Assert.Equal(0u, animation.GetFrameTileId(0.099));  // still frame 0 (0..99 ms)
+        Assert.Equal(1u, animation.GetFrameTileId(0.10));   // frame 1 starts at 100 ms
+        Assert.Equal(1u, animation.GetFrameTileId(0.299));  // frame 1 lasts until 299 ms
+        Assert.Equal(2u, animation.GetFrameTileId(0.30));   // frame 2 starts at 300 ms
+        Assert.Equal(0u, animation.GetFrameTileId(0.40));   // 400 ms wraps back to frame 0
+        Assert.Equal(1u, animation.GetFrameTileId(0.50));   // 500 ms -> 100 ms into the cycle
+
+        // A zero total duration (e.g. every frame has 0 ms) shows the first frame forever.
+        var zero = new TileAnimation(new[] { new TileAnimationFrame(7, 0) });
+        Assert.Equal(7u, zero.GetFrameTileId(123.0));
+    }
+
+    /// <summary>Verifies the main render advances with the clock: frame 0 at t = 0, frame 1 after 150 ms, and a wrap back to frame 0 after a full 400 ms cycle.</summary>
+    [Fact]
+    public void Draw_AnimatedTile_AdvancesFramesWithClock()
+    {
+        // Three distinct solid-colour frames with durations 100/200/100 ms (cycle 400 ms): at
+        // 150 ms the animation is on frame 1, and at 400 ms total it has wrapped back to frame 0.
+        using var fixture = new TiledTestFixture(
+            1,
+            1,
+            new[] { new TileLayerSpec("ground", new uint[] { 1 }) },
+            tileColors: new[] { SKColors.Red, SKColors.Green, SKColors.Blue },
+            animations: new Dictionary<uint, IReadOnlyList<(uint FrameTileId, int DurationMs)>>
+            {
+                [0] = new List<(uint FrameTileId, int DurationMs)> { (0, 100), (1, 200), (2, 100) },
+            });
+        var map = TileMap.Load(fixture.MapPath);
+
+        // t = 0: frame 0 (red).
+        using (var bitmap = RenderMap(map))
+        {
+            Assert.Equal(new SKColor(255, 0, 0, 255), bitmap.GetPixel(24, 24));
+        }
+
+        // After 150 ms the clock is in frame 1 (green).
+        map.UpdateAnimations(0.15);
+        using (var bitmap = RenderMap(map))
+        {
+            Assert.Equal(new SKColor(0, 128, 0, 255), bitmap.GetPixel(24, 24));
+        }
+
+        // After 250 ms more (400 ms total) the cycle wraps back to frame 0 (red).
+        map.UpdateAnimations(0.25);
+        using (var bitmap = RenderMap(map))
+        {
+            Assert.Equal(new SKColor(255, 0, 0, 255), bitmap.GetPixel(24, 24));
+        }
+    }
+
+    /// <summary>Verifies animated cells are excluded from the prerendered layer image (transparent hole) yet visible in the rendered frame.</summary>
+    [Fact]
+    public void Prerender_ExcludesAnimatedCells_ButRenderedFrameDrawsThem()
+    {
+        using var fixture = new TiledTestFixture(
+            1,
+            1,
+            new[] { new TileLayerSpec("ground", new uint[] { 1 }) },
+            tileColors: new[] { SKColors.Red, SKColors.Green },
+            animations: new Dictionary<uint, IReadOnlyList<(uint FrameTileId, int DurationMs)>>
+            {
+                [0] = new List<(uint FrameTileId, int DurationMs)> { (0, 100), (1, 100) },
+            });
+        var map = TileMap.Load(fixture.MapPath);
+
+        // The prerendered layer image leaves the animated cell transparent.
+        using (var prerendered = ImageToBitmap(map.PrerenderedLayerImages[0]!))
+        {
+            Assert.Equal(0, prerendered.GetPixel(24, 24).Alpha);
+        }
+
+        // The rendered frame draws the animation dynamically (frame 0 at t = 0).
+        using (var bitmap = RenderMap(map))
+        {
+            Assert.Equal(new SKColor(255, 0, 0, 255), bitmap.GetPixel(24, 24));
+        }
+    }
+
+    /// <summary>Verifies an animated cell with a horizontal flip and a layer opacity below 1 renders the current frame flipped and faded.</summary>
+    [Fact]
+    public void Draw_AnimatedTile_AppliesFlipAndOpacity()
+    {
+        // Tile 0 is an asymmetric marker (red marker at 36..39, 12..15) and tile 1 is a solid
+        // green fill. The animated tile at (0,0) carries the horizontal flip flag, and the layer
+        // has opacity 0.5, mirroring the static-tile flip/opacity tests.
+        using var fixture = new TiledTestFixture(
+            1,
+            1,
+            new[] { new TileLayerSpec("ground", new uint[] { 0x80000001u }, Opacity: 0.5f) },
+            tileColors: new[] { SKColors.Red, SKColors.Green },
+            animations: new Dictionary<uint, IReadOnlyList<(uint FrameTileId, int DurationMs)>>
+            {
+                [0] = new List<(uint FrameTileId, int DurationMs)> { (0, 100), (1, 100) },
+            },
+            tilePatterns: new[] { TilePattern.Marker, TilePattern.Solid });
+        var map = TileMap.Load(fixture.MapPath);
+
+        using var bitmap = RenderMap(map);
+
+        // Frame 0 is the marker tile; flipped horizontally the marker moves to (8..11, 12..15)
+        // and the layer opacity fades the whole animated tile.
+        Assert.InRange(bitmap.GetPixel(9, 13).Alpha, 96, 160);  // flipped marker is faded
+        Assert.Equal(0, bitmap.GetPixel(37, 13).Alpha);         // the unflipped marker position is empty
+    }
+
+    /// <summary>Verifies an animated tile on an above_player layer renders above the player (the above-player ordering pattern with an animated tile).</summary>
+    [Fact]
+    public void Draw_AbovePlayerLayer_AnimatedTile_DrawsOverPlayer()
+    {
+        // ground = all red (GID 1), above = green animated tile (GID 2 -> local tile 1) at (0,0).
+        var ground = new TileLayerSpec("ground", new uint[] { 1, 1, 1, 1 });
+        var above = new TileLayerSpec(
+            "above",
+            new uint[] { 2, 0, 0, 0 },
+            Properties: new[] { new FixtureProperty("above_player", "bool", "true") });
+        using var fixture = new TiledTestFixture(
+            2,
+            2,
+            new[] { ground, above },
+            tileColors: new[] { SKColors.Red, SKColors.Green, SKColors.Blue },
+            animations: new Dictionary<uint, IReadOnlyList<(uint FrameTileId, int DurationMs)>>
+            {
+                [1] = new List<(uint FrameTileId, int DurationMs)> { (1, 100), (2, 100) },
+            });
+        var map = TileMap.Load(fixture.MapPath);
+
+        using var belowOnly = RenderMap(map, draw: map.Draw);
+        Assert.Equal(new SKColor(255, 0, 0, 255), belowOnly.GetPixel(24, 24)); // ground (red)
+
+        using var aboveOnly = RenderMap(map, draw: map.DrawAbovePlayer);
+        Assert.Equal(new SKColor(0, 128, 0, 255), aboveOnly.GetPixel(24, 24)); // animated frame 0 (green)
+    }
+
+    /// <summary>Converts an <see cref="SKImage"/> into a bitmap so tests can assert individual pixels (e.g. the prerendered layer images).</summary>
+    private static SKBitmap ImageToBitmap(SKImage image)
+    {
+        var bitmap = new SKBitmap(image.Width, image.Height);
+        using (var canvas = new SKCanvas(bitmap))
+        {
+            canvas.Clear(SKColors.Transparent);
+            canvas.DrawImage(image, new SKPoint(0, 0));
+        }
+
+        return bitmap;
+    }
+
     /// <summary>
     /// Builds a fetcher that serves the fixture's map, tileset and image bytes under a
     /// fake HTTP base URI, simulating the WebAssembly/HTTP asset loading scenario.

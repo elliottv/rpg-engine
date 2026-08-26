@@ -40,19 +40,34 @@ registry and the pressed-keys state, and exposes the game-loop entry points `Upd
   tiles, and queues those tiles. Each `Update` then moves the player toward the center of the next
   waypoint at `BaseSpeed`, popping waypoints as they are reached and calling `Player.Stop()` when
   the path completes. Clicking a **solid tile** or an **unreachable target** cancels the walk
-  without moving; a click that yields a path **replaces** the current walk even mid-walk.
+  without moving; a click that yields a path **replaces** the current walk even mid-walk. Each
+  auto-walk displacement is resolved against the map's solid tiles like key movement, so the
+  auto-walk never moves the player through (or into) a solid tile: when the direct displacement
+  toward a waypoint is blocked (e.g. the player is not tile-centred and the first segment would
+  cross a solid corner), the walk is cancelled and the player is not displaced.
 - **Input precedence during auto-walk**: a **key press** (`Input(key, true)`) cancels the
   auto-walk path; a key **release** does not; and while a bound movement key is held the
   auto-walk does not advance (manual key movement takes priority). A `Click` always replaces the
   path unless the new target is invalid (solid / no path), in which case it cancels the walk.
   See [Architecture](../Architecture.md).
-- When a map is set, the player's displacement is resolved with **axis-separated movement**
-  against the map's solid tiles (layers declaring the Tiled `is_collision` bool property): each
-  axis is applied in turn and reverted when the player's collision footprint would overlap a
-  solid tile or leave the map (the map edge is solid). The footprint is the **lower half of the
-  sprite anchored at the feet** (`Position` is the middle-bottom of the sprite), so the upper
-  body never collides with the ground; the map-bounds clamp keeps that lower-half footprint
-  inside the map. See [Architecture](../Architecture.md).
+- When a map is set, the player's displacement is resolved with **axis-separated movement and
+  per-axis slide-to-boundary clamping** against the map's solid tiles (layers declaring the Tiled
+  `is_collision` bool property): each axis is applied in turn and, when the player's collision
+  footprint would overlap a solid tile or leave the map (the map edge is solid), it slides to
+  the **closest legal position on that axis** — so the leading edge of the footprint stops
+  **exactly** at the near edge of the first blocking solid tile (or at the map edge). The
+  footprint is the **fixed 1×1 tile (48×48 px) lower-body box anchored at the feet**
+  (`Position` is the middle-bottom of the sprite; the middle of the feet sits at the bottom-centre
+  of the box, `(24, 48)` when the box's origin is its upper-left). The box is independent of the
+  rendered sprite size, so a 1-tile-wide corridor always fits and the feet stop exactly at the
+  solid tile's edge in every direction — below, above or beside the player; the map-bounds clamp
+  keeps that 1×1 box inside the map. Because a blocked axis slides to the exact boundary instead
+  of reverting the whole step, the feet stop exactly at the solid tile's edge, matching
+  click-to-move, with no one-frame-step gap and no floating-point overshoot accumulation. As a
+  safety net the resolver refuses a displacement whose resulting footprint would still overlap a
+  solid tile (only possible when the starting footprint was already illegal, e.g. embedded in a
+  wall), so key movement never moves the player through a solid tile. See
+  [Architecture](../Architecture.md).
 - A minimap can be rendered on a separate surface with `RenderMinimap`: it draws the map's
   prerendered tile layers, a green dot for the player and a yellow dot for each NPC.
   `zoomLevel` `1.0` fits the whole map to the canvas; values above `1` zoom in and pan around

@@ -114,8 +114,9 @@ public class GameEngineCollisionOnMoveTests
     public void Update_TurnWhileBlocked_FiresOnMoveFalseForNewDirectionOnce()
     {
         // 4x4 map with a solid column at x=2 (blocks Right) and a solid row at y=0 (blocks Up).
-        // The player starts in row y=1 so the solid row above (y=0) does not overlap its own
-        // lower-half footprint (y in [1.0, 1.5]).
+        // The player starts with feet at y=2.0 so the fixed 1x1 box (y in [1.0, 2.0]) just
+        // touches the solid row's bottom edge (y=1.0) without overlapping it, leaving the start
+        // legal and Up immediately blocked.
         var gids = new uint[16];
         for (var y = 0; y < 4; y++)
         {
@@ -129,7 +130,7 @@ public class GameEngineCollisionOnMoveTests
         using var fixture = CreateCollisionMapFixture(4, 4, gids);
         var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
         ConfigurePlayerSprite(engine, seed: 1);
-        engine.Player.Position = new Position(0.5, 1.5);
+        engine.Player.Position = new Position(0.5, 2.0);
 
         var events = new List<PlayerMoveEventArgs>();
         engine.Player.OnMove += (_, e) => events.Add(e);
@@ -220,7 +221,7 @@ public class GameEngineCollisionOnMoveTests
         engine.Player.OnMove += (_, e) => events.Add(e);
 
         // Walk up-left into the top-left corner of the map: both axes are eventually blocked by
-        // the map edge at (0.5, 0.5).
+        // the map edge at (0.5, 1.0) (the fixed 1x1 box's top edge at the top map edge).
         engine.Input(Key.W, true);
         engine.Input(Key.A, true);
 
@@ -229,11 +230,11 @@ public class GameEngineCollisionOnMoveTests
             engine.Update(FrameDt);
         }
 
-        // The player is fully blocked in the top-left corner region: its lower-half footprint
-        // never leaves the map, and a further frame leaves both the position and the events
-        // unchanged.
+        // The player is fully blocked in the top-left corner region: the fixed 1x1 lower-body
+        // box never leaves the map (feet x in [0.5, 1.5], y in [1.0, 2.0]), and a further frame
+        // leaves both the position and the events unchanged.
         var blockedPosition = engine.Player.Position;
-        Assert.True(blockedPosition.X < 1.0 && blockedPosition.Y < 1.0, "The player must end near the top-left corner.");
+        Assert.True(blockedPosition.X < 1.0 && blockedPosition.Y <= 1.0 + 1e-9, "The player must end near the top-left corner.");
 
         // Exact sequence: (true, UpLeft) when the walk started, then exactly one (false, UpLeft)
         // when both axes became blocked, and nothing more while W+A stay held.

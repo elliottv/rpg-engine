@@ -92,7 +92,7 @@ public class DocsExamplesTests
             10, 10,
             new[] { new TileLayerSpec("ground", Enumerable.Repeat(1u, 10 * 10).ToArray()) });
         var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
-        engine.Player.Position = new Position(0.5, 0.5);
+        engine.Player.Position = new Position(0.5, 1.5);
 
         var moveEvents = new List<PlayerMoveEventArgs>();
         engine.Player.OnMove += (_, e) => moveEvents.Add(e);

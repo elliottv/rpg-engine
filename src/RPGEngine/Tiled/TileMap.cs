@@ -6,6 +6,17 @@ using SkiaSharp;
 namespace RPGEngine.Tiled;
 
 /// <summary>
+/// A single cell of a tile layer that uses an animated tile. The owning tileset and the local
+/// tile ID are captured at load time so the current frame can be resolved per frame without
+/// re-resolving the owning tileset.
+/// </summary>
+/// <param name="X">The 0-based tile X coordinate of the cell.</param>
+/// <param name="Y">The 0-based tile Y coordinate of the cell.</param>
+/// <param name="TileSet">The tileset that owns the animated tile.</param>
+/// <param name="LocalTileId">The local tile ID (within <paramref name="TileSet"/>) of the animated tile.</param>
+internal readonly record struct AnimatedTileCell(int X, int Y, TileSet TileSet, uint LocalTileId);
+
+/// <summary>
 /// A tile map loaded from a Tiled <c>.tmx</c> file (and its referenced <c>.tsx</c> tilesets).
 /// </summary>
 /// <remarks>
@@ -44,6 +55,13 @@ namespace RPGEngine.Tiled;
 /// renders the below-player pass, then the characters, then the above-player pass so those
 /// tiles appear in front of the player.
 /// </para>
+/// <para>
+/// Animated tiles (a Tiled <c>&lt;tile&gt;&lt;animation&gt;</c> block in a tileset) are parsed
+/// automatically and rendered dynamically: animated cells are excluded from the prerendered
+/// layer images (a static raster would freeze a single frame) and instead drawn per frame by
+/// the render passes, using the map's internal animation clock advanced by
+/// <c>UpdateAnimations</c>. The minimap draws them too, so animated tiles never leave holes.
+/// </para>
 /// </remarks>
 public sealed class TileMap : IDisposable
 {
@@ -55,6 +73,18 @@ public sealed class TileMap : IDisposable
     /// A slot is <see langword="null"/> when the layer was not prerendered (invisible or empty).
     /// </summary>
     private readonly SKImage?[] _prerenderedImages;
+
+    /// <summary>
+    /// The animated cells of each layer, one list per <see cref="Layers"/> entry in file order
+    /// (a layer with no animated cells has an empty list). Populated at load time.
+    /// </summary>
+    private readonly IReadOnlyList<AnimatedTileCell>[] _animatedCells;
+
+    /// <summary>
+    /// The animation clock in seconds. Advanced by <see cref="UpdateAnimations"/> and read by
+    /// <see cref="GetAnimatedTileId"/> to pick each animated cell's current frame.
+    /// </summary>
+    private double _animationClockSeconds;
 
     private bool _disposed;
 
@@ -84,8 +114,11 @@ public sealed class TileMap : IDisposable
         }
 
         // Every visible, non-empty tile layer is rasterized once into an SKImage at load time.
-        // The prerendered images are the source of every later render call.
+        // The prerendered images are the source of every later render call. Animated tiles are
+        // excluded from those images (they would freeze a single frame) and instead recorded
+        // here so the render passes can draw the current frame each frame.
         _prerenderedImages = PrerenderLayers();
+        _animatedCells = DetectAnimatedCells();
     }
 
     /// <summary>Gets the width of the map in tiles.</summary>
@@ -141,6 +174,48 @@ public sealed class TileMap : IDisposable
 
     /// <summary>Gets whether this map has been disposed. Internal for tests.</summary>
     internal bool IsDisposed => _disposed;
+
+    /// <summary>
+    /// Returns the animated cells of the layer at <paramref name="layerIndex"/> (in file order).
+    /// The returned list is owned by this map and must not be modified; a layer without animated
+    /// tiles yields an empty list.
+    /// </summary>
+    /// <remarks>
+    /// Internal so the minimap (<see cref="GameEngine.RenderMinimap"/>) can draw the animated
+    /// cells of each layer after its prerendered image blit, using the same scale/origin mapping.
+    /// </remarks>
+    internal IReadOnlyList<AnimatedTileCell> GetAnimatedCells(int layerIndex) => _animatedCells[layerIndex];
+
+    /// <summary>
+    /// Returns the local tile ID of the frame that <paramref name="cell"/> should currently
+    /// display, based on the map's animation clock.
+    /// </summary>
+    /// <param name="cell">An animated cell recorded by this map.</param>
+    /// <returns>The local tile ID of the current frame within <see cref="AnimatedTileCell.TileSet"/>.</returns>
+    /// <remarks>
+    /// Frame images are resolved per call (the caller obtains the image from the tileset). A
+    /// later optimization could cache the per-tile frame images; resolving them per frame is
+    /// acceptable for the first implementation because animated-tile sequences are short and
+    /// maps typically contain few animated cells.
+    /// </remarks>
+    internal uint GetAnimatedTileId(AnimatedTileCell cell)
+    {
+        if (cell.TileSet.TryGetAnimation(cell.LocalTileId, out var animation))
+        {
+            return animation.GetFrameTileId(_animationClockSeconds);
+        }
+
+        // Defensive: the cell was recorded because the tile was animated, so the lookup should
+        // always succeed; fall back to the tile itself.
+        return cell.LocalTileId;
+    }
+
+    /// <summary>
+    /// Advances the animation clock by <paramref name="dt"/> seconds. The engine calls this once
+    /// per <c>Update</c>, so animated tiles progress with game time.
+    /// </summary>
+    /// <param name="dt">The elapsed time in seconds since the previous frame.</param>
+    internal void UpdateAnimations(double dt) => _animationClockSeconds += dt;
 
     /// <summary>
     /// Returns the map property named <paramref name="name"/> using a case-sensitive comparison,
@@ -440,10 +515,12 @@ public sealed class TileMap : IDisposable
         var visible = new SKRect(left, top, right, bottom);
 
         using var paint = new SKPaint { IsAntialias = false };
+        using var animatedPaint = new SKPaint { IsAntialias = false };
 
         for (var layerIndex = 0; layerIndex < Layers.Count; layerIndex++)
         {
-            if (Layers[layerIndex].AbovePlayer != abovePlayerOnly)
+            var layer = Layers[layerIndex];
+            if (layer.AbovePlayer != abovePlayerOnly)
             {
                 continue;
             }
@@ -457,6 +534,29 @@ public sealed class TileMap : IDisposable
             // The source and destination rects are the same world-pixel rect: the visible part
             // of the prerendered image is blitted in place, which preserves viewport culling.
             canvas.DrawImage(image, visible, visible, paint);
+
+            // Draw the layer's animated cells on top of its own prerendered image (and below the
+            // layers above, because we stay inside this per-layer loop). Animated cells were
+            // excluded from the prerender, so they are not frozen statically; the current frame
+            // is drawn with the same flip transform and layer opacity as static tiles.
+            animatedPaint.Color = SKColors.White.WithAlpha((byte)Math.Round(layer.Opacity * 255f));
+            foreach (var cell in _animatedCells[layerIndex])
+            {
+                var dest = new SKRect(
+                    cell.X * TileWidth,
+                    cell.Y * TileHeight,
+                    (cell.X + 1) * TileWidth,
+                    (cell.Y + 1) * TileHeight);
+
+                if (!dest.IntersectsWith(visible))
+                {
+                    continue;
+                }
+
+                using var tileImage = cell.TileSet.GetTileImage((int)GetAnimatedTileId(cell));
+                var flags = layer.GetTileFlags(cell.X, cell.Y);
+                DrawTile(canvas, tileImage, dest, flags, animatedPaint);
+            }
         }
     }
 
@@ -517,8 +617,16 @@ public sealed class TileMap : IDisposable
                     continue;
                 }
 
-                var flags = layer.GetTileFlags(x, y);
                 var localTileId = (int)(gid - tileSet.FirstGid);
+                if (tileSet.TryGetAnimation((uint)localTileId, out _))
+                {
+                    // Animated tiles are never baked into the prerendered layer image: a static
+                    // raster would freeze a single frame. They are drawn dynamically per frame by
+                    // DrawLayerImages, so the cell is left transparent here.
+                    continue;
+                }
+
+                var flags = layer.GetTileFlags(x, y);
                 using var tileImage = tileSet.GetTileImage(localTileId);
 
                 var dest = new SKRect(
@@ -567,7 +675,60 @@ public sealed class TileMap : IDisposable
         return false;
     }
 
-    private static void DrawTile(SKCanvas canvas, SKImage image, SKRect dest, TileFlags flags, SKPaint paint)
+    /// <summary>
+    /// Detects every animated cell of every tile layer at load time: for each non-empty cell the
+    /// owning tileset and local tile ID are resolved with the same logic as
+    /// <see cref="PrerenderLayer"/>, and cells whose tile declares an animation are recorded so
+    /// the render passes can draw them dynamically (see <see cref="DrawLayerImages"/> and the
+    /// minimap accessors). Layers without animated cells get an empty list.
+    /// </summary>
+    private IReadOnlyList<AnimatedTileCell>[] DetectAnimatedCells()
+    {
+        var perLayer = new IReadOnlyList<AnimatedTileCell>[Layers.Count];
+
+        for (var layerIndex = 0; layerIndex < Layers.Count; layerIndex++)
+        {
+            var layer = Layers[layerIndex];
+            var cells = new List<AnimatedTileCell>();
+
+            for (var y = 0; y < Height; y++)
+            {
+                for (var x = 0; x < Width; x++)
+                {
+                    var gid = layer.GetTileId(x, y);
+                    if (gid == 0)
+                    {
+                        continue;
+                    }
+
+                    var tileSet = ResolveTileSet(gid);
+                    if (tileSet is null)
+                    {
+                        // A GID that no tileset covers; ignore defensively (malformed map).
+                        continue;
+                    }
+
+                    var localTileId = (uint)(gid - tileSet.FirstGid);
+                    if (tileSet.TryGetAnimation(localTileId, out _))
+                    {
+                        cells.Add(new AnimatedTileCell(x, y, tileSet, localTileId));
+                    }
+                }
+            }
+
+            perLayer[layerIndex] = cells;
+        }
+
+        return perLayer;
+    }
+
+    /// <summary>
+    /// Draws <paramref name="image"/> into <paramref name="dest"/> applying the Tiled flip/rotate
+    /// transforms described by <paramref name="flags"/> and the alpha of <paramref name="paint"/>.
+    /// The transform matches Tiled's own renderer (diagonal flip first, then the horizontal and
+    /// vertical flips), so flipped animated tiles match flipped static tiles.
+    /// </summary>
+    internal static void DrawTile(SKCanvas canvas, SKImage image, SKRect dest, TileFlags flags, SKPaint paint)
     {
         var horizontallyFlipped = (flags & TileFlags.FlippedHorizontally) != 0;
         var verticallyFlipped = (flags & TileFlags.FlippedVertically) != 0;

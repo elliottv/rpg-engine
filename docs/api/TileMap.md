@@ -27,6 +27,13 @@ Namespace: `RPGEngine.Tiled` — a tile map loaded from a Tiled `.tmx` file (and
   `true` is a collision layer; its non-empty tiles are solid and block character movement.
   `IsSolid` reports solid tiles and treats the map edge as solid (see the `IsSolid` method
   below).
+- **Animated tiles** (a Tiled `<tile><animation>` block in a tileset) are parsed and rendered
+  automatically: animated cells are excluded from the prerendered layer images (a static raster
+  would freeze a single frame) and drawn per frame by `Draw`/`DrawAbovePlayer` using the map's
+  internal animation clock (advanced by `GameEngine.Update` via `TileMap.UpdateAnimations`),
+  with the layer's flip flags and opacity applied. The minimap shows them too, so animated
+  tiles never leave holes in the minimap. The animation data itself is internal and not exposed
+  through the public API.
 
 ## Properties
 
