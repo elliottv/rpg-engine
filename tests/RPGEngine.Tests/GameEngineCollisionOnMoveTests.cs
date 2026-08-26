@@ -51,7 +51,7 @@ public class GameEngineCollisionOnMoveTests
         }
 
         // The player stopped at the solid column: its footprint never enters it.
-        Assert.True(engine.Player.Position.X + 0.5 <= 2.0 + 1e-9, "The footprint must never overlap the solid column.");
+        Assert.True(engine.Player.Position.X + 0.25 <= 2.0 + 1e-9, "The footprint must never overlap the solid column.");
 
         // Exact event sequence: one (true, Right) on start, then exactly one (false, Right) on
         // the collision stop, and nothing more while D stays held.
@@ -114,7 +114,7 @@ public class GameEngineCollisionOnMoveTests
     public void Update_TurnWhileBlocked_FiresOnMoveFalseForNewDirectionOnce()
     {
         // 4x4 map with a solid column at x=2 (blocks Right) and a solid row at y=0 (blocks Up).
-        // The player starts with feet at y=2.0 so the fixed 1x1 box (y in [1.0, 2.0]) just
+        // The player starts with feet at y=1.5 so the fixed 0.5x0.5 box (y in [1.0, 1.5]) just
         // touches the solid row's bottom edge (y=1.0) without overlapping it, leaving the start
         // legal and Up immediately blocked.
         var gids = new uint[16];
@@ -130,7 +130,7 @@ public class GameEngineCollisionOnMoveTests
         using var fixture = CreateCollisionMapFixture(4, 4, gids);
         var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
         ConfigurePlayerSprite(engine, seed: 1);
-        engine.Player.Position = new Position(0.5, 2.0);
+        engine.Player.Position = new Position(0.5, 1.5);
 
         var events = new List<PlayerMoveEventArgs>();
         engine.Player.OnMove += (_, e) => events.Add(e);
@@ -143,7 +143,7 @@ public class GameEngineCollisionOnMoveTests
         }
 
         // Blocked at the wall (footprint never enters the solid column), facing Right.
-        Assert.True(engine.Player.Position.X + 0.5 <= 2.0 + 1e-9, "The footprint must never overlap the solid column.");
+        Assert.True(engine.Player.Position.X + 0.25 <= 2.0 + 1e-9, "The footprint must never overlap the solid column.");
         Assert.Equal(new PlayerMoveEventArgs(false, Direction.Right), events[^1]);
         events.Clear();
 
@@ -180,10 +180,11 @@ public class GameEngineCollisionOnMoveTests
         var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
         ConfigurePlayerSprite(engine, seed: 1);
 
-        // Start flush against the left edge of the wall column: moving UpRight, the X
+        // Start flush against the left edge of the wall column: the fixed 0.5x0.5 box's right
+        // edge (feet X + 0.25) is exactly at the wall column x=3, so moving UpRight, the X
         // displacement is blocked while Y is free. Diagonal movement is all-or-nothing, so the
         // player stops entirely instead of sliding straight up along the wall.
-        engine.Player.Position = new Position(2.5, 4.0);
+        engine.Player.Position = new Position(2.75, 4.0);
 
         var events = new List<PlayerMoveEventArgs>();
         engine.Player.OnMove += (_, e) => events.Add(e);
@@ -197,7 +198,7 @@ public class GameEngineCollisionOnMoveTests
         }
 
         // The player never moved: fully blocked on the first frame (X blocked, Y free - no slide).
-        Assert.Equal(2.5, engine.Player.Position.X, precision: 6);
+        Assert.Equal(2.75, engine.Player.Position.X, precision: 6);
         Assert.Equal(4.0, engine.Player.Position.Y, precision: 6);
 
         // The blocked diagonal was reported exactly once: the player was idle facing Down, so
@@ -247,7 +248,7 @@ public class GameEngineCollisionOnMoveTests
         var stopped = engine.Player.Position;
         Assert.True(stopped.X > 1.5, "The player moved right before stopping.");
         Assert.True(stopped.Y < 4.0, "The player moved up before stopping.");
-        Assert.True(stopped.X + 0.5 <= 3.0 + 1e-9, "The footprint must never overlap the solid column.");
+        Assert.True(stopped.X + 0.25 <= 3.0 + 1e-9, "The footprint must never overlap the solid column.");
 
         // Exact sequence: (true, UpRight) on start, then exactly one (false, UpRight) when one
         // axis became blocked, and nothing more while W+D stay held.
@@ -332,12 +333,12 @@ public class GameEngineCollisionOnMoveTests
         // The player is fully blocked in the top-left corner region. All-or-nothing diagonal
         // movement stops the player at the first position where either axis is blocked (here the
         // Y axis, one diagonal step short of the top map edge, since a diagonal cannot take a
-        // partial step onto the boundary): the fixed 1x1 lower-body box never leaves the map (feet
-        // x in [0.5, 1.5], y in [1.0, 2.0]), and a further frame leaves both the position and the
-        // events unchanged.
+        // partial step onto the boundary): the fixed 0.5x0.5 lower-body box never leaves the map
+        // (feet x in [0.25, 1.75], y in [0.5, 2.0]), and a further frame leaves both the position
+        // and the events unchanged.
         var blockedPosition = engine.Player.Position;
-        Assert.True(blockedPosition.X >= 0.5 - 1e-9 && blockedPosition.X < 1.1, "The player must be stopped in the top-left corner region.");
-        Assert.True(blockedPosition.Y >= 1.0 - 1e-9 && blockedPosition.Y < 1.1, "The player must be stopped near the top map edge.");
+        Assert.True(blockedPosition.X >= 0.25 - 1e-9 && blockedPosition.X < 1.1, "The player must be stopped in the top-left corner region.");
+        Assert.True(blockedPosition.Y >= 0.5 - 1e-9 && blockedPosition.Y < 0.6, "The player must be stopped near the top map edge.");
 
         // Exact sequence: (true, UpLeft) when the walk started, then exactly one (false, UpLeft)
         // when both axes became blocked, and nothing more while W+A stay held.
