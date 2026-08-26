@@ -42,10 +42,13 @@ namespace RPGEngine;
 /// </para>
 /// <para>
 /// When a map is set, <see cref="Render"/> clears the whole canvas to black first, then draws
-/// the map's below-player layers, then every NPC, then the player, and finally the map's
+/// the map's below-player layers, then all characters (the NPCs in <see cref="Characters"/> and
+/// the player) sorted by <see cref="Character.Position"/> Y ascending, and finally the map's
 /// <c>above_player</c> layers (tile layers declaring the Tiled <c>above_player</c> custom
-/// property) so those tiles appear on top of the player. Without a map the canvas is left
-/// untouched and only the characters are drawn.
+/// property) so those tiles appear on top of every character. Within the character pass a
+/// character with a higher Y (lower on the screen, closer to the viewer) is drawn last and
+/// appears on top of the others, so the player may be drawn behind an NPC whose Y is higher.
+/// Without a map the canvas is left untouched and only the characters (Y-sorted) are drawn.
 /// </para>
 /// <para>
 /// Movement input combines every held bound key into a single 8-direction vector: each key that
@@ -181,8 +184,10 @@ public sealed class GameEngine : IDisposable
 
     /// <summary>
     /// Gets the mutable list of NPC characters present in the game world. The player is never in
-    /// this list (it is rendered separately, on top). Items added to or removed from the list are
-    /// taken into account on the next <see cref="Render"/>.
+    /// this list; it is rendered alongside the NPCs in <see cref="Render"/>'s Y-sorted character
+    /// pass, so it may be drawn behind an NPC whose <see cref="Character.Position"/> Y is higher.
+    /// Items added to or removed from the list are taken into account on the next
+    /// <see cref="Render"/>.
     /// </summary>
     public IList<Character> Characters => _characters;
 
@@ -391,13 +396,17 @@ public sealed class GameEngine : IDisposable
     /// <summary>
     /// Draws one frame onto <paramref name="canvas"/>. When a map is set the canvas is cleared to
     /// black first (the black background behind/around a map smaller than the canvas), then the
-    /// map's below-player layers are drawn, then every NPC, then the player on top, and finally
-    /// the map's <c>above_player</c> layers so those tiles appear above the player. The camera
-    /// follows the player, centers a map smaller than the canvas, and is clamped so the viewport
-    /// stays inside the map; the canvas size is read from the canvas clip bounds so the view
-    /// adapts to the current surface size automatically. The camera origin is computed in tiles
-    /// and converted to a pixel viewport for the map (a pure pixel renderer) and to pixel screen
-    /// positions for the characters.
+    /// map's below-player layers are drawn, then all characters (the NPCs in
+    /// <see cref="Characters"/> and the player) sorted by <see cref="Character.Position"/> Y
+    /// ascending, and finally the map's <c>above_player</c> layers so those tiles appear above
+    /// every character. Within the character pass a character with a higher Y (lower on the
+    /// screen, closer to the viewer) is drawn last and appears on top of the others, so the
+    /// player may be drawn behind an NPC whose Y is higher. The camera follows the player,
+    /// centers a map smaller than the canvas, and is clamped so the viewport stays inside the
+    /// map; the canvas size is read from the canvas clip bounds so the view adapts to the current
+    /// surface size automatically. The camera origin is computed in tiles and converted to a
+    /// pixel viewport for the map (a pure pixel renderer) and to pixel screen positions for the
+    /// characters.
     /// </summary>
     /// <param name="canvas">The canvas to draw onto (CPU or GPU backed; see the class remarks).</param>
     /// <param name="dt">The elapsed time in seconds since the previous frame (reserved for future animation timing).</param>
@@ -439,8 +448,9 @@ public sealed class GameEngine : IDisposable
         // middle-bottom, so a character's sprite top-left is at
         // (pos.X*ts - w/2 - origin.X*ts, pos.Y*ts - h - origin.Y*ts) in world pixels and its
         // feet (anchor) at (pos.X*ts - origin.X*ts, pos.Y*ts - origin.Y*ts).
-        // Draw order is: below-player map layers -> each NPC -> the player -> above-player map
-        // layers, so tiles marked with the Tiled above_player property appear on top of the player.
+        // Draw order is: below-player map layers -> every character (NPCs and the player) sorted
+        // by Y ascending (higher Y drawn last, on top) -> above-player map layers, so tiles
+        // marked with the Tiled above_player property appear on top of every character.
         canvas.Save();
         try
         {
@@ -451,12 +461,15 @@ public sealed class GameEngine : IDisposable
                 Map.Draw(canvas, viewport);
             }
 
-            foreach (var character in _characters)
+            // Draw every character (NPCs + the player) sorted by Y ascending, so a character with
+            // a higher Y (lower on screen) is drawn last and appears on top. OrderBy is stable:
+            // equal-Y characters keep their relative order (NPCs in Characters-list order, then
+            // the player), so the draw order is deterministic.
+            var charactersInRenderOrder = _characters.Append(Player.Character).OrderBy(c => c.Position.Y);
+            foreach (var character in charactersInRenderOrder)
             {
                 character.Draw(canvas, character.Position.ToPixels(ts), dt, _spriteSheetManager);
             }
-
-            Player.Character.Draw(canvas, Player.Position.ToPixels(ts), dt, _spriteSheetManager);
 
             if (Map is not null)
             {
