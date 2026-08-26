@@ -711,6 +711,132 @@ public partial class GameEngineTests
     }
 
     // ---------------------------------------------------------------------
+    // Story 65: Y-sorted character rendering. All characters (the NPCs in
+    // Characters and the player) are drawn in a single pass sorted by
+    // Position.Y ascending: a character with a higher Y (lower on screen,
+    // closer to the viewer) is drawn last / on top, so the player may be
+    // drawn behind an NPC. OrderBy is stable, so equal-Y characters keep
+    // their Characters-list order (the earlier entry is drawn first, i.e.
+    // underneath). The map draw order is unchanged: below-player layers ->
+    // characters (Y-sorted) -> above-player layers.
+    // ---------------------------------------------------------------------
+    /// <summary>Verifies that of two overlapping NPCs at the same X with different Y, the one with the higher Y is drawn on top.</summary>
+    [Fact]
+    public void Render_NpcOverNpc_HigherYDrawnOnTop()
+    {
+        using var fixture = CreateFilledMapFixture(10, 10); // 480x480 red tiles
+        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+
+        engine.Characters.Add(ConfigureNpc(engine, "npcLower", seed: 2, characterIndex: 2, new Position(2.0, 2.0)));
+        engine.Characters.Add(ConfigureNpc(engine, "npcHigher", seed: 3, characterIndex: 3, new Position(2.0, 2.5)));
+
+        using var bitmap = Render(engine, 240, 240);
+
+        // Camera origin is (0,0) (the default player at (0,0) clamps the desired origin to 0).
+        // The lower-Y NPC's 48x48 sprite covers x[72,120) y[48,96) and the higher-Y NPC's covers
+        // x[72,120) y[72,120), so they overlap in x[72,120) y[72,96). The higher-Y NPC is drawn
+        // last (on top): the overlap pixel (96, 84) is its cell color.
+        var expected = CharacterTestHelper.SpriteColor(seed: 3, characterIndex: 3, Direction.Down, StandingFrame);
+        Assert.Equal(expected, bitmap.GetPixel(96, 84));
+    }
+
+    /// <summary>Verifies an NPC with a higher Y than the player and an overlapping sprite is drawn on top of the player (the player is rendered behind the NPC).</summary>
+    [Fact]
+    public void Render_NpcOverPlayer_NpcDrawnOnTop()
+    {
+        using var fixture = CreateFilledMapFixture(10, 10); // 480x480 red tiles
+        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        ConfigurePlayerSprite(engine, seed: 1);
+        engine.Player.Position = new Position(2.0, 2.0);
+
+        engine.Characters.Add(ConfigureNpc(engine, "npc", seed: 3, characterIndex: 3, new Position(2.0, 2.5)));
+
+        using var bitmap = Render(engine, 240, 240);
+
+        // Camera origin is (0,0) (the player at (2.0, 2.0) clamps the desired origin to 0). The
+        // player's sprite covers x[72,120) y[48,96) and the NPC's covers x[72,120) y[72,120),
+        // overlapping at (96, 84). The NPC has the higher Y, so it is drawn last / on top of the
+        // player: the overlap pixel is the NPC's cell color.
+        var expected = CharacterTestHelper.SpriteColor(seed: 3, characterIndex: 3, Direction.Down, StandingFrame);
+        Assert.Equal(expected, bitmap.GetPixel(96, 84));
+    }
+
+    /// <summary>Verifies an NPC with a lower Y than the player and an overlapping sprite is drawn underneath the player (the player is on top).</summary>
+    [Fact]
+    public void Render_PlayerOverNpc_PlayerDrawnOnTop()
+    {
+        using var fixture = CreateFilledMapFixture(10, 10); // 480x480 red tiles
+        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        ConfigurePlayerSprite(engine, seed: 1);
+        engine.Player.Position = new Position(2.0, 2.5);
+
+        engine.Characters.Add(ConfigureNpc(engine, "npc", seed: 3, characterIndex: 3, new Position(2.0, 2.0)));
+
+        using var bitmap = Render(engine, 240, 240);
+
+        // Camera origin is (0,0) (the player at (2.0, 2.5) clamps the desired origin to 0). The
+        // NPC's sprite covers x[72,120) y[48,96) and the player's covers x[72,120) y[72,120),
+        // overlapping at (96, 84). The player has the higher Y, so it is drawn last / on top of
+        // the NPC: the overlap pixel is the player's cell color.
+        var expected = CharacterTestHelper.SpriteColor(seed: 1, characterIndex: 1, Direction.Down, StandingFrame);
+        Assert.Equal(expected, bitmap.GetPixel(96, 84));
+    }
+
+    /// <summary>Verifies two NPCs with the same Y keep their Characters-list order: the earlier entry is drawn first (underneath), the later entry on top.</summary>
+    [Fact]
+    public void Render_EqualY_KeepsCharactersListOrder()
+    {
+        using var fixture = CreateFilledMapFixture(10, 10); // 480x480 red tiles
+        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+
+        var first = ConfigureNpc(engine, "npcFirst", seed: 2, characterIndex: 2, new Position(2.0, 2.5));
+        var second = ConfigureNpc(engine, "npcSecond", seed: 3, characterIndex: 3, new Position(2.0, 2.5));
+
+        // Added first -> drawn first (underneath); the later entry is on top. The two sprites
+        // coincide at x[72,120) y[72,120), so their centre pixel (96, 96) shows the top one.
+        engine.Characters.Add(first);
+        engine.Characters.Add(second);
+        using (var bitmap = Render(engine, 240, 240))
+        {
+            var expected = CharacterTestHelper.SpriteColor(seed: 3, characterIndex: 3, Direction.Down, StandingFrame);
+            Assert.Equal(expected, bitmap.GetPixel(96, 96));
+        }
+
+        // Reversing the list order flips which sprite is on top: the stable OrderBy preserves
+        // the Characters-list order, so the earlier entry is always the one underneath.
+        engine.Characters.Remove(first);
+        engine.Characters.Remove(second);
+        engine.Characters.Add(second);
+        engine.Characters.Add(first);
+        using (var bitmap = Render(engine, 240, 240))
+        {
+            var expected = CharacterTestHelper.SpriteColor(seed: 2, characterIndex: 2, Direction.Down, StandingFrame);
+            Assert.Equal(expected, bitmap.GetPixel(96, 96));
+        }
+    }
+
+    /// <summary>Verifies that without a map the same Y-sorted order applies to characters only (regression that characters still render, Y-sorted).</summary>
+    [Fact]
+    public void Render_NoMap_CharactersRenderYSorted()
+    {
+        var engine = new GameEngine(); // no map: camera origin (0,0), only characters drawn
+
+        engine.Characters.Add(ConfigureNpc(engine, "npcLower", seed: 2, characterIndex: 2, new Position(2.0, 2.0)));
+        engine.Characters.Add(ConfigureNpc(engine, "npcHigher", seed: 3, characterIndex: 3, new Position(2.0, 2.5)));
+
+        using var bitmap = Render(engine, 240, 240);
+
+        // The higher-Y NPC is drawn on top at the overlap pixel (96, 84) ...
+        var expected = CharacterTestHelper.SpriteColor(seed: 3, characterIndex: 3, Direction.Down, StandingFrame);
+        Assert.Equal(expected, bitmap.GetPixel(96, 84));
+
+        // ... and a pixel covered only by the lower-Y NPC (not the higher one) still shows the
+        // lower NPC's color, proving both characters rendered without a map.
+        var lowerOnly = CharacterTestHelper.SpriteColor(seed: 2, characterIndex: 2, Direction.Down, StandingFrame);
+        Assert.Equal(lowerOnly, bitmap.GetPixel(96, 60));
+    }
+
+    // ---------------------------------------------------------------------
     // Story 37 acceptance 4: SurfaceToWorld / WorldToSurface are camera-aware
     // and inverses within floating-point tolerance. With no map the origin is
     // (0,0), so SurfaceToWorld(408, 408, 960, 960) == (8.5, 8.5) tiles.
@@ -952,6 +1078,16 @@ public partial class GameEngineTests
         using var stream = CharacterTestHelper.CreateSheetStream(seed);
         engine.LoadSpriteSheet("hero", stream);
         engine.Player.SpriteSheets.Add(new SpriteSheetRef("hero", CharacterIndex: 1));
+    }
+
+    /// <summary>Loads a seeded full sheet under the given name and returns a new NPC character configured to use it.</summary>
+    private static Character ConfigureNpc(GameEngine engine, string sheetName, int seed, int characterIndex, Position position)
+    {
+        using var stream = CharacterTestHelper.CreateSheetStream(seed);
+        engine.LoadSpriteSheet(sheetName, stream);
+        var npc = new Character { Position = position };
+        npc.SpriteSheets.Add(new SpriteSheetRef(sheetName, CharacterIndex: characterIndex));
+        return npc;
     }
 
     /// <summary>
