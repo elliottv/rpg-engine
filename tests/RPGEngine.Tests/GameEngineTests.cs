@@ -239,6 +239,65 @@ public partial class GameEngineTests
     }
 
     // ---------------------------------------------------------------------
+    // Acceptance (story 64): with a map set, the engine resolves every NPC's
+    // autonomous movement (the StartMoving/Update path) against the map's
+    // solid tiles and the map edge exactly like the player's key-driven
+    // movement, so NPCs stop at walls and at the map edge instead of walking
+    // through the world.
+    // ---------------------------------------------------------------------
+    /// <summary>Verifies an NPC started with StartMoving(Right) on a map with a solid column never overlaps the column and stops at the boundary (X + 0.25 &lt;= 2.0).</summary>
+    [Fact]
+    public void Update_NpcStartMoving_WithMap_StopsAtSolidColumn()
+    {
+        // 4x4 map: a "walls" collision layer with a solid column at x=2 for every row.
+        using var fixture = CreateCollisionMapFixture(4, 4, new uint[]
+        {
+            0, 0, 1, 0,
+            0, 0, 1, 0,
+            0, 0, 1, 0,
+            0, 0, 1, 0,
+        });
+        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        var npc = new Character { BaseSpeed = 2, Position = new Position(0.5, 1.0) };
+        npc.StartMoving(Direction.Right);
+        engine.Characters.Add(npc);
+
+        for (var frame = 0; frame < 300; frame++)
+        {
+            engine.Update(FrameDt);
+        }
+
+        // The NPC stopped at the solid column: its footprint never enters it, and the feet stop
+        // exactly at the column's left edge (X = 2.0 - 0.25 = 1.75).
+        Assert.True(npc.Position.X + 0.25 <= 2.0 + 1e-9, "The NPC footprint must never overlap the solid column.");
+        Assert.Equal(1.75, npc.Position.X, precision: 9);
+        Assert.Equal(1.0, npc.Position.Y, precision: 9);
+        Assert.True(npc.IsMoving, "A blocked autonomous character stays started (the walk cycle snaps to standing).");
+    }
+
+    /// <summary>Verifies an NPC started toward the map edge stops at the edge (never leaves the map).</summary>
+    [Fact]
+    public void Update_NpcStartMoving_WithMap_StopsAtMapEdge()
+    {
+        // A 2x2 map with a ground layer only (no collision layer): only the map edge is solid.
+        using var fixture = CreateFilledMapFixture(2, 2);
+        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        var npc = new Character { BaseSpeed = 2, Position = new Position(0.5, 1.5) };
+        npc.StartMoving(Direction.Left);
+        engine.Characters.Add(npc);
+
+        for (var frame = 0; frame < 300; frame++)
+        {
+            engine.Update(FrameDt);
+        }
+
+        // The 0.5x0.5 box's left edge (feet X - 0.25) stops at the left map edge: feet X = 0.25.
+        Assert.Equal(0.25, npc.Position.X, precision: 9);
+        Assert.True(npc.Position.X - 0.25 >= 0.0 - 1e-9, "The NPC footprint must never leave the map.");
+        Assert.True(npc.IsMoving, "A blocked autonomous character stays started (the walk cycle snaps to standing).");
+    }
+
+    // ---------------------------------------------------------------------
     // Acceptance 6: LoadSpriteSheet registers by unique name (duplicate →
     // InvalidOperationException), and Render uses the loaded sheets (a character
     // configured with a loaded sheet name and a valid character index 1..8
