@@ -109,8 +109,9 @@ foreach (var layer in engine.Map?.ObjectLayers ?? [])
 > **Minimap:** `engine.RenderMinimap(canvas, zoomLevel)` draws the map's prerendered layers plus a
 > green dot for the player and a yellow dot for each NPC onto a separate surface. `zoomLevel`
 > `1.0` fits the whole map (the default); `> 1` zooms in around the player's dot (clamped to the
-> map edges, like the main camera); `0 < zoomLevel < 1` zooms out further. It does not clear its
-> canvas — the host owns the minimap background (see `docs/api/GameEngine.md`).
+> map edges, like the main camera); `0 < zoomLevel < 1` zooms out further. When a map is set it
+> clears its canvas to **black** first (like the main camera), so the unused margins are black
+> (see `docs/api/GameEngine.md`).
 >
 > **Click-to-move (optional demo):** after at least one `Render` (so the engine knows the canvas
 > size), the host can pass a mouse click to `engine.Click(surfaceX, surfaceY)` and the player

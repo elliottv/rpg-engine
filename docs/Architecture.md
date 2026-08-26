@@ -412,7 +412,7 @@ and it reuses the same prerendered layer images the main render path uses.
   - `> 1` zooms in: the map is drawn larger than the canvas and the view pans around the
     player's dot, clamped to the map edges — the same follow-and-clamp behaviour as the main
     camera.
-  - `0 < zoomLevel < 1` zooms out further (the map is drawn smaller with larger blank margins).
+  - `0 < zoomLevel < 1` zooms out further (the map is drawn smaller with larger black margins).
   - `<= 0` throws `ArgumentOutOfRangeException`.
 - **Layout.** The base fit scale is
   `baseFit = min(canvasWidth / Map.PixelWidth, canvasHeight / Map.PixelHeight)` and the effective
@@ -424,9 +424,11 @@ and it reuses the same prerendered layer images the main render path uses.
   **source** rect is the visible region ∩ layer bounds (in map pixels) and the **dest** rect is
   the same region scaled by `scale` and offset by the centering/pan origin. Dots outside the
   visible region are skipped.
-- **Background.** The method does **not** clear the canvas and never draws into the unused area
-  — "unused space is left blank", and the host owns the minimap background (e.g. a translucent
-  panel behind the minimap).
+- **Background.** When a map is set the method first clears the whole canvas to **black** (like
+  the main camera in `Render`), then draws the map and dots on top, so a map smaller than the
+  canvas is centered on a black background and the unused margins are black — the minimap's
+  background matches the main camera's black background. With no map it is a no-op and the canvas
+  is left untouched.
 
 The minimap's camera is the same follow + clamp + center model as the main camera
 (`ComputeCameraOrigin`), expressed in map pixels instead of tiles: per axis,
