@@ -234,6 +234,90 @@ public class MovementCollisionResolverTests
         Assert.Equal(1.5, result.Y, precision: 9);
     }
 
+    /// <summary>
+    /// Verifies a diagonal move where one axis is blocked is fully refused: the starting position
+    /// is returned (no sliding along the free axis) - a diagonal into a wall where only one axis
+    /// is free stops the character entirely.
+    /// </summary>
+    [Fact]
+    public void ResolveDiagonal_OneAxisBlocked_ReturnsStart()
+    {
+        using var fixture = CollisionMapFixture(6, 6, SolidColumn(6, column: 3));
+        using var map = TileMap.Load(fixture.MapPath);
+
+        // Start flush against the wall's left edge (feet x = 2.5, box right edge at x = 3.0);
+        // moving up-right, the X displacement is blocked while Y is free. All-or-nothing: the
+        // move is refused entirely rather than sliding up along the wall.
+        var start = new Position(2.5, 4.0);
+        var result = MovementCollisionResolver.ResolveDiagonal(
+            start, 1.0 / 30, -1.0 / 30, map, HalfWidth, HeightAboveFeet);
+
+        Assert.Equal(start, result);
+    }
+
+    /// <summary>
+    /// Verifies a diagonal move whose full displacement is clear on both axes applies the full
+    /// displacement (the destination is returned unchanged).
+    /// </summary>
+    [Fact]
+    public void ResolveDiagonal_BothAxesFree_ReturnsDestination()
+    {
+        using var fixture = CollisionMapFixture(6, 6, SolidColumn(6, column: 4));
+        using var map = TileMap.Load(fixture.MapPath);
+
+        var result = MovementCollisionResolver.ResolveDiagonal(
+            new Position(1.5, 3.0), 0.5, -0.5, map, HalfWidth, HeightAboveFeet);
+
+        Assert.Equal(2.0, result.X, precision: 9);
+        Assert.Equal(2.5, result.Y, precision: 9);
+    }
+
+    /// <summary>
+    /// Verifies a large diagonal step toward a solid column is refused entirely (the starting
+    /// position is returned): the gained-range scan detects the solid column along the whole
+    /// displacement, so the step neither tunnels through the wall nor partially slides along the
+    /// free axis.
+    /// </summary>
+    [Fact]
+    public void ResolveDiagonal_LargeStep_TowardSolidColumn_RefusedWithoutSliding()
+    {
+        using var fixture = CollisionMapFixture(6, 6, SolidColumn(6, column: 4));
+        using var map = TileMap.Load(fixture.MapPath);
+
+        // A 2.5-tile right / 2.0-tile up step from (1.5, 3.0): the right edge would enter the
+        // solid column at x = 4, so the whole diagonal move is refused - the free Y axis does
+        // not move either.
+        var start = new Position(1.5, 3.0);
+        var result = MovementCollisionResolver.ResolveDiagonal(
+            start, 2.5, -2.0, map, HalfWidth, HeightAboveFeet);
+
+        Assert.Equal(start, result);
+    }
+
+    /// <summary>
+    /// Verifies a diagonal move from an already-illegal start that clears the overlap (escaping
+    /// away from the wall) is allowed, so an embedded player is never permanently stuck.
+    /// </summary>
+    [Fact]
+    public void ResolveDiagonal_FromIllegalStart_EscapeAwayFromWall_Allowed()
+    {
+        using var fixture = CollisionMapFixture(6, 6, SolidColumn(6, column: 2));
+        using var map = TileMap.Load(fixture.MapPath);
+
+        // An illegal start: the box [1.5, 2.5] already overlaps the solid column [2,3) at row 2.
+        var start = new Position(2.0, 2.5);
+        Assert.True(map.IsAreaSolid(2.0 - 0.5, 2.5 - 1.0, 1.0, 1.0), "sanity: the start is illegal");
+
+        // Moving down-right far enough clears the overlap in one step (the box's left edge must
+        // pass the column's right edge at x = 3.0, so the rightward displacement must be at least
+        // 1.5 tiles; a smaller step would keep the overlap and be refused, never moving deeper).
+        var result = MovementCollisionResolver.ResolveDiagonal(
+            start, 1.6, 0.6, map, HalfWidth, HeightAboveFeet);
+
+        Assert.False(map.IsAreaSolid(result.X - 0.5, result.Y - 1.0, 1.0, 1.0), "The escaped footprint must be legal.");
+        Assert.True(result.X > start.X && result.Y > start.Y, "The player should move down-right (escape).");
+    }
+
     // ---------------------------------------------------------------------
     // Helpers
     // ---------------------------------------------------------------------

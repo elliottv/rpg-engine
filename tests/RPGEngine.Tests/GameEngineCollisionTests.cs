@@ -177,9 +177,9 @@ public partial class GameEngineTests
         Assert.Equal(Direction.Down, engine.Player.Direction);
     }
 
-    /// <summary>Verifies a player moving diagonally into a vertical wall slides along the wall on the free axis (axis-separated movement).</summary>
+    /// <summary>Verifies a player moving diagonally into a vertical wall stops entirely: diagonal movement is all-or-nothing, so the blocked X axis stops the player instead of sliding up along the wall on the free Y axis.</summary>
     [Fact]
-    public void Update_PlayerMovesDiagonallyIntoWall_SlidesAlongWall()
+    public void Update_PlayerMovesDiagonallyIntoWall_StopsEntirely()
     {
         // 5x5 map: a "walls" collision layer with a solid column at x=3 for every row.
         var gids = new uint[25];
@@ -194,7 +194,8 @@ public partial class GameEngineTests
 
         // Start flush against the left edge of the wall column (x=3): the fixed 1x1 box spans
         // [2,3) horizontally at feet x=2.5. Moving UpRight, the X displacement is blocked by the
-        // wall while Y is free, so the player slides straight up along the wall.
+        // wall while Y is free; diagonal movement is all-or-nothing, so the player stays put
+        // instead of sliding straight up along the wall.
         engine.Player.Position = new Position(2.5, 4.0);
         engine.Input(Key.W, true);
         engine.Input(Key.D, true);
@@ -204,10 +205,10 @@ public partial class GameEngineTests
             engine.Update(FrameDt);
         }
 
-        // X never moves into the wall: it stays at exactly 2.5 (the feet at the wall's left edge).
+        // The player never moved: X stays at the wall's left edge (2.5) and Y stays at 4.0 (no
+        // sliding along the free axis).
         Assert.Equal(2.5, engine.Player.Position.X, precision: 6);
-        // Y slides up along the wall: one second at 2 tiles/s diagonally = 2 * sqrt(0.5) ~ 1.414.
-        Assert.Equal(4.0 - (2 * Math.Sqrt(0.5)), engine.Player.Position.Y, precision: 6);
+        Assert.Equal(4.0, engine.Player.Position.Y, precision: 6);
     }
 
     /// <summary>Verifies tiles drawn from a normal (non-collision) layer never block: the player walks across them freely.</summary>
