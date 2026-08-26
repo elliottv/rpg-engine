@@ -118,7 +118,9 @@ foreach (var layer in engine.Map?.ObjectLayers ?? [])
 > **auto-walks** along an A* tile path to the clicked tile, stopping centered on it. Clicking a
 > solid tile or an unreachable target cancels the walk without moving; a key press cancels it and
 > a click mid-walk replaces the destination. `Player.OnMove` fires on every movement-state
-> transition (start / stop / direction change) with the current facing direction. See
+> transition (start / stop / direction change) with the current facing direction — including a
+> stop caused by a collision while a movement key is held (the engine reports the blocked move,
+> so `OnMove` fires with `IsMoving = false` even against a wall). See
 > `docs/api/GameEngine.md` and `docs/api/Player.md`.
 
 ### Reading order
