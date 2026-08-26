@@ -429,6 +429,50 @@ below-player layers → NPCs → player → above-player layers
   so a small map is never letterboxed with transparent or leftover pixels. When the map fills
   (or exceeds) the canvas, the behaviour is the classic follow-and-clamp camera.
 
+## Animated tiles
+
+`TileMap` and `TileSet` support **animated tiles** as defined by the Tiled format: a tileset tile
+may declare
+
+```xml
+<tile id="5">
+  <animation>
+    <frame tileid="5" duration="100"/>
+    <frame tileid="6" duration="100"/>
+    <frame tileid="7" duration="100"/>
+  </animation>
+</tile>
+```
+
+Each `<frame>` references a **local tile ID** within the tileset and a **duration in
+milliseconds**. Every layer cell that uses such a tile plays the frame sequence, looping forever.
+This is parsed at load time into an internal `TileAnimation` (frames in file order plus the total
+cycle duration) keyed by local tile ID on the owning `TileSet`.
+
+- **An internal clock.** `TileMap` keeps an animation clock in seconds. `GameEngine.Update`
+  calls `TileMap.UpdateAnimations(dt)` once per frame, so animated tiles advance with game time.
+  The current frame of a cell is derived from the clock with `elapsedMs % TotalDurationMs` and a
+  short walk over the frames (`GetFrameTileId`); a sequence whose total duration is zero is
+  treated as its first frame only.
+- **Animated cells are detected per layer at load time.** For every non-empty cell the owning
+  tileset and local tile ID are resolved (the same `ResolveTileSet` logic used for prerendering)
+  and cells whose tile declares an animation are recorded as `AnimatedTileCell`s.
+- **They are excluded from the prerendered layer images.** A static prerendered `SKImage` cannot
+  bake an animation, so `PrerenderLayer` leaves animated cells transparent. The render passes
+  (`DrawLayerImages`, both the below- and above-player passes) draw each layer's animated cells
+  **on top of that layer's own prerendered image**, at the cell rect, applying the layer's flip
+  flags (`TileMapLayer.GetTileFlags`) and the layer's `Opacity` (via the paint alpha) with the
+  same `DrawTile` transform used for static tiles. Because the animated cells are drawn inside
+  the per-layer loop, they stay above their own layer and below the layers above, preserving the
+  layer z-order.
+- **The minimap shows them too.** `GameEngine.RenderMinimap` draws each layer's animated cells
+  after its prerendered blit using the same scale/origin mapping as the layer blits, so the
+  minimap is not left with holes where animated tiles are.
+- **Performance note.** Frame images are resolved per frame (`GetAnimatedTileId` →
+  `TileSet.GetTileImage`); a later optimization can cache the per-tile frame images. This is
+  acceptable for the first implementation because animation sequences are short and maps
+  typically contain few animated cells.
+
 ## Minimap
 
 `GameEngine.RenderMinimap(canvas, zoomLevel)` renders a **minimap** of the current map onto a
