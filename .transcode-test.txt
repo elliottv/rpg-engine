@@ -1,0 +1,6 @@
+quote: " inside
+emdash: \u2014 emdash
+arrow: \u2192 arrow
+backslash: \\ backslash
+tab: \t tab
+plain: hello
