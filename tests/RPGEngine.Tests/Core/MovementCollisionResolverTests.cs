@@ -156,6 +156,46 @@ public class MovementCollisionResolverTests
         Assert.Equal(0.5, result.X, precision: 9);
     }
 
+    /// <summary>
+    /// Verifies the resolver refuses a move that would keep the footprint overlapping a solid
+    /// tile when the starting position is already illegal (e.g. left embedded in a wall by the
+    /// click auto-walk): moving deeper into the wall returns the starting position instead of
+    /// tunnelling through it.
+    /// </summary>
+    [Fact]
+    public void Resolve_FromIllegalStart_UpwardIntoWall_RefusesMove()
+    {
+        using var fixture = CollisionMapFixture(6, 6, SolidRow(6, row: 2));
+        using var map = TileMap.Load(fixture.MapPath);
+
+        // An illegal start: feet at y = 3.49, so the lower-half footprint [2.99, 3.49] already
+        // overlaps the solid row [2,3). Moving up would keep the overlap (the gained-range scan
+        // only sees rows above the already-overlapped wall), so the move must be refused.
+        var start = new Position(2.0, 3.49);
+        Assert.True(map.IsAreaSolid(2.0 - 0.5, 3.49 - 0.5, 1.0, 0.5), "sanity: the start is illegal");
+
+        var result = MovementCollisionResolver.Resolve(start, 0, -0.05, map, HalfWidth, HalfHeight);
+
+        Assert.Equal(start, result);
+    }
+
+    /// <summary>
+    /// Verifies the resolver allows a move that clears an illegal starting overlap (escaping away
+    /// from the wall), so an embedded player is never permanently stuck.
+    /// </summary>
+    [Fact]
+    public void Resolve_FromIllegalStart_DownwardAwayFromWall_AllowsEscape()
+    {
+        using var fixture = CollisionMapFixture(6, 6, SolidRow(6, row: 2));
+        using var map = TileMap.Load(fixture.MapPath);
+
+        var start = new Position(2.0, 3.49);
+        var result = MovementCollisionResolver.Resolve(start, 0, 0.1, map, HalfWidth, HalfHeight);
+
+        Assert.True(result.Y > start.Y, $"The player should move down (escape): result.Y={result.Y}");
+        Assert.False(map.IsAreaSolid(result.X - 0.5, result.Y - 0.5, 1.0, 0.5), "The escaped footprint must be legal.");
+    }
+
     // ---------------------------------------------------------------------
     // Helpers
     // ---------------------------------------------------------------------
