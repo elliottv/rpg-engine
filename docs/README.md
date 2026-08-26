@@ -120,7 +120,9 @@ foreach (var layer in engine.Map?.ObjectLayers ?? [])
 > a click mid-walk replaces the destination. `Player.OnMove` fires on every movement-state
 > transition (start / stop / direction change) with the current facing direction — including a
 > stop caused by a collision while a movement key is held (the engine reports the blocked move,
-> so `OnMove` fires with `IsMoving = false` even against a wall). See
+> so `OnMove` fires with `IsMoving = false` even against a wall). Diagonal key movement is
+> all-or-nothing (no wall-sliding): a diagonal into a wall where only one axis is free stops the
+> player entirely and reports the collision stop the same way. See
 > `docs/api/GameEngine.md` and `docs/api/Player.md`.
 
 ### Reading order

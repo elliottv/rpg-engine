@@ -161,11 +161,13 @@ public class GameEngineCollisionOnMoveTests
     }
 
     /// <summary>
-    /// Verifies a diagonal move into a wall slides along the free axis: the player keeps moving
-    /// (its position changes each frame), so no (false, ...) stop event fires mid-slide.
+    /// Verifies a diagonal move into a wall where only one axis is free stops the player
+    /// entirely (diagonal movement is all-or-nothing: no wall-sliding along the free axis). The
+    /// blocked move is reported once with IsMoving = false and nothing more fires while the keys
+    /// stay held.
     /// </summary>
     [Fact]
-    public void Update_DiagonalSlideIntoWall_DoesNotReportStopMidSlide()
+    public void Update_DiagonalIntoWall_StopsEntirelyAndFiresOnMoveFalseOnce()
     {
         // 5x5 map: a "walls" collision layer with a solid column at x=3 for every row.
         var gids = new uint[25];
@@ -179,7 +181,8 @@ public class GameEngineCollisionOnMoveTests
         ConfigurePlayerSprite(engine, seed: 1);
 
         // Start flush against the left edge of the wall column: moving UpRight, the X
-        // displacement is blocked while Y is free, so the player slides straight up along it.
+        // displacement is blocked while Y is free. Diagonal movement is all-or-nothing, so the
+        // player stops entirely instead of sliding straight up along the wall.
         engine.Player.Position = new Position(2.5, 4.0);
 
         var events = new List<PlayerMoveEventArgs>();
@@ -193,14 +196,108 @@ public class GameEngineCollisionOnMoveTests
             engine.Update(FrameDt);
         }
 
-        // The player slid up along the wall: X never moved into it, Y decreased.
+        // The player never moved: fully blocked on the first frame (X blocked, Y free - no slide).
         Assert.Equal(2.5, engine.Player.Position.X, precision: 6);
-        Assert.True(engine.Player.Position.Y < 4.0);
+        Assert.Equal(4.0, engine.Player.Position.Y, precision: 6);
 
-        // The slide is still movement: the start fired (true, UpRight) and no stop event fired
-        // mid-slide (the position changed every frame).
-        Assert.Contains(new PlayerMoveEventArgs(true, Direction.UpRight), events);
-        Assert.DoesNotContain(events, e => !e.IsMoving);
+        // The blocked diagonal was reported exactly once: the player was idle facing Down, so
+        // the (false, UpRight) fires as a direction change while blocked, and nothing more while
+        // W+D stay held.
+        Assert.Equal(new[] { new PlayerMoveEventArgs(false, Direction.UpRight) }, events);
+    }
+
+    /// <summary>
+    /// Verifies a diagonal move that becomes blocked mid-walk stops the player entirely and
+    /// reports IsMoving = false exactly once: (true, UpRight) fires while both axes are free and
+    /// the player moves, then exactly one (false, UpRight) fires when one axis is blocked, and
+    /// nothing more while the keys stay held (the free axis never slides).
+    /// </summary>
+    [Fact]
+    public void Update_DiagonalMovement_StopsEntirelyWhenOneAxisBlocked()
+    {
+        // 5x5 map: a "walls" collision layer with a solid column at x=3 for every row.
+        var gids = new uint[25];
+        for (var y = 0; y < 5; y++)
+        {
+            gids[(y * 5) + 3] = 1;
+        }
+
+        using var fixture = CreateCollisionMapFixture(5, 5, gids);
+        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        ConfigurePlayerSprite(engine, seed: 1);
+
+        // Start in open space: moving UpRight is free until the box's right edge reaches the
+        // wall column, at which point the X axis becomes blocked while Y is still free. The
+        // player must stop entirely rather than sliding up along the wall.
+        engine.Player.Position = new Position(1.5, 4.0);
+
+        var events = new List<PlayerMoveEventArgs>();
+        engine.Player.OnMove += (_, e) => events.Add(e);
+
+        engine.Input(Key.W, true);
+        engine.Input(Key.D, true);
+
+        for (var frame = 0; frame < 120; frame++)
+        {
+            engine.Update(FrameDt);
+        }
+
+        // The player moved up-right while both axes were free but never entered the wall, and
+        // stopped entirely once the X axis became blocked (no slide: Y stays put after the stop).
+        var stopped = engine.Player.Position;
+        Assert.True(stopped.X > 1.5, "The player moved right before stopping.");
+        Assert.True(stopped.Y < 4.0, "The player moved up before stopping.");
+        Assert.True(stopped.X + 0.5 <= 3.0 + 1e-9, "The footprint must never overlap the solid column.");
+
+        // Exact sequence: (true, UpRight) on start, then exactly one (false, UpRight) when one
+        // axis became blocked, and nothing more while W+D stay held.
+        Assert.Equal(
+            new[]
+            {
+                new PlayerMoveEventArgs(true, Direction.UpRight),
+                new PlayerMoveEventArgs(false, Direction.UpRight),
+            },
+            events);
+
+        // A subsequent frame with the same keys fires nothing and does not move the player.
+        events.Clear();
+        engine.Update(FrameDt);
+        Assert.Empty(events);
+        Assert.Equal(stopped, engine.Player.Position);
+    }
+
+    /// <summary>
+    /// Verifies a diagonal move whose full displacement is clear on both axes moves the player
+    /// diagonally: OnMove fires (true, UpRight) once on start, the position changes on both
+    /// axes each frame, and no (false, ...) stop event fires mid-move.
+    /// </summary>
+    [Fact]
+    public void Update_DiagonalMovement_BothAxesFree_MovesDiagonally()
+    {
+        // A 5x5 map with no collision layer: only the map edge is solid, far away from the path.
+        using var fixture = CreateFilledMapFixture(5, 5);
+        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        ConfigurePlayerSprite(engine, seed: 1);
+        engine.Player.Position = new Position(1.5, 3.0);
+
+        var events = new List<PlayerMoveEventArgs>();
+        engine.Player.OnMove += (_, e) => events.Add(e);
+
+        engine.Input(Key.W, true);
+        engine.Input(Key.D, true);
+
+        for (var frame = 0; frame < 30; frame++)
+        {
+            engine.Update(FrameDt);
+        }
+
+        // Both axes are free the whole way: the player moved up-right.
+        Assert.True(engine.Player.Position.X > 1.5, "The player must move right.");
+        Assert.True(engine.Player.Position.Y < 3.0, "The player must move up.");
+
+        // Movement only: (true, UpRight) on start, and no stop event (the position changed
+        // every frame).
+        Assert.Equal(new[] { new PlayerMoveEventArgs(true, Direction.UpRight) }, events);
     }
 
     /// <summary>
@@ -220,8 +317,10 @@ public class GameEngineCollisionOnMoveTests
         var events = new List<PlayerMoveEventArgs>();
         engine.Player.OnMove += (_, e) => events.Add(e);
 
-        // Walk up-left into the top-left corner of the map: both axes are eventually blocked by
-        // the map edge at (0.5, 1.0) (the fixed 1x1 box's top edge at the top map edge).
+        // Walk up-left into the top-left corner of the map. Diagonal movement is all-or-nothing:
+        // the player moves while both axes are free and stops entirely at the first position
+        // where either axis is blocked (the Y axis blocks first, one diagonal step short of the
+        // top map edge, because a diagonal cannot take a partial step onto the boundary).
         engine.Input(Key.W, true);
         engine.Input(Key.A, true);
 
@@ -230,11 +329,15 @@ public class GameEngineCollisionOnMoveTests
             engine.Update(FrameDt);
         }
 
-        // The player is fully blocked in the top-left corner region: the fixed 1x1 lower-body
-        // box never leaves the map (feet x in [0.5, 1.5], y in [1.0, 2.0]), and a further frame
-        // leaves both the position and the events unchanged.
+        // The player is fully blocked in the top-left corner region. All-or-nothing diagonal
+        // movement stops the player at the first position where either axis is blocked (here the
+        // Y axis, one diagonal step short of the top map edge, since a diagonal cannot take a
+        // partial step onto the boundary): the fixed 1x1 lower-body box never leaves the map (feet
+        // x in [0.5, 1.5], y in [1.0, 2.0]), and a further frame leaves both the position and the
+        // events unchanged.
         var blockedPosition = engine.Player.Position;
-        Assert.True(blockedPosition.X < 1.0 && blockedPosition.Y <= 1.0 + 1e-9, "The player must end near the top-left corner.");
+        Assert.True(blockedPosition.X >= 0.5 - 1e-9 && blockedPosition.X < 1.1, "The player must be stopped in the top-left corner region.");
+        Assert.True(blockedPosition.Y >= 1.0 - 1e-9 && blockedPosition.Y < 1.1, "The player must be stopped near the top map edge.");
 
         // Exact sequence: (true, UpLeft) when the walk started, then exactly one (false, UpLeft)
         // when both axes became blocked, and nothing more while W+A stay held.

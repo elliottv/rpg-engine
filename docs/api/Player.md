@@ -103,7 +103,10 @@ When the player **stops because of a collision** (the engine reports a fully blo
 a solid tile or the map edge), `OnMove` fires with `IsMoving = false` **even while the movement
 key is still held** — the stop is reported exactly once, and holding the key against the same
 wall does not raise the event again. The reported direction is the direction the player tried to
-move in (the player turns to face the wall).
+move in (the player turns to face the wall). Diagonal movement is **all-or-nothing** (no
+wall-sliding): a diagonal is applied only when both axes are free, so a diagonal into a wall
+where only one axis is free stops the player entirely and fires `OnMove` with `IsMoving = false`
+once — the free axis never slides while reporting movement.
 
 ```csharp
 var player = new Player();

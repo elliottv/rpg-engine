@@ -3,13 +3,18 @@ using RPGEngine.Tiled;
 namespace RPGEngine;
 
 /// <summary>
-/// Resolves a character's displacement against the map's solid tiles with
-/// <em>per-axis slide-to-boundary clamping</em>: for each axis the full requested
-/// displacement is applied when the resulting collision footprint (the fixed 1×1 tile
-/// lower-body box of the player, see <see cref="GameEngine.PlayerFootprintOverlapsSolid"/>) is
-/// clear; otherwise the axis is clamped to the <em>closest legal position</em> on that axis, so
-/// the leading edge of the footprint stops exactly at the near edge of the first blocking solid
-/// tile (or at the map edge, which <see cref="TileMap.IsSolid"/> treats as solid).
+/// Resolves a character's displacement against the map's solid tiles. A <em>cardinal</em>
+/// (single-axis) move uses <em>per-axis slide-to-boundary clamping</em> (see <see cref="Resolve"/>):
+/// for each axis the full requested displacement is applied when the resulting collision
+/// footprint (the fixed 1×1 tile lower-body box of the player, see
+/// <see cref="GameEngine.PlayerFootprintOverlapsSolid"/>) is clear; otherwise the axis is clamped
+/// to the <em>closest legal position</em> on that axis, so the leading edge of the footprint stops
+/// exactly at the near edge of the first blocking solid tile (or at the map edge, which
+/// <see cref="TileMap.IsSolid"/> treats as solid). A <em>diagonal</em> (both-axis) move is
+/// <em>all-or-nothing</em> (see <see cref="ResolveDiagonal"/>): it is applied only when the full
+/// displacement is clear on <em>both</em> axes, otherwise the character stays put — a diagonal
+/// into a wall where only one axis is free stops the character entirely instead of sliding along
+/// the free axis.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -25,14 +30,23 @@ namespace RPGEngine;
 /// blocks movement), exactly like <see cref="TileMap.IsAreaSolid"/>.
 /// </para>
 /// <para>
-/// Each axis is clamped independently and the result of the X axis feeds the Y axis
-/// (axis-separated movement preserved): the horizontal displacement is resolved first, then the
-/// vertical displacement starts from the clamped horizontal result. This keeps wall-sliding
-/// natural (a blocked axis clamps to the boundary while the free axis still moves) and prevents
-/// diagonal corner-cutting. Unlike a revert-the-whole-step rule, the clamp always moves the
-/// leading edge exactly onto the boundary, so the feet stop exactly at the solid tile's edge
-/// (matching click-to-move) with no one-frame-step gap and no floating-point overshoot
-/// accumulation. <see cref="GameEngine.ClampPlayerToMap"/> remains the post-move safety net.
+/// For a <em>cardinal</em> move each axis is clamped independently and the result of the X axis
+/// feeds the Y axis (axis-separated movement preserved): the horizontal displacement is resolved
+/// first, then the vertical displacement starts from the clamped horizontal result. Unlike a
+/// revert-the-whole-step rule, the clamp always moves the leading edge exactly onto the boundary,
+/// so the feet stop exactly at the solid tile's edge (matching click-to-move) with no
+/// one-frame-step gap and no floating-point overshoot accumulation.
+/// <see cref="GameEngine.ClampPlayerToMap"/> remains the post-move safety net.
+/// </para>
+/// <para>
+/// A <em>diagonal</em> move is <em>all-or-nothing</em> (<see cref="ResolveDiagonal"/>): the
+/// player moves diagonally only when the full displacement is clear on both axes. When either
+/// axis is blocked — e.g. a wall or the map edge on the X axis while Y is free — the player
+/// stops entirely (no wall-sliding along the free axis), so the engine can report a collision
+/// stop. This prevents diagonal corner-cutting and makes the player's movement state honest:
+/// pressing a diagonal pair against a wall keeps the player idle rather than reporting endless
+/// movement along the free axis. Cardinal moves keep the slide-to-boundary clamp, so a straight
+/// move into a wall still stops exactly at the boundary.
 /// </para>
 /// <para>
 /// The per-axis gained-range scan assumes the starting footprint is legal (never overlapping a
@@ -82,6 +96,62 @@ internal static class MovementCollisionResolver
         }
 
         return resolved;
+    }
+
+    /// <summary>
+    /// Resolves a <em>diagonal</em> displacement with <em>all-or-nothing</em> semantics: the full
+    /// requested displacement is applied only when the destination footprint is clear on
+    /// <em>both</em> axes; otherwise the starting position is returned (the move is fully
+    /// blocked). This disables wall-sliding for diagonal movement — a diagonal into a wall where
+    /// only one axis is free stops the character entirely instead of sliding along the free axis,
+    /// so the engine can report a collision stop (<c>IsMoving = false</c>). Cardinal moves keep
+    /// the per-axis slide-to-boundary clamping of <see cref="Resolve"/>, so a straight move into
+    /// a wall still stops exactly at the boundary.
+    /// </summary>
+    /// <param name="from">The starting feet position, in tiles.</param>
+    /// <param name="dx">The requested horizontal displacement, in tiles (non-zero for a diagonal).</param>
+    /// <param name="dy">The requested vertical displacement, in tiles (non-zero for a diagonal).</param>
+    /// <param name="map">The map whose solid tiles (and edge) block movement.</param>
+    /// <param name="halfWidth">The half-width of the collision footprint (<c>hw</c>), in tiles.</param>
+    /// <param name="heightAboveFeet">The height the collision footprint extends above the feet, in tiles.</param>
+    /// <returns>
+    /// The full requested destination position when both axes are clear; otherwise
+    /// <paramref name="from"/> unchanged. When the starting footprint is already illegal, a
+    /// destination that clears the overlap (escaping the wall) is returned, mirroring
+    /// <see cref="Resolve"/>.
+    /// </returns>
+    internal static Position ResolveDiagonal(Position from, double dx, double dy, TileMap map, double halfWidth, double heightAboveFeet)
+    {
+        var destination = new Position(from.X + dx, from.Y + dy);
+
+        // An illegal starting footprint (e.g. left embedded in a wall by an external teleport):
+        // the gained-range scans below cannot detect the already-overlapped tile, so fall back to
+        // the destination-footprint check. A destination that clears the overlap (escaping the
+        // wall) is allowed; a destination that still overlaps a solid tile is refused (never move
+        // deeper into or through a wall), mirroring Resolve's safety net.
+        if (FootprintOverlaps(from, map, halfWidth, heightAboveFeet))
+        {
+            return FootprintOverlaps(destination, map, halfWidth, heightAboveFeet) ? from : destination;
+        }
+
+        // A legal starting footprint: the diagonal move is all-or-nothing. It is applied only when
+        // the full displacement is clear on BOTH axes - the per-axis gained-range scans below
+        // detect any newly-entered solid column or row along the whole displacement, so a large
+        // diagonal step cannot tunnel through a thin wall either. When either axis is blocked, the
+        // move is refused entirely rather than sliding along the free axis, so the player stops at
+        // the first position where one axis is blocked (one diagonal step short of the boundary).
+        var horizontalClear = ClampHorizontal(from, dx, map, halfWidth, heightAboveFeet) == from.X + dx;
+        var verticalClear = ClampVertical(from, dy, map, halfWidth, heightAboveFeet, xAfterX: from.X) == from.Y + dy;
+
+        // Re-validate the destination footprint as a safety net (a legal start whose axes both
+        // scan clear can still land on an overlapping tile through axis interaction), mirroring
+        // Resolve.
+        if (horizontalClear && verticalClear && !FootprintOverlaps(destination, map, halfWidth, heightAboveFeet))
+        {
+            return destination;
+        }
+
+        return from;
     }
 
     /// <summary>
