@@ -85,7 +85,13 @@ namespace RPGEngine;
 /// player at solid tiles, keeps wall-sliding natural and prevents diagonal corner-cutting; and
 /// because a blocked axis slides to the exact boundary instead of reverting the whole step, the
 /// feet stop exactly at the solid tile's edge, matching click-to-move ("colliding with its
-/// feet") with no one-frame-step gap and no floating-point overshoot accumulation. When a move
+/// feet") with no one-frame-step gap and no floating-point overshoot accumulation. The resolver
+/// re-validates the resulting footprint as a safety net and refuses a displacement that would
+/// still overlap a solid tile (only possible when the starting footprint was already illegal,
+/// e.g. embedded in a wall), so key movement never moves the player through a solid tile. The
+/// auto-walk (see <see cref="Click(double, double)"/>) resolves each displacement the same way,
+/// so it never crosses a solid corner either: a blocked auto-walk step cancels the walk instead
+/// of moving the player into the wall. When a move
 /// is <em>fully blocked</em> (no net displacement after the axis-separated resolution, e.g.
 /// walking straight into a wall or into a corner), the engine reports a <em>collision stop</em>
 /// to the player (<see cref="Player.ReportBlockedMove(Direction)"/>), so <see cref="Player.OnMove"/>
@@ -857,13 +863,19 @@ public sealed class GameEngine : IDisposable
     /// <summary>
     /// Advances the auto-walk by one frame: moves the player toward the center of the next
     /// waypoint tile at <see cref="Player.DefaultBaseSpeed"/> (tile units), popping waypoints as
-    /// they are reached and calling <see cref="Player.Stop"/> when the queue empties.
+    /// they are reached and calling <see cref="Player.Stop"/> when the queue empties. When a map
+    /// is set the displacement is resolved with the same per-axis slide-to-boundary clamping as
+    /// key movement (see <see cref="MovementCollisionResolver"/>), so the auto-walk never moves
+    /// the player through a solid tile: if the direct displacement toward the waypoint is
+    /// clamped (e.g. the player is not tile-centred and the first segment would cross a solid
+    /// corner), the path is cancelled and the player stops rather than walking through the wall.
     /// </summary>
     /// <param name="dt">The elapsed time in seconds since the previous frame.</param>
     /// <returns>
     /// <see langword="true"/> when the auto-walk advanced the player this frame (including the
-    /// frame on which the path completed and the player stopped); <see langword="false"/> when
-    /// there is no path to advance, so the caller knows to stop the player itself.
+    /// frame on which the path completed or was cancelled and the player stopped);
+    /// <see langword="false"/> when there is no path to advance, so the caller knows to stop the
+    /// player itself.
     /// </returns>
     private bool TryAdvanceAutoWalk(double dt)
     {
@@ -898,9 +910,47 @@ public sealed class GameEngine : IDisposable
             return true;
         }
 
-        // Move toward the waypoint center by at most one step, without overshooting.
+        // Move toward the waypoint center by at most one step, without overshooting. The move is
+        // resolved against the map's solid tiles exactly like key movement (per-axis
+        // slide-to-boundary clamping, see <see cref="MovementCollisionResolver"/>). The A* path is
+        // over non-solid tiles, so a clear move is returned unchanged; when the move is clamped
+        // the path is not directly traversable from the player's current (possibly
+        // non-tile-centred) position, so the walk is cancelled and the player is not displaced at
+        // all, rather than sliding through (or getting stuck at) a wall.
+        var before = Player.Position;
         var direction = DirectionFromVector(toTarget);
-        Player.Position += toTarget * (step / distance);
+        var move = toTarget * (step / distance);
+        var destination = before + move;
+
+        if (Map is null)
+        {
+            Player.Position = destination;
+        }
+        else
+        {
+            var ts = Map.TileWidth;
+            var (spriteWidth, spriteHeight) = Player.Character.GetSpriteSize(_spriteSheetManager);
+            Player.Position = MovementCollisionResolver.Resolve(
+                before,
+                move.X,
+                move.Y,
+                Map,
+                halfWidth: spriteWidth / (2.0 * ts),
+                halfHeight: spriteHeight / (2.0 * ts));
+        }
+
+        if (Player.Position != destination)
+        {
+            // The direct displacement was clamped (blocked by a solid tile / the map edge): the
+            // waypoint cannot be reached from the current position without crossing a solid tile,
+            // so cancel the walk, leave the player where they were and stop them (raises
+            // Player.OnMove with IsMoving = false only if it was moving).
+            Player.Position = before;
+            CancelAutoWalk();
+            Player.Stop();
+            return true;
+        }
+
         Player.ReportMovement(direction);
         return true;
     }
@@ -969,6 +1019,11 @@ public sealed class GameEngine : IDisposable
     /// <param name="direction">The direction to face and move towards.</param>
     /// <param name="dt">The elapsed time in seconds since the previous frame.</param>
     /// <remarks>
+    /// The resolver re-validates the resulting footprint as a safety net and refuses a
+    /// displacement that would still overlap a solid tile (only possible when the starting
+    /// footprint was already illegal, e.g. left embedded in a wall by an external teleport), so
+    /// key movement never moves the player through a solid tile while a move that clears the
+    /// overlap (escaping the wall) is still allowed.
     /// After the displacement is resolved, the outcome is reported to the player: a move with no
     /// net displacement (fully blocked by solid tiles or the map edge on every axis) is reported
     /// as a <em>collision stop</em> through <see cref="Player.ReportBlockedMove(Direction)"/>,
