@@ -279,8 +279,15 @@ in tile units:
 This keeps **wall-sliding** natural (a blocked axis reverts while the other axis still moves, so
 a diagonal move into a wall slides along the wall on the free axis) and prevents **diagonal
 corner-cutting** (each axis is resolved independently, so a diagonal cannot squeeze diagonally
-through a corner). The map-bounds clamp (`ClampPlayerToMap`) keeps the **lower-half footprint**
-inside the map (the feet clamp to `x ∈ [halfWidth, max(halfWidth, Map.Width - halfWidth)]`,
+through a corner). After the resolution the engine reports the outcome to the player: a move with
+**no net displacement** (fully blocked on every axis, e.g. walking straight into a wall or into a
+corner) is reported as a **collision stop** through `Player.ReportBlockedMove`, so `Player.OnMove`
+fires with `IsMoving = false` even while the movement key is held against the wall (exactly once,
+with the direction the player tried to move in); any move that actually displaced the player
+(including a diagonal slide, whose free axis moved) is reported as movement through
+`Player.ReportMovement` as before. The map-bounds clamp (`ClampPlayerToMap`) keeps the
+**lower-half footprint** inside the map (the feet clamp to
+`x ∈ [halfWidth, max(halfWidth, Map.Width - halfWidth)]`,
 `y ∈ [halfHeight, max(halfHeight, Map.Height)]` — for the default 48×48 sprite with 48 px
 tiles this is `x ∈ [0.5, Map.Width - 0.5]`, `y ∈ [0.5, Map.Height]`) and remains as a
 safety net for positions placed outside the map by other means. The map edge is solid.
@@ -350,13 +357,14 @@ crosses a solid tile and no per-frame collision resolution is needed.
 
 **Movement-state events**: `Player` exposes `OnMove` (`EventHandler<PlayerMoveEventArgs>`), fired
 on every movement-state transition — starts moving (idle → moving), stops moving (moving →
-idle, via `Player.Stop()`), and changes direction while moving. It carries
+idle, via `Player.Stop()` or a collision stop), and changes direction while moving. It carries
 `PlayerMoveEventArgs.IsMoving` and the current facing `Direction`. The engine raises it for both
 manual key movement and auto-walk through `Player.ReportMovement` (the internal bridge used for
 collision-resolved and auto-walk movement, which cannot go through `Player.Move` because that
-method applies the whole displacement at once). `Player.Stop()` raises it with `IsMoving = false`
-only when the player was moving; the engine calls it when there is no input and no auto-walk
-target.
+method applies the whole displacement at once), and reports a fully blocked move (a collision
+stop) through `Player.ReportBlockedMove` so `OnMove` fires with `IsMoving = false` even while a
+movement key is held against the wall. `Player.Stop()` raises it with `IsMoving = false` only
+when the player was moving; the engine calls it when there is no input and no auto-walk target.
 
 ## Rendering
 

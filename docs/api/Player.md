@@ -12,13 +12,15 @@ equivalent to configuring/moving the underlying `Character`.
 
 The player does not listen to input itself. The engine (`GameEngine`) owns the pressed-keys
 state and calls `Move(direction, 1, dt)` in its update loop (or drives the player directly for
-collision-resolved and auto-walk movement through its internal `ReportMovement` bridge).
+collision-resolved and auto-walk movement through its internal `ReportMovement` bridge, and
+reports a fully blocked move through its internal `ReportBlockedMove` bridge).
 
 The player exposes a **movement-state machine** through the `OnMove` event: it fires whenever
-the player *starts moving* (idle → moving), *stops moving* (moving → idle, via `Stop()`), or
-*changes direction while moving*. The event is raised for both manual (key) movement and
-auto-walk movement, so hosts can react to the player's movement state without polling the
-position every frame.
+the player *starts moving* (idle → moving), *stops moving* (moving → idle, via `Stop()` or a
+collision stop reported by the engine), or *changes direction while moving*. The event is raised
+for both manual (key) movement and auto-walk movement, so hosts can react to the player's
+movement state without polling the position every frame. A collision stop fires `OnMove` with
+`IsMoving = false` even while the movement key stays pressed against the wall.
 
 ## Fields
 
@@ -92,10 +94,16 @@ player.SpriteSheets.Add(new SpriteSheetRef("hero", CharacterIndex: 1));
 ### `event EventHandler<PlayerMoveEventArgs>? OnMove`
 
 Occurs when the player's movement state changes: it **starts moving** (idle → moving), **stops
-moving** (moving → idle, via `Stop()`), or **changes direction while moving**. The event
-carries the new state (`PlayerMoveEventArgs.IsMoving`) and the player's current facing direction
-(`PlayerMoveEventArgs.Direction`). It is raised for both manual (key) movement and auto-walk
-movement.
+moving** (moving → idle, via `Stop()` or a collision stop), or **changes direction while
+moving**. The event carries the new state (`PlayerMoveEventArgs.IsMoving`) and the player's
+current facing direction (`PlayerMoveEventArgs.Direction`). It is raised for both manual (key)
+movement and auto-walk movement.
+
+When the player **stops because of a collision** (the engine reports a fully blocked move against
+a solid tile or the map edge), `OnMove` fires with `IsMoving = false` **even while the movement
+key is still held** — the stop is reported exactly once, and holding the key against the same
+wall does not raise the event again. The reported direction is the direction the player tried to
+move in (the player turns to face the wall).
 
 ```csharp
 var player = new Player();
@@ -107,6 +115,10 @@ player.OnMove += (_, e) =>
 
 player.Move(Direction.Right, speedFactor: 1, dt: 1); // prints "moving" / "facing Right"
 player.Stop();                                       // prints "stopped" / "facing Right"
+
+// Collision stop while the movement key is held: the engine reports the fully blocked move.
+// With D held against a solid tile (or the map edge), OnMove fires (false, Right) exactly
+// once when the player is blocked; keeping D held against the same wall raises nothing more.
 ```
 
 ### `sealed record PlayerMoveEventArgs(bool IsMoving, Direction Direction)`

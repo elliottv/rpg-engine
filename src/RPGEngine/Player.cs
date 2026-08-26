@@ -22,9 +22,12 @@ namespace RPGEngine;
 /// <para>
 /// The player exposes a movement-state machine through <see cref="OnMove"/>: it fires whenever
 /// the player <em>starts moving</em> (idle &#8594; moving), <em>stops moving</em> (moving &#8594;
-/// idle, via <see cref="Stop"/>), or <em>changes direction while moving</em>. The event is raised
-/// for both manual (key) movement and auto-walk movement, so hosts can react to the player's
-/// movement state without polling the position every frame.
+/// idle, via <see cref="Stop"/> or a collision stop reported by the engine), or <em>changes
+/// direction while moving</em>. The event is raised for both manual (key) movement and auto-walk
+/// movement, so hosts can react to the player's movement state without polling the position every
+/// frame. A collision stop raises <see cref="OnMove"/> with
+/// <see cref="PlayerMoveEventArgs.IsMoving"/> set to <see langword="false"/> even while the
+/// movement key stays pressed against the wall.
 /// </para>
 /// </remarks>
 public sealed class Player
@@ -48,10 +51,13 @@ public sealed class Player
 
     /// <summary>
     /// Occurs when the player's movement state changes: it starts moving (idle &#8594; moving),
-    /// stops moving (moving &#8594; idle, via <see cref="Stop"/>), or changes direction while
-    /// moving. The event carries the new state (<see cref="PlayerMoveEventArgs.IsMoving"/>) and
-    /// the player's current facing direction (<see cref="PlayerMoveEventArgs.Direction"/>). It is
-    /// raised for both manual (key) movement and auto-walk movement.
+    /// stops moving (moving &#8594; idle, via <see cref="Stop"/> or a collision stop reported by
+    /// the engine), or changes direction while moving. The event carries the new state
+    /// (<see cref="PlayerMoveEventArgs.IsMoving"/>) and the player's current facing direction
+    /// (<see cref="PlayerMoveEventArgs.Direction"/>). It is raised for both manual (key)
+    /// movement and auto-walk movement. A collision stop fires with
+    /// <see cref="PlayerMoveEventArgs.IsMoving"/> set to <see langword="false"/> even while
+    /// the movement key stays pressed against the wall.
     /// </summary>
     public event EventHandler<PlayerMoveEventArgs>? OnMove;
 
@@ -233,6 +239,38 @@ public sealed class Player
         if (!wasMoving || direction != previousDirection)
         {
             OnMove?.Invoke(this, new PlayerMoveEventArgs(true, direction));
+        }
+    }
+
+    /// <summary>
+    /// Records that the player attempted to move in <paramref name="direction"/> but was fully
+    /// blocked (e.g. by a solid tile or the map edge): the player faces <paramref name="direction"/>
+    /// and, when it was moving, transitions to idle and raises <see cref="OnMove"/> with
+    /// <see cref="PlayerMoveEventArgs.IsMoving"/> set to <see langword="false"/>. When the player was
+    /// already idle and the direction is unchanged, this is a no-op (no repeated events while the key
+    /// is held against the wall).
+    /// </summary>
+    /// <remarks>
+    /// This is the internal bridge the engine uses to report a collision stop: unlike
+    /// <see cref="ReportMovement"/> it marks the player as idle (the displacement was fully blocked,
+    /// so the player is not moving), so <see cref="OnMove"/> reflects the actual movement state even
+    /// while a movement key stays pressed against a wall. Mirroring
+    /// <see cref="Move(Direction, double, double)"/> with <c>speedFactor: 0</c>, a turn while already
+    /// idle and facing <paramref name="direction"/> raises the event with
+    /// <see cref="PlayerMoveEventArgs.IsMoving"/> set to <see langword="false"/>.
+    /// </remarks>
+    /// <param name="direction">The direction the player tried to move in (and now faces).</param>
+    internal void ReportBlockedMove(Direction direction)
+    {
+        var wasMoving = _isMoving;
+        var previousDirection = _lastDirection;
+
+        Direction = direction;
+        _isMoving = false;
+
+        if (wasMoving || direction != previousDirection)
+        {
+            OnMove?.Invoke(this, new PlayerMoveEventArgs(false, direction));
         }
     }
 }

@@ -80,8 +80,13 @@ namespace RPGEngine;
 /// (<see cref="Player.Position"/> is the middle-bottom of the sprite): only the lower half is
 /// tested against solid tiles, so the upper body never collides with the ground. Clamping keeps
 /// that lower-half footprint inside the map. This blocks the player at solid tiles, keeps
-/// wall-sliding natural and prevents diagonal corner-cutting. See <c>docs/Architecture.md</c>
-/// for the collision model.
+/// wall-sliding natural and prevents diagonal corner-cutting. When a move is <em>fully blocked</em>
+/// (no net displacement after the axis-separated resolution, e.g. walking straight into a wall or
+/// into a corner), the engine reports a <em>collision stop</em> to the player
+/// (<see cref="Player.ReportBlockedMove(Direction)"/>), so <see cref="Player.OnMove"/> fires
+/// with <see cref="PlayerMoveEventArgs.IsMoving"/> set to <see langword="false"/> even while
+/// the movement key is held against the wall. See <c>docs/Architecture.md</c> for the collision
+/// model.
 /// </para>
 /// <para>
 /// The engine is <see cref="IDisposable"/>: it owns the assigned map and disposes it when
@@ -953,6 +958,14 @@ public sealed class GameEngine : IDisposable
     /// <param name="direction">The direction to face and move towards.</param>
     /// <param name="dt">The elapsed time in seconds since the previous frame.</param>
     /// <remarks>
+    /// After the displacement is resolved, the outcome is reported to the player: a move with no
+    /// net displacement (fully blocked by solid tiles or the map edge on every axis) is reported
+    /// as a <em>collision stop</em> through <see cref="Player.ReportBlockedMove(Direction)"/>,
+    /// so <see cref="Player.OnMove"/> fires with <see cref="PlayerMoveEventArgs.IsMoving"/>
+    /// set to <see langword="false"/> even while the movement key stays held; a move that
+    /// actually displaced the player is reported as movement through
+    /// <see cref="Player.ReportMovement(Direction)"/> as before (a diagonal slide along a wall
+    /// still counts as movement because the free axis changed the position).
     /// NPCs are not moved by the engine (they have no AI yet), so collision resolution only
     /// applies to the player here; the public <see cref="Tiled.TileMap.IsSolid"/> API is
     /// available for future NPC logic.
@@ -960,8 +973,10 @@ public sealed class GameEngine : IDisposable
     private void MovePlayerWithCollisionResolution(Direction direction, double dt)
     {
         // The engine resolves the displacement itself (axis by axis) instead of calling
-        // Player.Move, which would move both axes at once; the direction is set through
-        // Player.ReportMovement at the end, which also raises Player.OnMove on state transitions.
+        // Player.Move, which would move both axes at once. The position is captured before the
+        // resolution so a fully blocked move (no net displacement) can be reported as a
+        // collision stop instead of movement below.
+        var before = Player.Position;
         var delta = direction.Delta() * (Player.Character.BaseSpeed * dt);
 
         if (Map is null)
@@ -991,7 +1006,20 @@ public sealed class GameEngine : IDisposable
             Player.Position = position;
         }
 
-        Player.ReportMovement(direction);
+        if (Player.Position == before)
+        {
+            // The player is fully blocked (no net displacement after the axis-separated
+            // resolution, e.g. walking straight into a wall or into a corner): report the
+            // collision stop instead of movement, so Player.OnMove fires with IsMoving = false
+            // exactly once while the movement key is held against the wall.
+            Player.ReportBlockedMove(direction);
+        }
+        else
+        {
+            // The player actually displaced: report movement as before (a diagonal slide along
+            // a wall still counts as movement because the free axis changed the position).
+            Player.ReportMovement(direction);
+        }
     }
 
     /// <summary>
