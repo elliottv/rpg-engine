@@ -57,8 +57,8 @@ registry and the pressed-keys state, and exposes the game-loop entry points `Upd
   prerendered tile layers, a green dot for the player and a yellow dot for each NPC.
   `zoomLevel` `1.0` fits the whole map to the canvas; values above `1` zoom in and pan around
   the player's dot (clamped to the map edges, like the main camera); values between `0` and `1`
-  zoom out further. The minimap does not clear its canvas and leaves the unused margins blank,
-  so the host owns the minimap background.
+  zoom out further. When a map is set the minimap clears its canvas to **black** first (like
+  `Render`) and draws the map and dots on top, so the unused margins are black.
 - The engine is **`IDisposable`**: it owns the assigned map and disposes it when `Map` is
   replaced or when the engine itself is disposed (a `TileMap` is disposable because it
   prerenders each tile layer into an `SKImage` on load).
@@ -216,7 +216,7 @@ the same convention as `Render`.
 **Zoom semantics** (`zoomLevel`, relative to the "fit the whole map" view):
 
 - `1.0` (the default) **fits the entire map** into the canvas, centered, with the aspect ratio
-  preserved and the unused margins left blank.
+  preserved and the unused margins left black.
 - `> 1` **zooms in**: the map is drawn larger than the canvas and the view pans around the
   player's dot, clamped to the map edges (like the main camera).
 - `0 < zoomLevel < 1` zooms out further.
@@ -226,13 +226,14 @@ The base fit scale is `min(canvasWidth / Map.PixelWidth, canvasHeight / Map.Pixe
 effective scale is `baseFit * zoomLevel`. When the whole scaled map fits, it is centered; when
 zoomed in, the visible region (`canvasWidth / scale` × `canvasHeight / scale` map pixels) is
 centered on the player's position in map pixels (`Player.Position * ts`) and clamped inside the
-map bounds. With no map it is a **no-op** (the canvas is left untouched). The method does **not**
-clear the canvas and never draws into the unused area — the host owns the minimap background — and
-it is a pure render (it never mutates engine state).
+map bounds. With no map it is a **no-op** (the canvas is left untouched). When a map is set it
+first **clears the canvas to black** (like `Render`), then draws the map and dots on top, so a map
+smaller than the canvas is centered on a black background and the unused margins are black. It is
+a pure render (it never mutates engine state).
 
 ```csharp
 // Default fit: the whole map is drawn into the minimap canvas, centered, aspect preserved; the
-// unused margins stay blank (the host owns the minimap background).
+// unused margins are black (the minimap clears its canvas to black when a map is set).
 using var minimap = new SKBitmap(240, 240);
 using (var canvas = new SKCanvas(minimap))
 {

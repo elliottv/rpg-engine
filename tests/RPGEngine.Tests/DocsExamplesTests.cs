@@ -163,7 +163,8 @@ public class DocsExamplesTests
     // docs/api/GameEngine.md: the RenderMinimap example. The minimap renders
     // the map's prerendered layers plus a green player dot and yellow NPC dots
     // on a separate canvas; zoomLevel 1.0 fits the whole map, > 1 zooms in
-    // around the player's dot (clamped to the map edges).
+    // around the player's dot (clamped to the map edges). When a map is set
+    // the canvas is cleared to black first, so the unused margins are black.
     // ---------------------------------------------------------------------
     /// <summary>
     /// Verifies the RenderMinimap doc example: the default fit draws the whole map and the dots
@@ -181,7 +182,7 @@ public class DocsExamplesTests
         engine.Characters.Add(new Character { Position = new Position(3.5, 1.5) });
 
         // Default fit: the whole map is drawn into the minimap canvas, centered, aspect preserved;
-        // the unused margins stay blank (the host owns the minimap background).
+        // the unused margins are black (the minimap clears its canvas to black when a map is set).
         using var minimap = new SKBitmap(240, 240);
         using (var canvas = new SKCanvas(minimap))
         {
@@ -195,7 +196,7 @@ public class DocsExamplesTests
         Assert.NotEqual(0, minimap.GetPixel(120, 90).Alpha);   // a tile pixel inside the map
         Assert.Equal(SKColors.Green, minimap.GetPixel(30, 90));  // player dot (0.5,0.5) -> (30,90)
         Assert.Equal(SKColors.Yellow, minimap.GetPixel(210, 150)); // NPC dot (3.5,1.5) -> (210,150)
-        Assert.Equal(0, minimap.GetPixel(120, 5).Alpha);       // top margin blank
+        Assert.Equal(SKColors.Black, minimap.GetPixel(120, 5)); // top margin black
 
         // Zoomed in: the view is centered on the player's dot and clamps at the map edges.
         using var zoomed = new SKBitmap(240, 240);
