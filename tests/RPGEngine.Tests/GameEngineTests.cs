@@ -1018,7 +1018,13 @@ public class GameEngineTests
         Assert.True(engine.Player.Position.X + 0.5 <= 2.0 + 1e-9);
     }
 
-    /// <summary>Verifies the map edge is solid: with no collision layer the player cannot walk out of the map.</summary>
+    /// <summary>
+    /// Verifies the map edge is solid: with no collision layer the player cannot walk out of the
+    /// map, and the displacement slides to the <em>exact</em> map edge. Walking right clamps the
+    /// feet to exactly x = 1.5 (right edge at x = 2), walking down clamps them to exactly
+    /// y = 2.0 (the feet at the bottom edge), and walking up clamps them to exactly y = 0.5 (the
+    /// top edge at y = 0) - the default 48x48 sprite with 48 px tiles has hw = hh = 0.5.
+    /// </summary>
     [Fact]
     public void Update_MapEdgeIsSolid_PlayerCannotLeaveMap()
     {
@@ -1028,26 +1034,207 @@ public class GameEngineTests
         ConfigurePlayerSprite(engine, seed: 1);
 
         // Walk right: the lower-half footprint stops when its right edge (feet X + 0.5) reaches
-        // the map edge at x=2, so the player's feet stop at x = 1.5 instead of leaving the map.
+        // the map edge at x=2, so the player's feet stop at exactly x = 1.5.
         engine.Player.Position = new Position(0.5, 0.5);
         engine.Input(Key.D, true);
-        engine.Update(dt: 0.5); // feet reach X = 1.5 (footprint [1.0, 2.0], still inside the map)
-        engine.Update(dt: 0.5); // would leave the map and is reverted
+        for (var frame = 0; frame < 300; frame++)
+        {
+            engine.Update(FrameDt);
+        }
 
-        Assert.Equal(1.5, engine.Player.Position.X, precision: 6);
-        Assert.Equal(0.5, engine.Player.Position.Y, precision: 6);
+        Assert.Equal(1.5, engine.Player.Position.X, precision: 9);
+        Assert.Equal(0.5, engine.Player.Position.Y, precision: 9);
         Assert.True(engine.Player.Position.X + 0.5 <= 2.0 + 1e-9);
 
-        // Then walk down: the same rule clamps the feet to y = 2.0 (the footprint's bottom edge,
-        // which is the feet, at the map edge y=2).
+        // Then walk down: the same rule clamps the feet to exactly y = 2.0 (the footprint's
+        // bottom edge, which is the feet, at the map edge y=2).
         engine.Input(Key.D, false);
         engine.Input(Key.S, true);
-        engine.Update(dt: 0.75); // feet reach Y = 2.0 (footprint [1.5, 2.0], still inside the map)
-        engine.Update(dt: 0.1);  // would leave the map and is reverted
+        for (var frame = 0; frame < 300; frame++)
+        {
+            engine.Update(FrameDt);
+        }
 
-        Assert.Equal(1.5, engine.Player.Position.X, precision: 6);
-        Assert.Equal(2.0, engine.Player.Position.Y, precision: 6);
+        Assert.Equal(1.5, engine.Player.Position.X, precision: 9);
+        Assert.Equal(2.0, engine.Player.Position.Y, precision: 9);
         Assert.True(engine.Player.Position.Y <= 2.0 + 1e-9);
+
+        // Finally walk up: the top edge (feet Y - 0.5) clamps at the top map edge y = 0, so the
+        // feet stop at exactly y = 0.5.
+        engine.Input(Key.S, false);
+        engine.Input(Key.W, true);
+        for (var frame = 0; frame < 300; frame++)
+        {
+            engine.Update(FrameDt);
+        }
+
+        Assert.Equal(1.5, engine.Player.Position.X, precision: 9);
+        Assert.Equal(0.5, engine.Player.Position.Y, precision: 9);
+        Assert.True(engine.Player.Position.Y - 0.5 >= 0.0 - 1e-9);
+    }
+
+    // ---------------------------------------------------------------------
+    // Story 56: move-by-key collisions clamp to the exact tile boundary. The
+    // axis-separated resolution slides each blocked axis to the exact boundary
+    // of the first solid tile (or the map edge) instead of reverting the whole
+    // step, so the feet stop exactly at the solid tile's edge - matching
+    // click-to-move - with no one-frame-step gap and no floating-point
+    // overshoot accumulation.
+    // ---------------------------------------------------------------------
+    /// <summary>
+    /// Verifies holding S (down) at 60 fps stops the feet at exactly y = 2.0 when a solid row
+    /// starts at y = 2, instead of one frame-step short (~1.9667) as with the old
+    /// revert-the-whole-step rule.
+    /// </summary>
+    [Fact]
+    public void Update_KeyMovementDown_ClampsFeetToExactSolidRowBoundary()
+    {
+        // 6x6 map: a "walls" collision layer with a solid row at y=2 for every column.
+        var gids = new uint[36];
+        for (var x = 0; x < 6; x++)
+        {
+            gids[(2 * 6) + x] = 1;
+        }
+
+        using var fixture = CreateCollisionMapFixture(6, 6, gids);
+        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        ConfigurePlayerSprite(engine, seed: 1);
+
+        engine.Player.Position = new Position(2.0, 0.5);
+        engine.Input(Key.S, true);
+
+        for (var frame = 0; frame < 300; frame++)
+        {
+            engine.Update(FrameDt);
+        }
+
+        // The feet stop at exactly the solid row's top edge (y = 2.0), never one step short.
+        Assert.Equal(2.0, engine.Player.Position.Y, precision: 9);
+        Assert.Equal(2.0, engine.Player.Position.X, precision: 9);
+        Assert.True(engine.Player.Position.Y <= 2.0 + 1e-9, "The footprint must never overlap the solid row.");
+    }
+
+    /// <summary>
+    /// Verifies holding D (right) stops the feet at exactly x = 1.5 when a solid column starts
+    /// at x = 2 (the right edge of the footprint touches the column's left edge).
+    /// </summary>
+    [Fact]
+    public void Update_KeyMovementRight_ClampsFeetToExactSolidColumnBoundary()
+    {
+        // 6x6 map: a "walls" collision layer with a solid column at x=2 for every row.
+        var gids = new uint[36];
+        for (var y = 0; y < 6; y++)
+        {
+            gids[(y * 6) + 2] = 1;
+        }
+
+        using var fixture = CreateCollisionMapFixture(6, 6, gids);
+        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        ConfigurePlayerSprite(engine, seed: 1);
+
+        engine.Player.Position = new Position(0.5, 2.0);
+        engine.Input(Key.D, true);
+
+        for (var frame = 0; frame < 300; frame++)
+        {
+            engine.Update(FrameDt);
+        }
+
+        Assert.Equal(1.5, engine.Player.Position.X, precision: 9);
+        Assert.Equal(2.0, engine.Player.Position.Y, precision: 9);
+        Assert.True(engine.Player.Position.X + 0.5 <= 2.0 + 1e-9, "The footprint must never overlap the solid column.");
+    }
+
+    /// <summary>
+    /// Verifies holding A (left) approaching the solid column [2,3) from the right stops the
+    /// feet at exactly x = 3.5: the left edge of the footprint touches the column's right edge.
+    /// </summary>
+    [Fact]
+    public void Update_KeyMovementLeft_ClampsFeetToExactSolidColumnBoundary()
+    {
+        // 6x6 map: a "walls" collision layer with a solid column at x=2 for every row.
+        var gids = new uint[36];
+        for (var y = 0; y < 6; y++)
+        {
+            gids[(y * 6) + 2] = 1;
+        }
+
+        using var fixture = CreateCollisionMapFixture(6, 6, gids);
+        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        ConfigurePlayerSprite(engine, seed: 1);
+
+        engine.Player.Position = new Position(5.5, 2.0);
+        engine.Input(Key.A, true);
+
+        for (var frame = 0; frame < 300; frame++)
+        {
+            engine.Update(FrameDt);
+        }
+
+        Assert.Equal(3.5, engine.Player.Position.X, precision: 9);
+        Assert.Equal(2.0, engine.Player.Position.Y, precision: 9);
+        Assert.True(engine.Player.Position.X - 0.5 >= 3.0 - 1e-9, "The footprint must never overlap the solid column.");
+    }
+
+    /// <summary>
+    /// Verifies holding W (up) approaching the solid row [2,3) from below stops the feet at
+    /// exactly y = 3.5: the top edge of the footprint touches the row's bottom edge.
+    /// </summary>
+    [Fact]
+    public void Update_KeyMovementUp_ClampsFeetToExactSolidRowBoundary()
+    {
+        // 6x6 map: a "walls" collision layer with a solid row at y=2 for every column.
+        var gids = new uint[36];
+        for (var x = 0; x < 6; x++)
+        {
+            gids[(2 * 6) + x] = 1;
+        }
+
+        using var fixture = CreateCollisionMapFixture(6, 6, gids);
+        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        ConfigurePlayerSprite(engine, seed: 1);
+
+        engine.Player.Position = new Position(2.0, 5.5);
+        engine.Input(Key.W, true);
+
+        for (var frame = 0; frame < 300; frame++)
+        {
+            engine.Update(FrameDt);
+        }
+
+        Assert.Equal(3.5, engine.Player.Position.Y, precision: 9);
+        Assert.Equal(2.0, engine.Player.Position.X, precision: 9);
+        Assert.True(engine.Player.Position.Y - 0.5 >= 3.0 - 1e-9, "The footprint must never overlap the solid row.");
+    }
+
+    /// <summary>
+    /// Verifies a single large step (a displacement of several tiles toward a solid tile) stops
+    /// the feet exactly at the boundary: the clamp (not the revert) applies, so there is no
+    /// tunneling through the wall and no one-step shortfall.
+    /// </summary>
+    [Fact]
+    public void Update_KeyMovementLargeStep_ClampsFeetToExactBoundaryWithoutTunneling()
+    {
+        // 6x6 map: a "walls" collision layer with a solid column at x=3 for every row.
+        var gids = new uint[36];
+        for (var y = 0; y < 6; y++)
+        {
+            gids[(y * 6) + 3] = 1;
+        }
+
+        using var fixture = CreateCollisionMapFixture(6, 6, gids);
+        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        ConfigurePlayerSprite(engine, seed: 1);
+
+        // A single step of 4 tiles (dt = 2.0 at 2 tiles/s) toward the wall at x = 3: the feet
+        // clamp to exactly x = 2.5 (the right edge of the footprint at the wall's left edge).
+        engine.Player.Position = new Position(0.5, 1.0);
+        engine.Input(Key.D, true);
+        engine.Update(dt: 2.0);
+
+        Assert.Equal(2.5, engine.Player.Position.X, precision: 9);
+        Assert.Equal(1.0, engine.Player.Position.Y, precision: 9);
+        Assert.True(engine.Player.Position.X + 0.5 <= 3.0 + 1e-9, "The footprint must never overlap the solid column.");
     }
 
     // ---------------------------------------------------------------------
