@@ -203,8 +203,8 @@ guard.SpriteSheets.Add(new SpriteSheetRef("guard_head", CharacterIndex: 3));
 
 ## Movement and input
 
-There are **two ways a character moves**, and both go through the same `Character.Update(dt)`
-(internal) called by the engine's update loop every frame:
+There are **two ways a character moves**, and both go through the same `Character.Update(dt, map)`
+(internal, `map` nullable) called by the engine's update loop every frame:
 
 1. **Engine key input (the player).** `GameEngine.Update` combines every held bound key into a
    single **8-direction vector**: each key that is bound to a movement direction (via
@@ -217,22 +217,29 @@ There are **two ways a character moves**, and both go through the same `Characte
    resolved (and collision-checked) by the engine itself, then handed to `Player.ReportMovement`.
 2. **Autonomous movement (`Character.StartMoving` / `StopMoving`).** A host starts a character
    (typically an NPC in `GameEngine.Characters`) with `StartMoving(direction)`, which faces it
-   and sets `IsMoving = true`. While `IsMoving`, every `Character.Update(dt)` moves the character
-   towards its current `Direction` by `BaseSpeed * dt` tiles — exactly like the player while a
-   movement key is held — until `StopMoving()` is called. The engine's update loop calls
-   `Update(dt)` on every character each frame, so a started character moves automatically with no
-   per-frame host code.
+   and sets `IsMoving = true`. While `IsMoving`, every `Character.Update(dt, map)` moves the
+   character towards its current `Direction` by `BaseSpeed * dt` tiles — exactly like the player
+   while a movement key is held — until `StopMoving()` is called. The engine's update loop calls
+   `Update(dt, map)` on every character each frame (supplying the current map), so a started
+   character moves automatically with no per-frame host code.
 
-**Autonomous movement is not collision-resolved by the engine** (collision resolution applies to
-the player only), so hosts that drive NPCs with `StartMoving` are responsible for keeping them in
-bounds themselves. Also, do not combine `StartMoving` on the player's character with the engine's
-key-driven player movement: `GameEngine.Update` calls `Player.Character.Update(dt)` each frame,
-so both displacements would add up. `StartMoving`/`StopMoving` target characters the host drives
-itself (NPCs in `GameEngine.Characters`).
+**Autonomous movement is collision-resolved exactly like the player's key-driven movement**: the
+engine passes the map to every character's `Update`, so a started character's displacement is
+resolved against the map's solid tiles and the map edge with the same footprint and the same
+per-axis slide-to-boundary (cardinal) / all-or-nothing (diagonal) semantics as the player (see
+`MovementCollisionResolver.ResolveDisplacement`). NPCs therefore stop at walls and at the map
+edge instead of walking through the world; a fully blocked character simply stays put (and its
+walk cycle snaps to the standing frame). Do not combine `StartMoving` on the player's character
+with the engine's key-driven player movement: `GameEngine.Update` calls
+`Player.Character.Update(dt, map)` each frame, so both displacements would add up.
+`StartMoving`/`StopMoving` target characters the host drives itself (NPCs in
+`GameEngine.Characters`). The one-shot `Move(...)` displacement stays a raw, non-resolved
+displacement (only the `StartMoving`/`Update` path is collision-resolved).
 
-The walk-cycle animation detects movement the same way for both paths: `Character.Update(dt)`
+The walk-cycle animation detects movement the same way for both paths: `Character.Update(dt, map)`
 compares `Position` to the previous update's position, so the cycle advances while a character is
-moving (however it is being driven) and snaps back to the standing frame as soon as it stops.
+moving (however it is being driven) and snaps back to the standing frame as soon as it stops —
+including when a fully blocked character is resolved to the same position.
 
 Movement speeds are in **tiles per second**; a move of one second at the default speed
 (`Player.DefaultBaseSpeed == 2`) travels exactly **2 tiles** (96 px with 48 px tiles).
@@ -261,18 +268,21 @@ has a non-empty tile (GID != 0) at that cell. The **map edge is solid**: `IsSoli
 a map has no collision layer, every in-bounds cell is walkable. Non-collision layers never block
 (a tile drawn from a normal layer is walkable even if it visually overlaps the character).
 
-The engine resolves the player's movement with **axis-separated movement** against a footprint
-in tile units:
+The engine resolves every character's movement (the player's key-driven and auto-walk movement
+and every character's autonomous `StartMoving`/`Update` path) with **axis-separated movement**
+against a footprint in tile units:
 
-- The footprint is the **fixed 1×1 tile (48×48 px) lower-body box** of the player sprite,
-  **anchored at the feet** (`Position` is the sprite's middle-bottom, and the middle of the feet
-  sits at the bottom-centre of the box — `(24, 48)` when the box's origin is its upper-left).
-  The rectangle is `x ∈ [pos.X - 0.5, pos.X + 0.5]`, `y ∈ [pos.Y - 1.0, pos.Y]` in tiles,
-  **independent of the rendered sprite size**: a taller/wider spritesheet never widens or raises
-  the box, so a **1-tile-wide corridor always fits** (the previous sprite-derived footprint could
-  be wider than 1 tile for larger sprites, which stopped the player before the corridor entrance),
-  and the feet always stop at the solid tile's edge whether the tile is below, above or beside the
-  player. For the default 48×48 sprite the box covers the whole body.
+- The footprint is the **fixed 0.5×0.5-tile (24×24 px at 48 px tiles) lower-body box** of a
+  character sprite, **anchored at the feet** (`Position` is the sprite's middle-bottom, and the
+  middle of the feet sits at the bottom-centre of the box — `(12, 24)` when the box's origin is
+  its upper-left). The rectangle is `x ∈ [pos.X - 0.25, pos.X + 0.25]`,
+  `y ∈ [pos.Y - 0.5, pos.Y]` in tiles, **independent of the rendered sprite size**: a
+  taller/wider spritesheet never widens or raises the box, so a **1-tile-wide corridor always
+  fits** (the previous sprite-derived footprint could be wider than 1 tile for larger sprites,
+  which stopped the player before the corridor entrance), and the feet always stop at the solid
+  tile's edge whether the tile is below, above or beside the character. The player and every NPC
+  share this footprint (the constants live on `MovementCollisionResolver`, the footprint
+  authority).
 - `TileMap.IsAreaSolid(x, y, width, height)` (internal) tests the tiles overlapped by that
   tile-unit rectangle: the bounds are floored to the containing cells, and a rectangle that ends
   exactly on a tile boundary does not count the next tile.
@@ -282,7 +292,7 @@ in tile units:
   is clear the full requested displacement is applied; otherwise the axis slides to the
   **closest legal position on that axis**, so the leading edge of the footprint stops **exactly**
   at the near edge of the first blocking solid tile (or at the map edge, which is solid). With
-  the 1×1 box (half-width `hw = 0.5`, height above the feet `heightAboveFeet = 1.0`), the exact
+  the 0.5×0.5 box (half-width `hw = 0.25`, height above the feet `heightAboveFeet = 0.5`), the exact
   boundaries are: moving **right**, the right edge stops at `x = c - hw` (first solid gained
   column `c`; the right map edge is `c = Width`); moving **left**, the left edge stops at
   `x = c + 1 + hw` (last solid gained column `c`; the left map edge is `c = -1`); moving **down**,
@@ -309,15 +319,19 @@ or into a corner) is reported as a **collision stop** through `Player.ReportBloc
 (exactly once, with the direction the player tried to move in); any move that actually displaced
 the player (including a diagonal slide, whose free axis moved) is reported as movement through
 `Player.ReportMovement` as before. The map-bounds clamp (`ClampPlayerToMap`) keeps the **fixed
-1×1 box** inside the map (the feet clamp to
-`x ∈ [0.5, max(0.5, Map.Width - 0.5)]`,
-`y ∈ [1.0, max(1.0, Map.Height)]`) and remains as a safety net for positions placed outside the
-map by other means. The map edge is solid.
+0.5×0.5 box** inside the map for the player (the feet clamp to
+`x ∈ [0.25, max(0.25, Map.Width - 0.25)]`,
+`y ∈ [0.5, max(0.5, Map.Height)]`) and remains as the player-only post-move safety net for
+positions placed outside the map by other means; NPCs are kept in bounds by the solid map edge
+through their resolved autonomous movement (see `TileMap.IsSolid`). The map edge is solid.
 
-NPCs are not moved by the engine (they have no AI yet), so collision resolution currently only
-applies to the player; the public `TileMap.IsSolid` API is available for future NPC logic.
-Per-tile collision shapes other than full-cell solidity, dynamic (runtime-mutable) collision
-layers and one-way platforms are out of scope for this story.
+Autonomous movement of **every** character (the `StartMoving`/`Update` path) is collision-resolved
+against the map's solid tiles and the map edge exactly like the player's key-driven movement, via
+`MovementCollisionResolver.ResolveDisplacement` — NPCs added to `GameEngine.Characters` with
+`StartMoving` stop at walls and at the map edge instead of walking through the world.
+Character-vs-character collision (characters blocking each other), per-tile collision shapes other
+than full-cell solidity, dynamic (runtime-mutable) collision layers and one-way platforms are out
+of scope for this story.
 
 ## Pathfinding
 
