@@ -73,20 +73,34 @@ namespace RPGEngine;
 /// invalid (solid / no path), in which case it cancels the walk.
 /// </para>
 /// <para>
-/// When a map is set, the player's displacement is resolved with <em>axis-separated
-/// movement</em> against the map's solid tiles: each axis is applied in turn and reverted when
-/// the player's collision footprint would overlap a solid tile or leave the map (the map edge
-/// is solid). The footprint is the <em>lower half</em> of the sprite anchored at the feet
-/// (<see cref="Player.Position"/> is the middle-bottom of the sprite): only the lower half is
-/// tested against solid tiles, so the upper body never collides with the ground. Clamping keeps
-/// that lower-half footprint inside the map. This blocks the player at solid tiles, keeps
-/// wall-sliding natural and prevents diagonal corner-cutting. When a move is <em>fully blocked</em>
-/// (no net displacement after the axis-separated resolution, e.g. walking straight into a wall or
-/// into a corner), the engine reports a <em>collision stop</em> to the player
-/// (<see cref="Player.ReportBlockedMove(Direction)"/>), so <see cref="Player.OnMove"/> fires
-/// with <see cref="PlayerMoveEventArgs.IsMoving"/> set to <see langword="false"/> even while
-/// the movement key is held against the wall. See <c>docs/Architecture.md</c> for the collision
-/// model.
+/// When a map is set, the player's displacement is resolved with <em>axis-separated movement
+/// and per-axis slide-to-boundary clamping</em> against the map's solid tiles: each axis is
+/// applied in turn and, when the player's collision footprint would overlap a solid tile or
+/// leave the map (the map edge is solid), it slides to the <em>closest legal position on that
+/// axis</em>, so the leading edge of the footprint stops <em>exactly</em> at the near edge of
+/// the first blocking solid tile (or at the map edge). The footprint is a <em>fixed 1×1 tile
+/// (48×48 px) box representing the lower body of the player sprite</em>, anchored at the feet
+/// (<see cref="Player.Position"/> is the middle-bottom of the sprite; the middle of the feet
+/// sits at the bottom-centre of the box, <c>(24, 48)</c> when the box's origin is its upper-left).
+/// The box is independent of the rendered sprite size, so a 1-tile-wide corridor always fits
+/// regardless of the spritesheet's cell size, and the feet always stop exactly at the solid
+/// tile's edge whether the tile is below, above or beside the player. Clamping keeps that
+/// 1×1 box inside the map. This blocks the player at solid tiles, keeps wall-sliding natural
+/// and prevents diagonal corner-cutting; and because a blocked axis slides to the exact boundary
+/// instead of reverting the whole step, the feet stop exactly at the solid tile's edge, matching
+/// click-to-move ("colliding with its feet") with no one-frame-step gap and no floating-point
+/// overshoot accumulation. The resolver re-validates the resulting footprint as a safety net and
+/// refuses a displacement that would still overlap a solid tile (only possible when the starting
+/// footprint was already illegal, e.g. embedded in a wall), so key movement never moves the
+/// player through a solid tile. The auto-walk (see <see cref="Click(double, double)"/>) resolves
+/// each displacement the same way, so it never crosses a solid corner either: a blocked auto-walk
+/// step cancels the walk instead of moving the player into the wall. When a move
+/// is <em>fully blocked</em> (no net displacement after the axis-separated resolution, e.g.
+/// walking straight into a wall or into a corner), the engine reports a <em>collision stop</em>
+/// to the player (<see cref="Player.ReportBlockedMove(Direction)"/>), so <see cref="Player.OnMove"/>
+/// fires with <see cref="PlayerMoveEventArgs.IsMoving"/> set to <see langword="false"/> even
+/// while the movement key is held against the wall. See <c>docs/Architecture.md</c> for the
+/// collision model.
 /// </para>
 /// <para>
 /// The engine is <see cref="IDisposable"/>: it owns the assigned map and disposes it when
@@ -132,6 +146,15 @@ public sealed class GameEngine : IDisposable
     // The radius in canvas pixels of each minimap dot (the green player dot and the yellow NPC
     // dots). Dots are small markers on top of the minimap map, not full sprites.
     private const float MinimapDotRadius = 3f;
+
+    // The player's collision footprint: a fixed 1x1 tile (48x48 px for a 48px-tile map) box
+    // representing the lower body of the player sprite. Player.Position (the middle-bottom of
+    // the sprite) is the middle of the feet at the bottom-centre of the box: the box spans
+    // x in [pos.X - 0.5, pos.X + 0.5] and y in [pos.Y - 1.0, pos.Y] in tiles. The box is
+    // independent of the rendered sprite size, so a 1-tile-wide corridor always fits regardless
+    // of the spritesheet's cell size, and the feet always stop exactly at the solid tile's edge.
+    internal const double CollisionBoxHalfWidth = 0.25;
+    internal const double CollisionBoxHeightAboveFeet = 0.5;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="GameEngine"/> class with default state: a
@@ -852,13 +875,19 @@ public sealed class GameEngine : IDisposable
     /// <summary>
     /// Advances the auto-walk by one frame: moves the player toward the center of the next
     /// waypoint tile at <see cref="Player.DefaultBaseSpeed"/> (tile units), popping waypoints as
-    /// they are reached and calling <see cref="Player.Stop"/> when the queue empties.
+    /// they are reached and calling <see cref="Player.Stop"/> when the queue empties. When a map
+    /// is set the displacement is resolved with the same per-axis slide-to-boundary clamping as
+    /// key movement (see <see cref="MovementCollisionResolver"/>), so the auto-walk never moves
+    /// the player through a solid tile: if the direct displacement toward the waypoint is
+    /// clamped (e.g. the player is not tile-centred and the first segment would cross a solid
+    /// corner), the path is cancelled and the player stops rather than walking through the wall.
     /// </summary>
     /// <param name="dt">The elapsed time in seconds since the previous frame.</param>
     /// <returns>
     /// <see langword="true"/> when the auto-walk advanced the player this frame (including the
-    /// frame on which the path completed and the player stopped); <see langword="false"/> when
-    /// there is no path to advance, so the caller knows to stop the player itself.
+    /// frame on which the path completed or was cancelled and the player stopped);
+    /// <see langword="false"/> when there is no path to advance, so the caller knows to stop the
+    /// player itself.
     /// </returns>
     private bool TryAdvanceAutoWalk(double dt)
     {
@@ -893,9 +922,45 @@ public sealed class GameEngine : IDisposable
             return true;
         }
 
-        // Move toward the waypoint center by at most one step, without overshooting.
+        // Move toward the waypoint center by at most one step, without overshooting. The move is
+        // resolved against the map's solid tiles exactly like key movement (per-axis
+        // slide-to-boundary clamping, see <see cref="MovementCollisionResolver"/>). The A* path is
+        // over non-solid tiles, so a clear move is returned unchanged; when the move is clamped
+        // the path is not directly traversable from the player's current (possibly
+        // non-tile-centred) position, so the walk is cancelled and the player is not displaced at
+        // all, rather than sliding through (or getting stuck at) a wall.
+        var before = Player.Position;
         var direction = DirectionFromVector(toTarget);
-        Player.Position += toTarget * (step / distance);
+        var move = toTarget * (step / distance);
+        var destination = before + move;
+
+        if (Map is null)
+        {
+            Player.Position = destination;
+        }
+        else
+        {
+            Player.Position = MovementCollisionResolver.Resolve(
+                before,
+                move.X,
+                move.Y,
+                Map,
+                halfWidth: CollisionBoxHalfWidth,
+                heightAboveFeet: CollisionBoxHeightAboveFeet);
+        }
+
+        if (Player.Position != destination)
+        {
+            // The direct displacement was clamped (blocked by a solid tile / the map edge): the
+            // waypoint cannot be reached from the current position without crossing a solid tile,
+            // so cancel the walk, leave the player where they were and stop them (raises
+            // Player.OnMove with IsMoving = false only if it was moving).
+            Player.Position = before;
+            CancelAutoWalk();
+            Player.Stop();
+            return true;
+        }
+
         Player.ReportMovement(direction);
         return true;
     }
@@ -946,18 +1011,29 @@ public sealed class GameEngine : IDisposable
     /// <summary>
     /// Moves the player in <paramref name="direction"/> by <c>BaseSpeed * dt</c> tiles and, when
     /// a map is set, resolves collisions against the map's solid tiles using
-    /// <em>axis-separated movement</em>: the horizontal displacement is applied first and
-    /// reverted if the player's collision footprint (the lower half of the sprite anchored at the
-    /// feet, see <see cref="PlayerFootprintOverlapsSolid"/>) would overlap a solid tile or leave
-    /// the map (the map edge is solid, see <see cref="Tiled.TileMap.IsSolid"/>); the vertical
-    /// displacement is then applied the same way, starting from the horizontal result. This keeps
-    /// wall-sliding natural (a blocked axis reverts while the other axis still moves) and prevents
-    /// diagonal corner-cutting (each axis is resolved independently). Without a map the
-    /// displacement is applied directly, matching <see cref="Character.Move(Direction, double, double)"/>.
+    /// <em>axis-separated movement with per-axis slide-to-boundary clamping</em>: the horizontal
+    /// displacement is applied first and, if the player's collision footprint (the fixed 1×1
+    /// tile lower-body box anchored at the feet, see <see cref="PlayerFootprintOverlapsSolid"/>)
+    /// would overlap a solid tile or leave the map (the map edge is solid, see
+    /// <see cref="Tiled.TileMap.IsSolid"/>), it slides to the <em>closest legal position on that
+    /// axis</em> so the leading edge stops exactly at the near edge of the first blocking solid
+    /// tile (or at the map edge); the vertical displacement is then applied the same way,
+    /// starting from the horizontal result. This keeps wall-sliding natural (a blocked axis
+    /// clamps to the boundary while the other axis still moves) and prevents diagonal
+    /// corner-cutting (each axis is resolved independently). Because a blocked axis slides to the
+    /// exact boundary instead of reverting the whole step, the feet stop exactly at the solid
+    /// tile's edge, matching click-to-move ("colliding with its feet") with no one-frame-step gap
+    /// and no floating-point overshoot accumulation. Without a map the displacement is applied
+    /// directly, matching <see cref="Character.Move(Direction, double, double)"/>.
     /// </summary>
     /// <param name="direction">The direction to face and move towards.</param>
     /// <param name="dt">The elapsed time in seconds since the previous frame.</param>
     /// <remarks>
+    /// The resolver re-validates the resulting footprint as a safety net and refuses a
+    /// displacement that would still overlap a solid tile (only possible when the starting
+    /// footprint was already illegal, e.g. left embedded in a wall by an external teleport), so
+    /// key movement never moves the player through a solid tile while a move that clears the
+    /// overlap (escaping the wall) is still allowed.
     /// After the displacement is resolved, the outcome is reported to the player: a move with no
     /// net displacement (fully blocked by solid tiles or the map edge on every axis) is reported
     /// as a <em>collision stop</em> through <see cref="Player.ReportBlockedMove(Direction)"/>,
@@ -985,25 +1061,20 @@ public sealed class GameEngine : IDisposable
         }
         else
         {
-            var position = Player.Position;
-
-            // Horizontal axis: apply the X displacement, then revert it if the resulting
-            // footprint overlaps a solid tile (or leaves the map, which IsSolid treats as solid).
-            var afterX = position.WithOffset(delta.X, 0);
-            if (!PlayerFootprintOverlapsSolid(afterX))
-            {
-                position = afterX;
-            }
-
-            // Vertical axis: same rule, starting from the horizontal result (this is what makes
-            // diagonal movement slide along a wall on the free axis).
-            var afterY = position.WithOffset(0, delta.Y);
-            if (!PlayerFootprintOverlapsSolid(afterY))
-            {
-                position = afterY;
-            }
-
-            Player.Position = position;
+            // Resolve the displacement with per-axis slide-to-boundary clamping: each axis moves
+            // by the full requested displacement when the destination footprint is clear,
+            // otherwise it slides to the closest legal position on that axis (the leading edge
+            // of the fixed 1x1 tile lower-body box stops exactly at the near edge of the first
+            // blocking solid tile or at the map edge). The horizontal result feeds the vertical
+            // axis (axis-separated movement preserved), which is what makes diagonal movement
+            // slide along a wall on the free axis.
+            Player.Position = MovementCollisionResolver.Resolve(
+                Player.Position,
+                delta.X,
+                delta.Y,
+                Map,
+                halfWidth: CollisionBoxHalfWidth,
+                heightAboveFeet: CollisionBoxHeightAboveFeet);
         }
 
         if (Player.Position == before)
@@ -1025,47 +1096,46 @@ public sealed class GameEngine : IDisposable
     /// <summary>
     /// Returns whether the player's collision footprint with its feet (middle-bottom) at
     /// <paramref name="position"/> overlaps a solid tile or leaves the map. The footprint is the
-    /// <em>lower half</em> of the sprite: its size is half the player's sprite size in pixels
-    /// (<see cref="Character.GetSpriteSize"/>) converted to tiles with the map's tile width, and
-    /// it is anchored so the feet (the sprite's middle-bottom) sit at
-    /// <paramref name="position"/>. The upper half of the sprite (the upper body) never collides
-    /// with the ground; only this lower half is tested against solid tiles, and the map edge
-    /// (which <see cref="Tiled.TileMap.IsSolid"/> treats as solid) remains solid. The overlap is
-    /// tested with <see cref="Tiled.TileMap.IsAreaSolid"/>.
+    /// <em>fixed 1×1 tile lower-body box</em> (see <see cref="CollisionBoxHalfWidth"/> and
+    /// <see cref="CollisionBoxHeightAboveFeet"/>): it is 1 tile wide and 1 tile tall regardless
+    /// of the rendered sprite size, and it is anchored so the feet (the sprite's middle-bottom)
+    /// sit at <paramref name="position"/> with the middle of the feet at the bottom-centre of
+    /// the box. The map edge (which <see cref="Tiled.TileMap.IsSolid"/> treats as solid) remains
+    /// solid. The overlap is tested with <see cref="Tiled.TileMap.IsAreaSolid"/>, whose
+    /// tile-boundary semantics (a footprint that ends exactly on a tile boundary does not overlap
+    /// the next tile) define the exact boundary the per-axis slide-to-boundary clamp in
+    /// <see cref="MovePlayerWithCollisionResolution(Direction, double)"/> stops at. This
+    /// predicate delegates to <see cref="MovementCollisionResolver.FootprintOverlaps(RPGEngine.Position, RPGEngine.Tiled.TileMap, double, double)"/>
+    /// so the engine and the resolver always share one footprint definition.
     /// </summary>
     private bool PlayerFootprintOverlapsSolid(Position position)
-    {
-        var ts = Map!.TileWidth;
-        var (spriteWidth, spriteHeight) = Player.Character.GetSpriteSize(_spriteSheetManager);
-        return Map.IsAreaSolid(
-            position.X - spriteWidth / (2.0 * ts),
-            position.Y - spriteHeight / (2.0 * ts),
-            spriteWidth / (double)ts,
-            spriteHeight / (2.0 * ts));
-    }
+        => MovementCollisionResolver.FootprintOverlaps(
+            position,
+            Map!,
+            CollisionBoxHalfWidth,
+            CollisionBoxHeightAboveFeet);
 
     /// <summary>
-    /// Clamps the player's feet position so its collision footprint (the lower half of the sprite,
-    /// anchored at the feet) stays inside the map bounds. The sprite size is resolved in pixels
-    /// from the player's configured spritesheet (see <see cref="Character.GetSpriteSize"/>) and
-    /// converted to tiles using the map's tile width; when no sheet is configured it falls back
-    /// to the 48×48 default. With half-width <c>hw = spriteWidth / (2*ts)</c> and half-height
-    /// <c>hh = spriteHeight / (2*ts)</c> the feet are clamped to
-    /// <c>x ∈ [hw, max(hw, Map.Width - hw)]</c> and
-    /// <c>y ∈ [hh, max(hh, Map.Height)]</c>, all in tiles — the lower-half footprint
-    /// (whose bottom is the feet) never leaves the map. For the default 48×48 sprite with 48 px
-    /// tiles this is <c>x ∈ [0.5, Map.Width - 0.5]</c>, <c>y ∈ [0.5, Map.Height]</c>.
-    /// Called after every move while a map is set.
+    /// Clamps the player's feet position so its collision footprint (the fixed 1×1 tile
+    /// lower-body box, see the class remarks) stays inside the map bounds. The feet are clamped
+    /// to <c>x ∈ [0.5, max(0.5, Map.Width - 0.5)]</c> and
+    /// <c>y ∈ [1.0, max(1.0, Map.Height)]</c>, all in tiles — the 1×1 box's left/right edges
+    /// stay at or inside the horizontal map edges and its top edge stays at or below the top map
+    /// edge, while the bottom edge (the feet) never goes below the bottom edge. For the default
+    /// 48×48 sprite with 48 px tiles this is <c>x ∈ [0.5, Map.Width - 0.5]</c>,
+    /// <c>y ∈ [1.0, Map.Height]</c>. Called after every move while a map is set.
     /// </summary>
     private void ClampPlayerToMap()
     {
-        var ts = Map!.TileWidth;
-        var (spriteWidth, spriteHeight) = Player.Character.GetSpriteSize(_spriteSheetManager);
-        var halfWidth = spriteWidth / (2.0 * ts);
-        var halfHeight = spriteHeight / (2.0 * ts);
-        var minX = halfWidth;
-        var maxX = Math.Max(minX, Map.Width - halfWidth);
-        var minY = halfHeight;
+        // The fixed 1x1 tile lower-body box (see the class remarks and the collision constants)
+        // is clamped inside the map: its left/right edges stay within x in [0, Width] and its
+        // top edge (the box extends CollisionBoxHeightAboveFeet above the feet) stays at or
+        // below the top map edge, so the feet never go below the bottom edge (the feet are the
+        // box's bottom edge). For the default 48x48 sprite with 48 px tiles this is
+        // x in [0.5, Map.Width - 0.5], y in [1.0, Map.Height].
+        var minX = CollisionBoxHalfWidth;
+        var maxX = Math.Max(minX, Map!.Width - CollisionBoxHalfWidth);
+        var minY = CollisionBoxHeightAboveFeet;
         var maxY = Math.Max(minY, Map.Height);
 
         var position = Player.Position;
