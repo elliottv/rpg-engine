@@ -100,8 +100,9 @@ namespace RPGEngine;
 /// for each NPC in <see cref="Characters"/>. A <c>zoomLevel</c> of <c>1.0</c> fits the whole
 /// map into the minimap canvas; values above <c>1</c> zoom in and the view pans around the
 /// player's dot, clamped to the map edges like the main camera; values between <c>0</c> and
-/// <c>1</c> zoom out further. The minimap does not clear its canvas and leaves the unused
-/// margins blank, so the host owns the minimap background.
+/// <c>1</c> zoom out further. When a map is set the minimap clears its canvas to black first
+/// (like <see cref="Render"/>), then draws the map and the dots on top, so the unused margins
+/// are black.
 /// </para>
 /// </remarks>
 public sealed class GameEngine : IDisposable
@@ -423,8 +424,9 @@ public sealed class GameEngine : IDisposable
 
     /// <summary>
     /// Draws a minimap of the current map onto <paramref name="canvas"/>, a surface separate from
-    /// the main game canvas. It renders the map's prerendered tile layers (both below- and
-    /// above-player layers, in file order bottom → top — a minimap shows the
+    /// the main game canvas. When <see cref="Map"/> is set it first clears the whole canvas to
+    /// black (like <see cref="Render"/>), then renders the map's prerendered tile layers (both below-
+    /// and above-player layers, in file order bottom → top — a minimap shows the
     /// full picture), a green dot for the player and a yellow dot for each NPC in
     /// <see cref="Characters"/>. The canvas size is read from the canvas clip bounds, the same
     /// convention as <see cref="Render"/>.
@@ -456,8 +458,9 @@ public sealed class GameEngine : IDisposable
     /// like the main camera).
     /// </para>
     /// <para>
-    /// The method does not clear the canvas and does not draw into the unused margins —
-    /// &quot;unused space is left blank&quot; and the host owns the minimap background. It is a
+    /// When <see cref="Map"/> is set the method first clears the whole canvas to black (like
+    /// <see cref="Render"/>), so a map smaller than the canvas is centered on a black background
+    /// and the unused margins are black, then draws the map and the dots on top. It is a
     /// pure render: it never mutates engine state.
     /// </para>
     /// </remarks>
@@ -471,6 +474,10 @@ public sealed class GameEngine : IDisposable
             // No map: draw nothing and leave the canvas untouched.
             return;
         }
+
+        // When a map is set the whole canvas is cleared to black first: this is the black
+        // background behind/around a map that is smaller than the canvas, mirroring Render.
+        canvas.Clear(SKColors.Black);
 
         var bounds = canvas.LocalClipBounds;
         var canvasWidth = Math.Max(0, bounds.Width);
@@ -505,7 +512,7 @@ public sealed class GameEngine : IDisposable
         // the desired origin centres the player in the visible region, is clamped so the region
         // stays inside the map, and when the map is smaller than the visible region on an axis
         // the origin is shifted by half the difference so the map is centered on that axis (the
-        // leftover canvas is left blank).
+        // leftover canvas is black, cleared before drawing).
         var maxOriginX = Math.Max(0, mapWidth - visibleWidth);
         var maxOriginY = Math.Max(0, mapHeight - visibleHeight);
         var centerOffsetX = Math.Max(0, (canvasWidth - scaledWidth) / (2.0 * scale));
