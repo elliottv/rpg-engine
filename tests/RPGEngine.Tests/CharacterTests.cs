@@ -1,4 +1,6 @@
 using RPGEngine.Sprites;
+using RPGEngine.Tiled;
+using RPGEngine.Tests.Tiled;
 using SkiaSharp;
 using Xunit;
 
@@ -20,6 +22,7 @@ namespace RPGEngine.Tests;
 public class CharacterTests
 {
     private const int StandingFrame = 1; // the frame a fresh/stopped character renders at
+    private const double FrameDt = 1.0 / 60;
 
     // ---------------------------------------------------------------------
     // Acceptance 1: Move with speedFactor == 0 changes only Direction.
@@ -106,7 +109,7 @@ public class CharacterTests
     /// Verifies the walk-cycle animation is time-based and speed-scaled: at
     /// BaseSpeed == AnimationCycleSpeed == 2 (tiles/s, the new defaults) the cycle completes
     /// one full 4-frame cycle (<c>0 → 1 → 2 → 1</c>) per second. A single one-second
-    /// <see cref="Character.Update(double)"/> after moving advances exactly 4 frames and lands
+    /// <see cref="Character.Update(double, RPGEngine.Tiled.TileMap)"/> after moving advances exactly 4 frames and lands
     /// back on the standing frame.
     /// </summary>
     [Fact]
@@ -330,6 +333,151 @@ public class CharacterTests
         Assert.False(character.IsMoving);
         character.StopMoving();
         Assert.False(character.IsMoving);
+    }
+
+    // ---------------------------------------------------------------------
+    // Acceptance (story 64): autonomous movement (StartMoving/Update) is
+    // collision-resolved against the map's solid tiles and the map edge when a
+    // map is supplied, sharing the player's footprint and the same per-axis
+    // slide-to-boundary (cardinal) / all-or-nothing (diagonal) semantics. With
+    // no map the displacement stays raw (the historical behavior).
+    // ---------------------------------------------------------------------
+    /// <summary>Verifies StartMoving(Right) + Update(dt, map) against a solid column at x=2 from X=0.5 stops the feet at X = 2.0 - 0.25 = 1.75, and a further update keeps it there.</summary>
+    [Fact]
+    public void StartMoving_WithMap_StopsAtSolidColumnBoundary()
+    {
+        // 4x4 map: a "walls" collision layer with a solid column at x=2 for every row.
+        using var fixture = CreateCollisionMapFixture(4, 4, new uint[]
+        {
+            0, 0, 1, 0,
+            0, 0, 1, 0,
+            0, 0, 1, 0,
+            0, 0, 1, 0,
+        });
+        var map = TileMap.Load(fixture.MapPath);
+        var character = new Character { BaseSpeed = 2, Position = new Position(0.5, 1.0) };
+
+        character.StartMoving(Direction.Right);
+        character.Update(dt: 0.5, map); // exactly 1 tile right, still clear of the wall
+
+        Assert.Equal(new Position(1.5, 1.0), character.Position);
+
+        // The next step would push the box into the solid tile: the right edge stops exactly at
+        // the tile's left edge (x = 2.0), so the feet reach X = 2.0 - 0.25 = 1.75.
+        character.Update(dt: 0.5, map);
+        Assert.Equal(new Position(1.75, 1.0), character.Position);
+        Assert.True(character.Position.X + 0.25 <= 2.0 + 1e-9, "The footprint must never overlap the solid tile.");
+
+        // A further update keeps it there.
+        character.Update(dt: 0.5, map);
+        Assert.Equal(new Position(1.75, 1.0), character.Position);
+    }
+
+    /// <summary>Verifies StartMoving + Update(dt, map) on a map with no collision layer moves exactly BaseSpeed * dt tiles (map present, no solid tiles — regression).</summary>
+    [Fact]
+    public void StartMoving_WithMap_NoCollisionLayer_MovesExactly()
+    {
+        // A 4x4 map with a ground layer only (no collision layer).
+        using var fixture = CreateFilledMapFixture(4, 4);
+        var map = TileMap.Load(fixture.MapPath);
+        var character = new Character { BaseSpeed = 2, Position = new Position(1.0, 1.0) };
+
+        character.StartMoving(Direction.Right);
+        character.Update(dt: 1, map); // exactly BaseSpeed * dt = 2 tiles right
+
+        Assert.Equal(new Position(3.0, 1.0), character.Position);
+        Assert.True(character.IsMoving);
+    }
+
+    /// <summary>Verifies a diagonal autonomous move into a wall where only X is blocked stops the character entirely (no slide along the free Y axis): diagonal movement is all-or-nothing.</summary>
+    [Fact]
+    public void StartMoving_WithMap_DiagonalIntoWall_StopsEntirely()
+    {
+        // 5x5 map: a "walls" collision layer with a solid column at x=3 for every row.
+        var gids = new uint[25];
+        for (var y = 0; y < 5; y++)
+        {
+            gids[(y * 5) + 3] = 1;
+        }
+
+        using var fixture = CreateCollisionMapFixture(5, 5, gids);
+        var map = TileMap.Load(fixture.MapPath);
+        var character = new Character { BaseSpeed = 2, Position = new Position(2.75, 4.0) };
+
+        // Start flush against the left edge of the wall column (the fixed 0.5x0.5 box's right
+        // edge is exactly at x=3). Moving DownRight, X is blocked while Y is free.
+        character.StartMoving(Direction.DownRight);
+        character.Update(dt: 0.5, map);
+
+        // Diagonal is all-or-nothing: the character stops entirely, no slide along Y.
+        Assert.Equal(new Position(2.75, 4.0), character.Position);
+
+        // A further update keeps it there.
+        character.Update(dt: 0.5, map);
+        Assert.Equal(new Position(2.75, 4.0), character.Position);
+    }
+
+    /// <summary>Verifies StartMoving(Left) near the left map edge stops the character at the edge (never leaves the map): the left edge of the 0.5x0.5 box stops at x = 0, so the feet stop at X = 0.25.</summary>
+    [Fact]
+    public void StartMoving_WithMap_StopsAtLeftMapEdge()
+    {
+        // A 2x2 map with a ground layer only (no collision layer): only the map edge is solid.
+        using var fixture = CreateFilledMapFixture(2, 2);
+        var map = TileMap.Load(fixture.MapPath);
+        var character = new Character { BaseSpeed = 2, Position = new Position(0.5, 1.5) };
+
+        character.StartMoving(Direction.Left);
+
+        // A single large step: the box's left edge (feet X - 0.25) stops at the left map edge.
+        character.Update(dt: 10, map);
+
+        Assert.Equal(0.25, character.Position.X, precision: 9);
+        Assert.True(character.Position.X - 0.25 >= 0.0 - 1e-9, "The footprint must never leave the map.");
+    }
+
+    /// <summary>Verifies a fully blocked autonomous character: Position is unchanged and the walk cycle snaps to the standing frame on the next Update.</summary>
+    [Fact]
+    public void StartMoving_WithMap_FullyBlocked_SnapsToStandingFrame()
+    {
+        // 4x4 map: a "walls" collision layer with a solid column at x=2 for every row.
+        using var fixture = CreateCollisionMapFixture(4, 4, new uint[]
+        {
+            0, 0, 1, 0,
+            0, 0, 1, 0,
+            0, 0, 1, 0,
+            0, 0, 1, 0,
+        });
+        var map = TileMap.Load(fixture.MapPath);
+        var character = new Character { BaseSpeed = 2, Position = new Position(0.5, 1.0) };
+        character.StartMoving(Direction.Right);
+
+        // Walk into the wall: after enough updates the character is blocked at the boundary.
+        for (var frame = 0; frame < 300; frame++)
+        {
+            character.Update(FrameDt, map);
+        }
+
+        Assert.Equal(1.75, character.Position.X, precision: 9);
+
+        // Now fully blocked: a further update leaves the position unchanged and the walk cycle
+        // (which detects movement via Position != _lastUpdatePosition) snaps to the standing frame.
+        var before = character.Position;
+        character.Update(FrameDt, map);
+        Assert.Equal(before, character.Position);
+        Assert.Equal(StandingFrame, character.AnimationFrame);
+    }
+
+    /// <summary>Verifies Update(dt) with no map keeps the raw movement behavior: the autonomous displacement is applied directly (no collision resolution).</summary>
+    [Fact]
+    public void Update_WithoutMap_MovesRawDisplacement()
+    {
+        var character = new Character { BaseSpeed = 2, Position = new Position(0, 0) };
+
+        character.StartMoving(Direction.Right);
+        character.Update(dt: 1); // no map: exactly 2 tiles right, raw
+
+        Assert.Equal(new Position(2, 0), character.Position);
+        Assert.True(character.IsMoving);
     }
 
     // ---------------------------------------------------------------------
@@ -702,4 +850,36 @@ public class CharacterTests
         Assert.Equal(expected, bitmap.GetPixel(0, 0));
         Assert.Equal(expected, bitmap.GetPixel(width - 1, height - 1));
     }
+
+    // ---------------------------------------------------------------------
+    // Helpers for the collision-resolved autonomous movement tests: build
+    // map fixtures (a filled walkable ground layer and an optional "walls"
+    // collision layer) exactly like the engine collision tests, so the
+    // character-under-test resolves against the same Tiled collision model.
+    // ---------------------------------------------------------------------
+
+    /// <summary>Creates a map fixture filled with red tiles in a single "ground" layer.</summary>
+    private static TiledTestFixture CreateFilledMapFixture(int width, int height)
+        => new(width, height, new[] { FilledLayer(width, height) });
+
+    /// <summary>
+    /// Creates a map fixture with a filled "ground" layer (walkable) and a "walls" collision
+    /// layer declaring the Tiled <c>is_collision</c> bool property set to <c>true</c>.
+    /// </summary>
+    private static TiledTestFixture CreateCollisionMapFixture(int width, int height, uint[] collisionGids)
+        => new(
+            width,
+            height,
+            new[]
+            {
+                FilledLayer(width, height),
+                new TileLayerSpec(
+                    "walls",
+                    collisionGids,
+                    Properties: new[] { new FixtureProperty("is_collision", "bool", "true") }),
+            });
+
+    /// <summary>Builds a fully filled single-layer spec for a map of the given size.</summary>
+    private static TileLayerSpec FilledLayer(int width, int height)
+        => new("ground", Enumerable.Repeat(1u, width * height).ToArray());
 }
