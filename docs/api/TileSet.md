@@ -10,6 +10,10 @@ together with the global tile ID (`FirstGid`) at which the tileset starts within
   WebAssembly). The tilesets referenced by a map are created internally by `TileMap.Load`.
 - The backing image is decoded exactly once; `GetTileImage` returns a cropped raster copy of a
   single tile that the caller owns and may dispose freely.
+- Per-tile animations declared by the tileset (a Tiled `<tile><animation>` block) are parsed at
+  load time and honored by rendering: every layer cell that uses an animated tile plays its
+  frame sequence (see `TileMap`'s animated-tile support). The animation data itself is internal
+  and not exposed through the public API.
 
 ## Properties
 

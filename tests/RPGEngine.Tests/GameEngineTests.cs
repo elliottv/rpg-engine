@@ -605,6 +605,52 @@ public partial class GameEngineTests
         }
     }
 
+    /// <summary>Verifies an animated tile on an above_player layer renders above the player, and that its frame advances with the engine clock (story 57).</summary>
+    [Fact]
+    public void Render_AbovePlayerLayer_AnimatedTile_DrawsOverPlayerAndAdvances()
+    {
+        const int canvasSize = 96; // a 2×2 map exactly fills the canvas, so the origin is (0,0)
+        var ground = FilledLayer(2, 2); // all red (GID 1)
+        var colors = new[] { SKColors.Red, SKColors.Green, SKColors.Blue };
+
+        // The above layer places an animated tile at (0,0): GID 2 (local tile 1) animates
+        // between tile 1 (green) and tile 2 (blue), 100 ms each.
+        using var fixture = new TiledTestFixture(
+            2,
+            2,
+            new[]
+            {
+                ground,
+                new TileLayerSpec(
+                    "above",
+                    new uint[] { 2, 0, 0, 0 },
+                    Properties: new[] { new FixtureProperty("above_player", "bool", "true") }),
+            },
+            tileColors: colors,
+            animations: new Dictionary<uint, IReadOnlyList<(uint FrameTileId, int DurationMs)>>
+            {
+                [1] = new List<(uint FrameTileId, int DurationMs)> { (1, 100), (2, 100) },
+            });
+
+        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        ConfigurePlayerSprite(engine, seed: 1);
+        engine.Player.Position = new Position(0.5, 1.0); // sprite fills the 48×48 tile at (0,0)
+
+        // At t = 0 the animated tile shows frame 0 (green) above the player.
+        using (var bitmap = Render(engine, canvasSize, canvasSize))
+        {
+            Assert.Equal(new SKColor(0, 128, 0, 255), bitmap.GetPixel(24, 24));
+        }
+
+        // Advancing the engine clock moves the animated tile to frame 1 (blue), still above the
+        // player (the player does not move: no input, no auto-walk).
+        engine.Update(0.15);
+        using (var bitmap = Render(engine, canvasSize, canvasSize))
+        {
+            Assert.Equal(new SKColor(0, 0, 255, 255), bitmap.GetPixel(24, 24));
+        }
+    }
+
     // ---------------------------------------------------------------------
     // Story 37 acceptance 4: SurfaceToWorld / WorldToSurface are camera-aware
     // and inverses within floating-point tolerance. With no map the origin is

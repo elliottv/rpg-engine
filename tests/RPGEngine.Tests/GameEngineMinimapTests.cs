@@ -243,6 +243,49 @@ public partial class GameEngineTests
         Assert.Equal(SKColors.Black, bitmap.GetPixel(0, 0)); // the margin is black
     }
 
+    // ---------------------------------------------------------------------
+    // Story 57: animated tiles on the minimap. RenderMinimap draws each layer's
+    // animated cells after its prerendered blit (animated cells are excluded from
+    // the prerender), so the minimap is not left with holes where animated tiles are.
+    // ---------------------------------------------------------------------
+
+    /// <summary>Verifies the minimap shows the animated tile at its current frame, and that advancing the clock changes the minimap pixel.</summary>
+    [Fact]
+    public void RenderMinimap_ShowsAnimatedTile_AtCurrentFrame()
+    {
+        // A 2x2 map with one animated tile at (0,0): frames 0/1/2 are red/green/blue solid
+        // colours with 100 ms each (cycle 300 ms). At t = 0 the minimap shows frame 0 (red);
+        // after 150 ms the clock is in frame 1 (green).
+        using var fixture = new TiledTestFixture(
+            2,
+            2,
+            new[] { new TileLayerSpec("ground", new uint[] { 1, 0, 0, 0 }) },
+            tileColors: new[] { SKColors.Red, SKColors.Green, SKColors.Blue },
+            animations: new Dictionary<uint, IReadOnlyList<(uint FrameTileId, int DurationMs)>>
+            {
+                [0] = new List<(uint FrameTileId, int DurationMs)> { (0, 100), (1, 100), (2, 100) },
+            });
+        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+
+        // Place the player away from the animated cell so the green player dot never overlaps the
+        // sampled pixel. A 96x96 map on a 96x96 canvas: scale 1, origin (0,0), so the animated
+        // cell (0,0) spans the top-left 48x48 and its centre is (24,24).
+        engine.Player.Position = new Position(1.5, 1.5);
+
+        using (var bitmap = RenderMinimap(engine, 96, 96, zoomLevel: 1.0))
+        {
+            Assert.Equal(SKColors.Red, bitmap.GetPixel(24, 24));
+        }
+
+        // Advancing the clock (engine.Update calls Map.UpdateAnimations) changes the minimap pixel
+        // to the next frame.
+        engine.Update(0.15);
+        using (var bitmap = RenderMinimap(engine, 96, 96, zoomLevel: 1.0))
+        {
+            Assert.Equal(SKColors.Green, bitmap.GetPixel(24, 24));
+        }
+    }
+
     /// <summary>
     /// Verifies RenderMinimap is pure: rendering a minimap on a separate surface does not change
     /// the output of the main Render nor the engine state (regression guard for the minimap work).

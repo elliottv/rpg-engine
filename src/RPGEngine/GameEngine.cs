@@ -342,6 +342,11 @@ public sealed class GameEngine : IDisposable
     /// <param name="dt">The elapsed time in seconds since the previous frame.</param>
     public void Update(double dt)
     {
+        // Advance the map's animation clock once per frame so animated tiles progress with game
+        // time. Ordering within Update is not significant (animations are independent of the
+        // movement/collision resolution below).
+        Map?.UpdateAnimations(dt);
+
         var direction = Config.GetMovementDirection(_pressedKeys);
 
         // Manual key movement takes priority over auto-walk: while a bound movement key is held
@@ -554,8 +559,10 @@ public sealed class GameEngine : IDisposable
         // destination rect is that region mapped to the canvas by the effective scale and the
         // pan/center origin.
         using var layerPaint = new SKPaint { IsAntialias = false };
+        using var animatedPaint = new SKPaint { IsAntialias = false };
         for (var layerIndex = 0; layerIndex < Map.Layers.Count; layerIndex++)
         {
+            var layer = Map.Layers[layerIndex];
             var image = Map.PrerenderedLayerImages[layerIndex];
             if (image is null)
             {
@@ -583,6 +590,37 @@ public sealed class GameEngine : IDisposable
                 (float)((sourceBottom - originY) * scale));
 
             canvas.DrawImage(image, source, destination, layerPaint);
+
+            // Draw the layer's animated cells after its prerendered blit so the minimap is not
+            // left with holes where animated tiles were excluded from the prerender. The cell is
+            // mapped the same way the layer blits are: source = the cell in map pixels,
+            // destination = ((x*ts - originX) * scale, ...), and the layer's flip flags and
+            // opacity are applied to match the static tiles of the same layer.
+            animatedPaint.Color = SKColors.White.WithAlpha((byte)Math.Round(layer.Opacity * 255f));
+            foreach (var cell in Map.GetAnimatedCells(layerIndex))
+            {
+                var cellLeft = cell.X * ts;
+                var cellTop = cell.Y * ts;
+                var cellRight = cellLeft + ts;
+                var cellBottom = cellTop + ts;
+
+                // Cull the cell against the visible region (same bounds as the layer blits).
+                if (cellLeft >= sourceRight || cellRight <= sourceLeft ||
+                    cellTop >= sourceBottom || cellBottom <= sourceTop)
+                {
+                    continue;
+                }
+
+                var cellDestination = new SKRect(
+                    (float)((cellLeft - originX) * scale),
+                    (float)((cellTop - originY) * scale),
+                    (float)((cellRight - originX) * scale),
+                    (float)((cellBottom - originY) * scale));
+
+                using var tileImage = cell.TileSet.GetTileImage((int)Map.GetAnimatedTileId(cell));
+                var flags = layer.GetTileFlags(cell.X, cell.Y);
+                TileMap.DrawTile(canvas, tileImage, cellDestination, flags, animatedPaint);
+            }
         }
 
         // The player dot (green) and each NPC dot (yellow), drawn as small filled circles at
@@ -967,7 +1005,7 @@ public sealed class GameEngine : IDisposable
 
     /// <summary>
     /// Cancels any in-progress auto-walk by clearing the waypoint queue. The player itself stops
-    /// on the next <see cref="Update"/> (no input and no path &#8594; <see cref="Player.Stop"/>).
+    /// on the next <see cref="Update"/> (no input and no path → <see cref="Player.Stop"/>).
     /// </summary>
     private void CancelAutoWalk()
     {
