@@ -157,8 +157,8 @@ public sealed class GameEngine : IDisposable
     // x in [pos.X - 0.5, pos.X + 0.5] and y in [pos.Y - 1.0, pos.Y] in tiles. The box is
     // independent of the rendered sprite size, so a 1-tile-wide corridor always fits regardless
     // of the spritesheet's cell size, and the feet always stop exactly at the solid tile's edge.
-    internal const double CollisionBoxHalfWidth = 0.5;
-    internal const double CollisionBoxHeightAboveFeet = 1.0;
+    internal const double CollisionBoxHalfWidth = 0.25;
+    internal const double CollisionBoxHeightAboveFeet = 0.5;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="GameEngine"/> class with default state: a
