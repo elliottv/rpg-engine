@@ -1,4 +1,0 @@
-emdash: — emdash
-arrow: → arrow
-backslash: \ backslash
-plain: hello
