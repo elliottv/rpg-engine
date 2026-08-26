@@ -1056,16 +1056,17 @@ public class GameEngineTests
     // green dot for the player and a yellow dot for each NPC, onto a canvas
     // separate from the main game canvas. zoomLevel 1.0 fits the whole map
     // centered with the aspect preserved; > 1 zooms in around the player's
-    // dot with the same edge clamp as the main camera; the canvas is not
-    // cleared and unused margins stay blank. The method is pure (it never
-    // mutates engine state), a null map is a no-op, and zoomLevel <= 0 throws
-    // ArgumentOutOfRangeException.
+    // dot with the same edge clamp as the main camera; when a map is set the
+    // canvas is cleared to black first, so the unused margins are black. The
+    // method is pure (it never mutates engine state), a null map is a no-op,
+    // and zoomLevel <= 0 throws ArgumentOutOfRangeException.
     // ---------------------------------------------------------------------
 
     /// <summary>
     /// Verifies the default zoom fits the whole (non-square) map into the canvas, centered with
-    /// the aspect ratio preserved, leaves the unused margins blank, and shows every distinct
-    /// tile color of a two-color map plus both dots at their scaled positions.
+    /// the aspect ratio preserved, leaves the unused margins black (the minimap clears its
+    /// canvas to black when a map is set), and shows every distinct tile color of a two-color
+    /// map plus both dots at their scaled positions.
     /// </summary>
     [Fact]
     public void RenderMinimap_DefaultZoom_FitsWholeMapCenteredWithBlankMargins()
@@ -1110,12 +1111,12 @@ public class GameEngineTests
         // The map is centered vertically with ~50 px margins above and below (it fills the 400 px
         // width), so it is not stretched to fill the 300 px canvas. Sample well inside each
         // region to avoid the rasterizer's sub-pixel edge rows.
-        Assert.Equal(0, bitmap.GetPixel(200, 20).Alpha);   // top margin blank
-        Assert.Equal(0, bitmap.GetPixel(200, 40).Alpha);   // top margin blank
+        Assert.Equal(SKColors.Black, bitmap.GetPixel(200, 20));   // top margin black
+        Assert.Equal(SKColors.Black, bitmap.GetPixel(200, 40));   // top margin black
         Assert.NotEqual(0, bitmap.GetPixel(200, 60).Alpha);  // map interior (top half)
         Assert.NotEqual(0, bitmap.GetPixel(200, 240).Alpha); // map interior (bottom half)
-        Assert.Equal(0, bitmap.GetPixel(200, 260).Alpha);  // bottom margin blank
-        Assert.Equal(0, bitmap.GetPixel(200, 280).Alpha);  // bottom margin blank
+        Assert.Equal(SKColors.Black, bitmap.GetPixel(200, 260));  // bottom margin black
+        Assert.Equal(SKColors.Black, bitmap.GetPixel(200, 280));  // bottom margin black
     }
 
     /// <summary>
@@ -1275,7 +1276,7 @@ public class GameEngineTests
         // centered with 50 px margins; the map is still drawn (e.g. its center is a map pixel).
         using var bitmap = RenderMinimap(engine, 200, 200, zoomLevel: 0.5);
         Assert.NotEqual(0, bitmap.GetPixel(100, 100).Alpha);
-        Assert.Equal(0, bitmap.GetPixel(0, 0).Alpha); // the margin stays blank
+        Assert.Equal(SKColors.Black, bitmap.GetPixel(0, 0)); // the margin is black
     }
 
     /// <summary>
