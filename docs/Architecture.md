@@ -412,8 +412,16 @@ when the player was moving; the engine calls it when there is no input and no au
 `GameEngine.Render(canvas, dt)` draws a single frame in a fixed order:
 
 ```
-below-player layers → NPCs → player → above-player layers
+below-player layers → characters (NPCs + player) sorted by Y → above-player layers
 ```
+
+All characters — every NPC in `GameEngine.Characters` **and the player** — are drawn in a
+single pass sorted by `Position.Y` ascending: a character with a **higher** `Position.Y` (lower
+on the screen, closer to the viewer) is drawn **last** and appears on top of the others, so a
+character lower on the screen occludes one higher up. The player is part of this ordering and
+may be drawn **behind** other characters when its Y is lower. `OrderBy` is stable, so equal-Y
+characters keep their relative order (NPCs in `Characters`-list order, then the player) and the
+draw order is deterministic. `RenderMinimap` is unchanged: its dots have no Y ordering.
 
 - When a `TileMap` is set, the canvas is **cleared to black first** — this is the black
   background behind and around the map.
@@ -425,12 +433,13 @@ below-player layers → NPCs → player → above-player layers
   images; the engine disposes the previous map when `GameEngine.Map` is replaced and when the
   engine itself is disposed.
 - **Drawing is a per-layer image blit.** `TileMap.Draw` blits the prerendered images of the
-  layers **below** the player (every layer whose `TileMapLayer.AbovePlayer` is `false`), each
-  NPC and the player are drawn on top, and finally `TileMap.DrawAbovePlayer` blits the layers
-  whose `above_player` custom property is `true` so those tiles appear **in front of** the
-  player (e.g. tree canopies the player walks under). Each blit draws the intersection of the
-  viewport with the layer image bounds, so viewport culling is preserved and no per-tile work
-  happens per frame.
+  layers **below** the player (every layer whose `TileMapLayer.AbovePlayer` is `false`), then
+  all characters (the NPCs in `GameEngine.Characters` and the player) are drawn on top, sorted
+  by `Position.Y` ascending (a higher Y is drawn last / on top, including the player), and
+  finally `TileMap.DrawAbovePlayer` blits the layers whose `above_player` custom property is
+  `true` so those tiles appear **in front of** every character (e.g. tree canopies the player
+  walks under). Each blit draws the intersection of the viewport with the layer image bounds, so
+  viewport culling is preserved and no per-tile work happens per frame.
 - **The camera works in tiles and renders in pixels.** `Render` computes the camera origin in
   tiles (follow + clamp, see above), derives a pixel viewport
   `(origin.X*ts, origin.Y*ts, origin.X*ts + canvasWidth, origin.Y*ts + canvasHeight)` and passes

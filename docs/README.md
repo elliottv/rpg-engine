@@ -74,7 +74,7 @@ using var bitmap = new SKBitmap(640, 480);
 using (var canvas = new SKCanvas(bitmap))
 {
     canvas.Clear(SKColors.Black);
-    engine.Render(canvas, dt: 1.0 / 60); // black background, centered map, above_player layers on top
+    engine.Render(canvas, dt: 1.0 / 60); // black background, centered map, Y-sorted characters, above_player layers on top
 }
 
 // 6. Read the map's custom properties and object layers.
@@ -133,7 +133,7 @@ foreach (var layer in engine.Map?.ObjectLayers ?? [])
 | Page | What it covers |
 | --- | --- |
 | [Architecture](Architecture.md) | Composition model, camera, spritesheet layout, part ordering, rendering order and the Tiled read model. |
-| [api/GameEngine.md](api/GameEngine.md) | Root object: game loop, input (8 directions), **click-to-move auto-walk (`Click`)** and the input-precedence rules, asset loading (sync + async) and `SpriteSheetExists`, camera, black background / map centering, map ownership (`IDisposable`), and the minimap (`RenderMinimap` — fit/zoom semantics, green player + yellow NPC dots). |
+| [api/GameEngine.md](api/GameEngine.md) | Root object: game loop, input (8 directions), **click-to-move auto-walk (`Click`)** and the input-precedence rules, asset loading (sync + async) and `SpriteSheetExists`, camera, black background / map centering, **Y-sorted character rendering** (NPCs + player by `Position.Y`, higher Y drawn on top), map ownership (`IDisposable`), and the minimap (`RenderMinimap` — fit/zoom semantics, green player + yellow NPC dots). |
 | [api/Character.md](api/Character.md) / [api/Player.md](api/Player.md) | In-world state, sprite references, the speed-scaled walk-cycle animation (`AnimationCycleSpeed`), autonomous movement (`StartMoving` / `StopMoving` / `IsMoving`), and the movement-state event (`OnMove` / `PlayerMoveEventArgs` / `Stop()`). |
 | [api/SpriteSheet.md](api/SpriteSheet.md) | The 12×8 sheet layout (derived cell size, e.g. 576×384 or 936×864) and the **1..8 character index** semantics. |
 | [api/SpriteSheetManager.md](api/SpriteSheetManager.md) | Loading full/part sheets by path or stream, including the async `LoadAsync`/`LoadPartAsync` overloads. |
