@@ -27,10 +27,13 @@ registry and the pressed-keys state, and exposes the game-loop entry points `Upd
   canvas size — the foundation the "click to move" and "GUI around game objects" features will
   build on.
 - When a map is set, `Render` clears the whole canvas to black first, then draws the map's
-  below-player layers, then every NPC, then the player, and finally the map's `above_player`
-  layers (tile layers declaring the Tiled `above_player` custom property) so those tiles appear
-  on top of the player. Without a map the canvas is left untouched and only the characters are
-  drawn.
+  below-player layers, then **all characters (the NPCs in `Characters` and the player) sorted by
+  `Position.Y` ascending**, and finally the map's `above_player` layers (tile layers declaring
+  the Tiled `above_player` custom property) so those tiles appear on top of every character.
+  Within the character pass a character with a higher `Position.Y` (lower on the screen, closer
+  to the viewer) is drawn last and appears on top of the others, so the player may be drawn
+  behind an NPC whose Y is higher. Without a map the canvas is left untouched and only the
+  characters (Y-sorted) are drawn.
 - Movement input combines every held bound key into a single 8-direction vector: opposite keys
   cancel (`W`+`S` or `A`+`D`), and a diagonal pair combines into a diagonal (`W`+`D` → up-right)
   at the same speed as cardinal movement (see [Architecture](../Architecture.md)).
@@ -109,7 +112,9 @@ engine.Player.SpriteSheets.Add(new SpriteSheetRef("hero", CharacterIndex: 1));
 ### `IList<Character> Characters`
 
 Gets the mutable list of NPC characters present in the game world. The player is never in this
-list (it is rendered separately, on top).
+list; it is rendered alongside the NPCs in `Render`'s **Y-sorted character pass** (all
+characters are drawn sorted by `Position.Y` ascending, higher Y last / on top), so the player
+may be drawn behind an NPC whose Y is higher.
 
 The engine's update loop calls `Character.Update(dt, Map)` on every NPC each frame, so an NPC
 started with `StartMoving` moves autonomously and its displacement is **collision-resolved**
@@ -215,11 +220,14 @@ engine.Update(dt: 1.0 / 60);
 
 Draws one frame onto the canvas. When a map is set the canvas is cleared to black first (the
 black background behind/around a map smaller than the canvas), then the map's below-player
-layers are drawn, then every NPC, then the player on top, and finally the map's `above_player`
-layers so those tiles appear above the player. The camera follows the player, centers a map
-smaller than the canvas, and is clamped so the viewport stays inside the map; the canvas size is
-read from the canvas clip bounds. The camera origin is computed in tiles and converted to a
-pixel viewport for the map and to pixel screen positions for the characters.
+layers are drawn, then **all characters (the NPCs in `Characters` and the player) sorted by
+`Position.Y` ascending** — a character with a higher Y (lower on the screen) is drawn last and
+appears on top of the others, so the player may be drawn behind an NPC whose Y is higher — and
+finally the map's `above_player` layers so those tiles appear above every character. The camera
+follows the player, centers a map smaller than the canvas, and is clamped so the viewport stays
+inside the map; the canvas size is read from the canvas clip bounds. The camera origin is
+computed in tiles and converted to a pixel viewport for the map and to pixel screen positions for
+the characters.
 
 ```csharp
 using var bitmap = new SKBitmap(640, 480);
