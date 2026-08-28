@@ -75,9 +75,10 @@ registry and the pressed-keys state, and exposes the game-loop entry points `Upd
   floating-point overshoot accumulation. As a safety net the resolver refuses a displacement whose
   resulting footprint would still overlap a solid tile (only possible when the starting footprint
   was already illegal, e.g. embedded in a wall), so movement never moves a character through a
-  solid tile. A key move that starts from idle fires `Player.OnStartMoving` **before** the
-  displacement is applied; a move with **no net displacement** (fully blocked on every axis, e.g.
-  walking straight into a wall or into a corner) is reported as a **collision stop** through
+  solid tile. A key move that starts from idle — or changes direction while moving, e.g. pressing
+  a second key makes the effective direction a diagonal — fires `Player.OnStartMoving` **before**
+  the displacement is applied; a move with **no net displacement** (fully blocked on every axis,
+  e.g. walking straight into a wall or into a corner) is reported as a **collision stop** through
   `Player.ReportBlockedMove`, so `Player.OnStopMoving` fires even while the movement key is held
   against the wall — exactly once, with the direction the player tried to move in (a blocked move
   from idle fires start then stop in the same frame). See [Architecture](../Architecture.md).

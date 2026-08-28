@@ -18,22 +18,23 @@ collision-resolved and auto-walk movement through its internal `ReportMovement` 
 
 The player exposes a **movement-state machine** through two events:
 
-- **`OnStartMoving`** fires *exactly* when the player **begins** moving and **before the
-  position is updated**:
+- **`OnStartMoving`** fires *exactly* when the player **begins moving in a new direction**
+  and **before the position is updated**:
   - move-by-key: on the first frame movement starts (the frame a pressed key takes effect,
-    idle → moving);
+    idle → moving), and **when the direction changes while already moving** (e.g. pressing a
+    second key so the effective direction becomes a diagonal, or releasing one key of a held
+    diagonal pair);
   - click-to-move: each time a new auto-walk step begins (the first step, and every time the
     next waypoint is reached while another remains);
-  - it does **not** fire at any other time — no direction-change-while-moving events, no
-    per-frame events.
+  - it does **not** fire per frame: a move that keeps the same direction while already moving
+    raises nothing.
 - **`OnStopMoving`** fires when the player stops moving:
   - move-by-key: every movement key is released (the player goes idle);
   - click-to-move: the last auto-walk step is reached (the path completes);
   - the player is blocked by a collision (a fully blocked move).
 
-Both events carry only the facing direction (`PlayerMoveEventArgs.Direction`), which is all a
-host needs to mirror the player on other clients via `Character.StartMoving` /
-`Character.StopMoving`.
+Both events carry only the facing `Direction`, which is all a host needs to mirror the player
+on other clients via `Character.StartMoving` / `Character.StopMoving`.
 
 ## Fields
 
@@ -105,32 +106,37 @@ player.SpriteSheets.Add(new SpriteSheetRef("hero", CharacterIndex: 1));
 
 ## Events
 
-### `event EventHandler<PlayerMoveEventArgs>? OnStartMoving`
+### `event EventHandler<Direction>? OnStartMoving`
 
-Occurs when the player **starts moving**, **before the position is updated**:
+Occurs when the player **starts moving in a new direction**, **before the position is updated**:
 
 - **Move-by-key**: on the first frame movement starts (the frame a pressed key takes effect,
-  idle → moving). A move while already moving — same direction *or* a direction change — raises
-  nothing, and a speed-factor-zero `Move` (a turn only) raises nothing either.
+  idle → moving), and **when the direction changes while already moving** — e.g. pressing a
+  second key makes the effective direction a diagonal (right → up-right), and releasing one
+  key of a held diagonal pair reverts to the remaining cardinal. Each direction change is a new
+  start, so remote clients that mirror the player learn the new facing direction. A move while
+  already moving in the *same* direction raises nothing (no per-frame events), and a
+  speed-factor-zero `Move` (a turn only) raises nothing either.
 - **Click-to-move** (auto-walk): each time a new auto-walk step begins — the first step, and
   every time the next waypoint is reached while another remains. `OnStartMoving` therefore fires
   once **per auto-walk step** (once per waypoint in the path), and the event is raised before
   that step's displacement is applied.
 
-The event carries the direction the player is moving in (`PlayerMoveEventArgs.Direction`).
+The event carries the `Direction` the player is moving in.
 
 ```csharp
 var player = new Player();
-player.OnStartMoving += (_, e) =>
+player.OnStartMoving += (_, direction) =>
 {
-    Console.WriteLine($"started moving {e.Direction}");
+    Console.WriteLine($"started moving {direction}");
 };
 
 player.Move(Direction.Right, speedFactor: 1, dt: 1); // prints "started moving Right"
-player.Move(Direction.Down, speedFactor: 1, dt: 1);  // direction change while moving: nothing
+player.Move(Direction.UpRight, speedFactor: 1, dt: 1); // direction change: prints "started moving UpRight"
+player.Move(Direction.UpRight, speedFactor: 1, dt: 1); // same direction: nothing
 ```
 
-### `event EventHandler<PlayerMoveEventArgs>? OnStopMoving`
+### `event EventHandler<Direction>? OnStopMoving`
 
 Occurs when the player **stops moving**:
 
@@ -143,14 +149,14 @@ Occurs when the player **stops moving**:
   `OnStartMoving` then `OnStopMoving` in the same frame. The reported direction is the
   direction the player tried to move in (the player turns to face the wall).
 
-The event carries the direction the player was last moving in (`PlayerMoveEventArgs.Direction`).
-Stopping does not change the facing direction.
+The event carries the `Direction` the player was last moving in. Stopping does not change the
+facing direction.
 
 ```csharp
 var player = new Player();
-player.OnStopMoving += (_, e) =>
+player.OnStopMoving += (_, direction) =>
 {
-    Console.WriteLine($"stopped moving {e.Direction}");
+    Console.WriteLine($"stopped moving {direction}");
 };
 
 player.Move(Direction.Right, speedFactor: 1, dt: 1); // starts moving Right
@@ -161,16 +167,14 @@ player.Stop();                                       // prints "stopped moving R
 // when the player is blocked; keeping D held against the same wall raises nothing more.
 ```
 
-### `sealed record PlayerMoveEventArgs(Direction Direction)`
-
-The event arguments of `OnStartMoving` / `OnStopMoving`: the facing direction of the player.
-For a start it is the direction the player is moving in; for a stop it is the direction the
-player was last moving in.
+Both events carry the facing `Direction` directly — the previous
+`PlayerMoveEventArgs` wrapper was removed, so a handler reads the direction from the event's
+second argument:
 
 ```csharp
-void OnPlayerMoved(object? sender, PlayerMoveEventArgs e)
+void OnPlayerMoved(object? sender, Direction direction)
 {
-    Console.WriteLine($"facing {e.Direction}");
+    Console.WriteLine($"facing {direction}");
 }
 ```
 
@@ -183,9 +187,10 @@ direction. Forwards to `Character.Move`.
 
 This method also drives the movement-state machine: with `speedFactor` greater than zero the
 player is considered *moving* (it actually moves), so `OnStartMoving` fires **before** the
-displacement when the player starts moving (idle → moving). A move while already moving (same
-or new direction) raises nothing. With `speedFactor == 0` the player only turns: no event is
-raised (a turn is neither a start nor a stop).
+displacement when the player starts moving in a new direction — from idle → moving, or when the
+direction changes while already moving (e.g. right → up-right). A move while already moving in
+the *same* direction raises nothing (no per-frame events). With `speedFactor == 0` the player
+only turns: no event is raised (a turn is neither a start nor a stop).
 
 ```csharp
 player.Move(Direction.Right, dt: 1.0 / 60);
@@ -220,12 +225,17 @@ player.Stop(); // already idle: no event
 ```csharp
 var player = new Player();
 var moveLog = new List<string>();
-player.OnStartMoving += (_, e) => moveLog.Add($"start {e.Direction}");
-player.OnStopMoving += (_, e) => moveLog.Add($"stop {e.Direction}");
+player.OnStartMoving += (_, direction) => moveLog.Add($"start {direction}");
+player.OnStopMoving += (_, direction) => moveLog.Add($"stop {direction}");
 
 // Manual movement: the engine calls Move (or drives the player directly).
 player.Move(Direction.Right, speedFactor: 1, dt: 1);  // "start Right"
 player.Stop();                                         // "stop Right"
+
+// A direction change while moving is also a start (e.g. a second key makes a diagonal).
+player.Move(Direction.Right, speedFactor: 1, dt: 1);   // "start Right"
+player.Move(Direction.UpRight, speedFactor: 1, dt: 1); // "start UpRight"
+player.Stop();                                         // "stop UpRight"
 
 // Auto-walk (via GameEngine.Click) raises the same events through the engine's internal
 // ReportAutoWalkStep bridge — one "start" per step and a single "stop" at completion.

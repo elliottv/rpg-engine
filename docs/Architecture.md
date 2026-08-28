@@ -318,9 +318,11 @@ or into a corner) is reported as a **collision stop** through `Player.ReportBloc
 `Player.OnStopMoving` fires even while the movement key is held against the wall (exactly once,
 with the direction the player tried to move in); the start of the move is reported *before* the
 displacement through `Player.ReportMovement`, so `Player.OnStartMoving` fires when the player
-begins moving (idle → moving) and a blocked move from idle fires start then stop in the same
-frame. Any move that actually displaced the player (including a diagonal whose full displacement
-was clear) reports only the start through `Player.ReportMovement` as before. The map-bounds clamp (`ClampPlayerToMap`) keeps the **fixed
+begins moving in a new direction (idle → moving, or a direction change while moving — e.g.
+pressing a second key makes the effective direction a diagonal) and a blocked move from idle
+fires start then stop in the same frame. Any move that actually displaced the player (including
+a diagonal whose full displacement was clear) reports only the start through
+`Player.ReportMovement` as before. The map-bounds clamp (`ClampPlayerToMap`) keeps the **fixed
 0.5×0.5 box** inside the map for the player (the feet clamp to
 `x ∈ [0.25, max(0.25, Map.Width - 0.25)]`,
 `y ∈ [0.5, max(0.5, Map.Height)]`) and remains as the player-only post-move safety net for
@@ -399,20 +401,23 @@ auto-walk never moves the player through or into a solid tile.
   path) **cancels** it.
 
 **Movement-state events**: `Player` exposes `OnStartMoving` and `OnStopMoving`
-(`EventHandler<PlayerMoveEventArgs>`, carrying only the facing `Direction`). `OnStartMoving`
-fires **exactly** when the player begins moving and **before** the position is updated — on the
-first frame a movement key takes effect (idle → moving) for move-by-key, and once **per
-auto-walk step** (per waypoint, i.e. the first step and every time the next waypoint is reached
-while another remains) for click-to-move — and **not** on direction changes while moving or on
-every frame. `OnStopMoving` fires when every movement key is released (the player goes idle), when
+(`EventHandler<Direction>`, carrying only the facing `Direction` — the old
+`PlayerMoveEventArgs` wrapper was removed). `OnStartMoving` fires **exactly** when the player
+begins moving in a new direction and **before** the position is updated: on the first frame a
+movement key takes effect (idle → moving) for move-by-key, on **direction changes while
+moving** (e.g. pressing a second key makes the effective direction a diagonal, or releasing one
+key of a held diagonal pair reverts to the remaining cardinal), and once **per auto-walk step**
+(per waypoint, i.e. the first step and every time the next waypoint is reached while another
+remains) for click-to-move — and never on every frame (a same-direction move while moving raises
+nothing). `OnStopMoving` fires when every movement key is released (the player goes idle), when
 the last auto-walk step is reached (the path completes), and when the player is blocked by a
 collision. The engine drives the events through the internal bridges `Player.ReportMovement`
-(key movement, start only on idle → moving, called before the displacement),
-`Player.ReportAutoWalkStep` (auto-walk, start every call, once per step boundary before that
-step's position update) and `Player.ReportBlockedMove` (a collision stop), so a fully blocked
-move from idle fires start then stop in the same frame while a held key against the same wall
-fires nothing more. `Player.Stop()` raises `OnStopMoving` only when the player was moving; the
-engine calls it when there is no input and no auto-walk target.
+(key movement, start on idle → moving or on a direction change while moving, called before the
+displacement), `Player.ReportAutoWalkStep` (auto-walk, start every call, once per step boundary
+before that step's position update) and `Player.ReportBlockedMove` (a collision stop), so a fully
+blocked move from idle fires start then stop in the same frame while a held key against the same
+wall fires nothing more. `Player.Stop()` raises `OnStopMoving` only when the player was moving;
+the engine calls it when there is no input and no auto-walk target.
 
 ## Rendering
 
