@@ -638,7 +638,7 @@ public class CharacterTests
         using var bitmap = new SKBitmap(CharacterTestHelper.CellSize, CharacterTestHelper.CellSize);
         using var canvas = new SKCanvas(bitmap);
         Assert.Throws<InvalidOperationException>(
-            () => character.Draw(canvas, new Position(0, 0), dt: 1, manager));
+            () => character.Draw(canvas, new Position(0, 0), dt: 1, manager, null));
     }
 
     // ---------------------------------------------------------------------
@@ -660,7 +660,7 @@ public class CharacterTests
         using var bitmap = new SKBitmap(CharacterTestHelper.CellSize, CharacterTestHelper.CellSize);
         using var canvas = new SKCanvas(bitmap);
         Assert.Throws<ArgumentOutOfRangeException>(
-            () => character.Draw(canvas, new Position(0, 0), dt: 1, manager));
+            () => character.Draw(canvas, new Position(0, 0), dt: 1, manager, null));
     }
 
     // ---------------------------------------------------------------------
@@ -758,7 +758,7 @@ public class CharacterTests
         {
             canvas.Clear(SKColors.Transparent);
             // The sprite's middle-bottom (feet) sits at (48, 72): top-left (24, 24).
-            character.Draw(canvas, new Position(48, 72), dt: 1, manager);
+            character.Draw(canvas, new Position(48, 72), dt: 1, manager, null);
         }
 
         var expected = CharacterTestHelper.SpriteColor(seed: 0, characterIndex: 1, Direction.Down, StandingFrame);
@@ -833,7 +833,7 @@ public class CharacterTests
         using (var canvas = new SKCanvas(bitmap))
         {
             canvas.Clear(SKColors.Transparent);
-            character.Draw(canvas, new Position(width / 2.0, height), dt: 1, manager);
+            character.Draw(canvas, new Position(width / 2.0, height), dt: 1, manager, null);
         }
 
         return bitmap;

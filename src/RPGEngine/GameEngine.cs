@@ -143,6 +143,13 @@ namespace RPGEngine;
 public sealed class GameEngine : IDisposable
 {
     private readonly SpriteSheetManager _spriteSheetManager = new();
+
+    // The single icon set "loaded into the game": a PNG divided into 32×32 tiles from which
+    // characters with a non-null Character.IconIndex draw a small icon above their sprite. A
+    // subsequent LoadIconSet/LoadIconSetAsync call replaces the previous set (there is no name,
+    // so no duplicate-name error).
+    private IconSet? _iconSet;
+
     private readonly List<Character> _characters = [];
     private readonly HashSet<Key> _pressedKeys = [];
     private TileMap? _map;
@@ -493,7 +500,7 @@ public sealed class GameEngine : IDisposable
             var charactersInRenderOrder = _characters.Append(Player.Character).OrderBy(c => c.Position.Y);
             foreach (var character in charactersInRenderOrder)
             {
-                character.Draw(canvas, character.Position.ToPixels(ts), dt, _spriteSheetManager);
+                character.Draw(canvas, character.Position.ToPixels(ts), dt, _spriteSheetManager, _iconSet);
             }
 
             if (Map is not null)
@@ -856,6 +863,77 @@ public sealed class GameEngine : IDisposable
         => _spriteSheetManager.LoadPartAsync(name, stream, partType);
 
     /// <summary>
+    /// Loads the single icon set from <paramref name="path"/> into the engine so characters with
+    /// a non-null <see cref="Character.IconIndex"/> can display a small icon above their sprite
+    /// (e.g. a quest marker or status balloon). The set is a PNG divided into 32×32 tiles of
+    /// arbitrary overall size; the number of rows and columns is deduced from the image
+    /// dimensions (<c>RowCount = height / <see cref="IconSet.TileSize"/></c>,
+    /// <c>ColumnCount = width / <see cref="IconSet.TileSize"/></c>).
+    /// </summary>
+    /// <param name="path">The path to an icon-set image file (PNG or other SkiaSharp-supported format).</param>
+    /// <exception cref="ArgumentNullException"><paramref name="path"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="path"/> is empty after trimming, the image cannot be decoded, or its
+    /// dimensions do not form a valid 32×32 grid (positive width and height, each a multiple of
+    /// <see cref="IconSet.TileSize"/>).
+    /// </exception>
+    /// <remarks>
+    /// The engine holds exactly one icon set: a subsequent <see cref="LoadIconSet(string)"/> (or
+    /// the stream / async overloads) <em>replaces</em> the previous set. There is no name, so
+    /// there is no duplicate-name error.
+    /// </remarks>
+    public void LoadIconSet(string path)
+    {
+        _iconSet = IconSet.Load(path);
+    }
+
+    /// <summary>
+    /// Loads the single icon set from <paramref name="stream"/> into the engine so characters
+    /// with a non-null <see cref="Character.IconIndex"/> can display a small icon above their
+    /// sprite. This is the file-system-free entry point (e.g. WebAssembly builds where assets
+    /// are fetched over HTTP).
+    /// </summary>
+    /// <param name="stream">A stream containing the encoded icon-set image (PNG or other SkiaSharp-supported format).</param>
+    /// <exception cref="ArgumentNullException"><paramref name="stream"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">
+    /// The image cannot be decoded, or its dimensions do not form a valid 32×32 grid (positive
+    /// width and height, each a multiple of <see cref="IconSet.TileSize"/>).
+    /// </exception>
+    /// <remarks>
+    /// The caller remains the owner of <paramref name="stream"/>; it is not disposed here. The
+    /// engine holds exactly one icon set: a subsequent <see cref="LoadIconSet(Stream)"/> (or the
+    /// path / async overloads) <em>replaces</em> the previous set.
+    /// </remarks>
+    public void LoadIconSet(Stream stream)
+    {
+        _iconSet = IconSet.Load(stream);
+    }
+
+    /// <summary>
+    /// Asynchronously loads the single icon set from <paramref name="stream"/> into the engine so
+    /// characters with a non-null <see cref="Character.IconIndex"/> can display a small icon
+    /// above their sprite. This is the asynchronous counterpart of
+    /// <see cref="LoadIconSet(Stream)"/> for streams that only support asynchronous reads (e.g.
+    /// certain network/browser streams).
+    /// </summary>
+    /// <param name="stream">A stream containing the encoded icon-set image (PNG or other SkiaSharp-supported format).</param>
+    /// <returns>A task that completes when the icon set is loaded and stored.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="stream"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">
+    /// The image cannot be decoded, or its dimensions do not form a valid 32×32 grid (positive
+    /// width and height, each a multiple of <see cref="IconSet.TileSize"/>).
+    /// </exception>
+    /// <remarks>
+    /// The caller remains the owner of <paramref name="stream"/>; it is not disposed here. The
+    /// engine holds exactly one icon set: a subsequent <see cref="LoadIconSetAsync(Stream)"/> (or
+    /// the path / stream overloads) <em>replaces</em> the previous set.
+    /// </remarks>
+    public async Task LoadIconSetAsync(Stream stream)
+    {
+        _iconSet = await IconSet.LoadAsync(stream).ConfigureAwait(false);
+    }
+
+    /// <summary>
     /// Returns whether a spritesheet is registered under <paramref name="name"/>. Full sheets
     /// (loaded with <see cref="LoadSpriteSheet(string, Stream)"/>) and part sheets (loaded with
     /// <see cref="LoadPartSpriteSheet(string, Stream, CharacterPartType)"/>) share one registry,
@@ -1077,7 +1155,7 @@ public sealed class GameEngine : IDisposable
     /// Cancels any in-progress auto-walk by clearing the waypoint queue and resetting the
     /// auto-walk step state (the current step's <see cref="Player.OnStartMoving"/> was not
     /// reported, or no longer applies). The player itself stops on the next <see cref="Update"/>
-    /// (no input and no path &#8594; <see cref="Player.Stop"/>) unless it was stopped by the caller
+    /// (no input and no path → <see cref="Player.Stop"/>) unless it was stopped by the caller
     /// (a blocked auto-walk step stops it immediately).
     /// </summary>
     private void CancelAutoWalk()
@@ -1150,7 +1228,7 @@ public sealed class GameEngine : IDisposable
     /// The movement events are raised at a deterministic time relative to the displacement:
     /// <see cref="Player.ReportMovement(Direction)"/> is called <em>before</em> the position is
     /// updated, so <see cref="Player.OnStartMoving"/> fires when the player starts moving in a new
-    /// direction (idle &#8594; moving, or a direction change while moving &#8212; e.g. pressing a second key so
+    /// direction (idle → moving, or a direction change while moving — e.g. pressing a second key so
     /// the effective direction becomes a diagonal) and observes the pre-move position.
     /// After the displacement is resolved, a move with no net displacement (fully blocked by solid
     /// tiles or the map edge on every axis) is reported as a <em>collision stop</em> through

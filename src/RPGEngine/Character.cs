@@ -117,6 +117,25 @@ public sealed class Character
     public IList<SpriteSheetRef> SpriteSheets => _spriteSheets;
 
     /// <summary>
+    /// Gets or sets the index of the icon from the loaded icon set to display above the
+    /// character's sprite, or <see langword="null"/> to display no icon. The icon is selected
+    /// with the row-major formula <c>iconRow = floor(iconIndex / ColumnCount)</c>,
+    /// <c>iconColumn = iconIndex % ColumnCount</c>.
+    /// </summary>
+    /// <remarks>
+    /// A non-null value renders the selected 32×32 icon <em>above</em> the sprite (centered
+    /// horizontally on the character's feet, its bottom edge at the sprite's top edge) within
+    /// the character's Y-sorted draw pass, when an icon set is loaded into the engine (see
+    /// <c>GameEngine.LoadIconSet</c>/<c>GameEngine.LoadIconSetAsync</c>). A non-null index with
+    /// no icon set loaded throws <see cref="InvalidOperationException"/> at draw time; an index
+    /// outside the loaded set's <c>0..Count-1</c> range throws
+    /// <see cref="ArgumentOutOfRangeException"/> at draw time. The default is
+    /// <see langword="null"/> (no icon). Use <see cref="Player.Character"/>'s
+    /// <c>IconIndex</c> for the player (there is no forwarding property on <see cref="Player"/>).
+    /// </remarks>
+    public int? IconIndex { get; set; }
+
+    /// <summary>
     /// Gets the current walk-cycle animation frame (0..2). The middle frame (1) is the standing
     /// frame. The frame advances on a time/speed basis (see <see cref="Update(double, TileMap)"/>). This
     /// accessor is internal so tests can verify animation advancement.
@@ -267,23 +286,28 @@ public sealed class Character
     /// Draws the character at <paramref name="anchorPosition"/> (its feet position — the
     /// middle-bottom of the sprite — minus the camera origin). The spritesheet references are
     /// resolved through <paramref name="spriteSheetManager"/>, which the engine supplies at
-    /// draw time.
+    /// draw time. When <see cref="IconIndex"/> is non-null and an icon set is supplied through
+    /// <paramref name="iconSet"/>, the selected 32×32 icon is drawn above the sprite (centered
+    /// horizontally on the feet, its bottom edge at the sprite's top edge).
     /// </summary>
     /// <param name="canvas">The canvas to draw onto.</param>
     /// <param name="anchorPosition">The feet (middle-bottom) anchor of the sprite, in pixels:
     /// the sprite is drawn above and centered on this point.</param>
     /// <param name="dt">The elapsed time in seconds (reserved for future animation timing).</param>
     /// <param name="spriteSheetManager">The manager that resolves the referenced sheet names.</param>
+    /// <param name="iconSet">The icon set loaded into the engine, or <see langword="null"/> when
+    /// none is loaded. Required to be non-null when <see cref="IconIndex"/> is non-null.</param>
     /// <exception cref="InvalidOperationException">
     /// The <see cref="SpriteSheets"/> list mixes full and part sheets, or contains more than one
-    /// full sheet.
+    /// full sheet, or <see cref="IconIndex"/> is non-null while <paramref name="iconSet"/> is
+    /// <see langword="null"/> (no icon set is loaded).
     /// </exception>
     /// <exception cref="ArgumentOutOfRangeException">
     /// A <see cref="SpriteSheetRef"/> has a <see cref="SpriteSheetRef.CharacterIndex"/> outside 1..8.
     /// </exception>
-    internal void Draw(SKCanvas canvas, Position anchorPosition, double dt, SpriteSheetManager spriteSheetManager)
+    internal void Draw(SKCanvas canvas, Position anchorPosition, double dt, SpriteSheetManager spriteSheetManager, IconSet? iconSet)
     {
-        _compositor.Draw(canvas, anchorPosition, _spriteSheets, Direction, _animationFrame, spriteSheetManager);
+        _compositor.Draw(canvas, anchorPosition, _spriteSheets, Direction, _animationFrame, spriteSheetManager, iconSet, IconIndex);
     }
 
     /// <summary>

@@ -28,6 +28,7 @@ documented**. Every page below includes a commented, compilable example; the tes
 | Type | Kind | Page |
 | --- | --- | --- |
 | `SpriteSheet` | class | [SpriteSheet.md](SpriteSheet.md) |
+| `IconSet` | class | [IconSet.md](IconSet.md) |
 | `SpriteSheetRef` | readonly record struct | [SpriteSheetRef.md](SpriteSheetRef.md) |
 | `SpriteSheetType` | enum | [SpriteSheetType.md](SpriteSheetType.md) |
 | `CharacterPartType` | enum | [CharacterPartType.md](CharacterPartType.md) |

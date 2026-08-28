@@ -109,6 +109,13 @@ foreach (var layer in engine.Map?.ObjectLayers ?? [])
 > solid tiles and the map edge with the same fixed 0.5×0.5-tile lower-body footprint, so NPCs
 > stop at walls and at the map edge instead of walking through the world.
 >
+> **Icon sets:** `engine.LoadIconSet(path)` (or the stream / `LoadIconSetAsync` overloads) loads
+> a single **icon set** — a PNG divided into 32×32 tiles, with the rows/columns deduced from the
+> image dimensions — into the engine. A character with a non-null `Character.IconIndex` then
+> draws the selected 32×32 icon **above its sprite** (centered horizontally on the character,
+> its bottom edge at the sprite's top edge) in the Y-sorted character pass. See
+> `docs/api/IconSet.md` and `docs/api/Character.md`.
+>
 > **Minimap:** `engine.RenderMinimap(canvas, zoomLevel)` draws the map's prerendered layers plus a
 > green dot for the player and a yellow dot for each NPC onto a separate surface. `zoomLevel`
 > `1.0` fits the whole map (the default); `> 1` zooms in around the player's dot (clamped to the
@@ -136,9 +143,10 @@ foreach (var layer in engine.Map?.ObjectLayers ?? [])
 | Page | What it covers |
 | --- | --- |
 | [Architecture](Architecture.md) | Composition model, camera, spritesheet layout, part ordering, rendering order and the Tiled read model. |
-| [api/GameEngine.md](api/GameEngine.md) | Root object: game loop, input (8 directions), **click-to-move auto-walk (`Click`)** and the input-precedence rules, asset loading (sync + async) and `SpriteSheetExists`, camera, black background / map centering, **Y-sorted character rendering** (NPCs + player by `Position.Y`, higher Y drawn on top), map ownership (`IDisposable`), and the minimap (`RenderMinimap` — fit/zoom semantics, green player + yellow NPC dots). |
-| [api/Character.md](api/Character.md) / [api/Player.md](api/Player.md) | In-world state, sprite references, the speed-scaled walk-cycle animation (`AnimationCycleSpeed`), autonomous movement (`StartMoving` / `StopMoving` / `IsMoving`), and the movement-state events (`OnStartMoving` / `OnStopMoving` / `Stop()`). |
+| [api/GameEngine.md](api/GameEngine.md) | Root object: game loop, input (8 directions), **click-to-move auto-walk (`Click`)** and the input-precedence rules, asset loading (sync + async: spritesheets, part sheets and the single **icon set** via `LoadIconSet` / `LoadIconSetAsync`) and `SpriteSheetExists`, camera, black background / map centering, **Y-sorted character rendering** (NPCs + player by `Position.Y`, higher Y drawn on top, **icons drawn above each sprite**), map ownership (`IDisposable`), and the minimap (`RenderMinimap` — fit/zoom semantics, green player + yellow NPC dots). |
+| [api/Character.md](api/Character.md) / [api/Player.md](api/Player.md) | In-world state, sprite references, the speed-scaled walk-cycle animation (`AnimationCycleSpeed`), autonomous movement (`StartMoving` / `StopMoving` / `IsMoving`), the movement-state events (`OnStartMoving` / `OnStopMoving` / `Stop()`), and **`IconIndex`** (icons drawn above the sprite when an icon set is loaded). |
 | [api/SpriteSheet.md](api/SpriteSheet.md) | The 12×8 sheet layout (derived cell size, e.g. 576×384 or 936×864) and the **1..8 character index** semantics. |
+| [api/IconSet.md](api/IconSet.md) | Icon sets: a 32×32 tile grid with **row-major** indexing (`row = iconIndex / ColumnCount`, `col = iconIndex % ColumnCount`), loaded into the engine and displayed above character sprites. |
 | [api/SpriteSheetManager.md](api/SpriteSheetManager.md) | Loading full/part sheets by path or stream, including the async `LoadAsync`/`LoadPartAsync` overloads. |
 | [api/TileMap.md](api/TileMap.md) / [api/TileSet.md](api/TileSet.md) | Tiled TMX/TSX loading (sync + async); prerendered layer images, viewport-culled image-blit rendering and `IDisposable`; map custom properties, object layers, the `above_player` flag and collision (`IsSolid`, the `is_collision` layer convention). |
 | [api/TileMapLayer.md](api/TileMapLayer.md) | Tile-layer data and the `AbovePlayer` / `IsCollision` flags. |
