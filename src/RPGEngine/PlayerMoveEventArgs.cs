@@ -1,13 +1,10 @@
 namespace RPGEngine;
 
 /// <summary>
-/// Provides data for the <see cref="Player.OnMove"/> event: whether the player is now moving
-/// and the direction it is currently facing.
+/// Provides data for the <see cref="Player.OnStartMoving"/> and
+/// <see cref="Player.OnStopMoving"/> events: the facing direction of the player.
 /// </summary>
-/// <param name="IsMoving">
-/// <see langword="true"/> when the player is now moving; <see langword="false"/> when it has
-/// stopped. For a speed-factor-zero turn (see <see cref="Player.Move(Direction, double, double)"/>)
-/// the value reflects the current movement state (moving or idle) at the moment of the turn.
-/// </param>
-/// <param name="Direction">The direction the player is currently facing.</param>
-public sealed record PlayerMoveEventArgs(bool IsMoving, Direction Direction);
+/// <param name="Direction">The direction the player is facing: the direction it started moving
+/// in (<see cref="Player.OnStartMoving"/>) or the direction it was last moving in when it
+/// stopped (<see cref="Player.OnStopMoving"/>).</param>
+public sealed record PlayerMoveEventArgs(Direction Direction);
