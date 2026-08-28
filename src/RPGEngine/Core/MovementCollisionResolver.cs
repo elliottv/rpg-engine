@@ -134,7 +134,7 @@ internal static class MovementCollisionResolver
     /// <em>both</em> axes; otherwise the starting position is returned (the move is fully
     /// blocked). This disables wall-sliding for diagonal movement — a diagonal into a wall where
     /// only one axis is free stops the character entirely instead of sliding along the free axis,
-    /// so the engine can report a collision stop (<c>IsMoving = false</c>). Cardinal moves keep
+    /// so the engine can report a collision stop (raises <see cref="Player.OnStopMoving"/>). Cardinal moves keep
     /// the per-axis slide-to-boundary clamping of <see cref="Resolve"/>, so a straight move into
     /// a wall still stops exactly at the boundary.
     /// </summary>
