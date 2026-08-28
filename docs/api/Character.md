@@ -22,6 +22,12 @@ spritesheet references used to render it.
   the player's key-driven movement — so NPCs stop at walls and at the map edge instead of
   walking through the world. The one-shot `Move(...)` displacement stays a raw displacement
   (only the `StartMoving`/`Update` path is resolved).
+- A non-null `IconIndex` renders the selected 32×32 icon **above the sprite** (centered
+  horizontally on the character, its bottom edge at the sprite's top edge) within the
+  character's Y-sorted draw pass, **when an icon set is loaded** into the engine
+  (`GameEngine.LoadIconSet` / `LoadIconSetAsync`). A non-null index with no icon set loaded
+  throws `InvalidOperationException` at draw time; an index outside the loaded set's range throws
+  `ArgumentOutOfRangeException`.
 
 ## Properties
 
@@ -103,6 +109,28 @@ irrelevant for part sheets — they are composed in the fixed RPG Maker MZ order
 var character = new Character();
 character.SpriteSheets.Add(new SpriteSheetRef("hero", CharacterIndex: 1));
 character.SpriteSheets.Add(new SpriteSheetRef("cape", CharacterIndex: 4));
+```
+
+### `int? IconIndex`
+
+Gets or sets the index of the icon from the loaded icon set to display **above** the character's
+sprite, or `null` to display no icon. The default is `null`. The icon is selected with the
+**row-major** formula `iconRow = floor(iconIndex / ColumnCount)`,
+`iconColumn = iconIndex % ColumnCount` — consecutive indices walk left-to-right across a row
+first, then wrap to the next row (index 1 is to the right of index 0). A non-null value renders
+the selected 32×32 icon above the sprite (centered horizontally on the character, its bottom edge
+at the sprite's top edge) when an icon set is loaded; a non-null index with no set loaded throws
+`InvalidOperationException` at draw time.
+
+For the player, use `Player.Character.IconIndex` (there is no forwarding property on `Player`).
+
+```csharp
+// The engine must have an icon set loaded (e.g. engine.LoadIconSet("assets/icons/icons.png")).
+// A 96×64 set is 3 columns × 2 rows: index 0 is the top-left tile and index 1 is to its right.
+var character = new Character { Position = new Position(3.5, 4.5) };
+character.SpriteSheets.Add(new SpriteSheetRef("hero", CharacterIndex: 1));
+character.IconIndex = 0; // draw the top-left icon above the sprite
+character.IconIndex = null; // hide the icon again
 ```
 
 ## Methods
