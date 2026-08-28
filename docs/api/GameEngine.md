@@ -93,6 +93,12 @@ registry and the pressed-keys state, and exposes the game-loop entry points `Upd
   prerenders each tile layer into an `SKImage` on load).
 - Tile sets are not loaded through the engine: a `TileMap` owns the tilesets its layers
   reference. Standalone tilesets are loaded directly through the `TileSet.Load` factories.
+- **Icon sets**: `LoadIconSet` / `LoadIconSetAsync` load a single icon set (a PNG divided into
+  32×32 tiles) into the engine. Characters with a non-null `Character.IconIndex` then draw the
+  selected 32×32 icon **above their sprite** (centered horizontally on the character, its bottom
+  edge at the sprite's top edge) within the Y-sorted character pass. The engine holds exactly one
+  icon set; a subsequent load **replaces** the previous set. See
+  [IconSet.md](IconSet.md) and [Character.md](Character.md).
 
 ## Constructors
 
@@ -393,6 +399,46 @@ streams that only support asynchronous reads. The caller remains the owner of th
 using var stream = new MemoryStream(await http.GetByteArrayAsync("assets/character_part_body.png"));
 await engine.LoadPartSpriteSheetAsync("villager_body", stream, CharacterPartType.Body);
 ```
+
+### `void LoadIconSet(string path)`
+
+Loads the single **icon set** from a file path into the engine so characters with a non-null
+`Character.IconIndex` can display a small icon **above their sprite**. The set is a PNG divided
+into 32×32 tiles of arbitrary overall size; the number of rows and columns is deduced from the
+image dimensions (`RowCount = height / 32`, `ColumnCount = width / 32`). Throws
+`ArgumentNullException` when `path` is null; `ArgumentException` when `path` is empty after
+trimming, the image cannot be decoded, or its dimensions are not a positive multiple of 32 on both
+axes.
+
+```csharp
+engine.LoadIconSet("assets/icons/icons.png"); // e.g. a 96×64 PNG (3 columns × 2 rows)
+```
+
+### `void LoadIconSet(Stream stream)`
+
+Loads the single icon set from a stream (the file-system-free entry point, e.g. WebAssembly builds
+where assets are fetched over HTTP). The caller remains the owner of the stream. Throws
+`ArgumentNullException` when `stream` is null; `ArgumentException` when the image cannot be decoded
+or its dimensions are not a positive multiple of 32 on both axes.
+
+```csharp
+using var stream = new MemoryStream(await http.GetByteArrayAsync("assets/icons/icons.png"));
+engine.LoadIconSet(stream);
+```
+
+### `Task LoadIconSetAsync(Stream stream)`
+
+The asynchronous counterpart of `LoadIconSet(Stream)` for streams that only support asynchronous
+reads (e.g. certain network/browser streams). The caller remains the owner of the stream.
+
+```csharp
+using var stream = new MemoryStream(await http.GetByteArrayAsync("assets/icons/icons.png"));
+await engine.LoadIconSetAsync(stream);
+```
+
+> **Replacement semantics:** the engine holds exactly **one** icon set. A subsequent
+> `LoadIconSet` / `LoadIconSetAsync` call (path, stream or async) **replaces** the previous set —
+> there is no name, so there is no duplicate-name error.
 
 ### `bool SpriteSheetExists(string name)`
 
