@@ -870,4 +870,68 @@ public class DocsExamplesTests
         Assert.Equal(12, map.Height);
         Assert.Equal(3, map.Layers.Count); // ground + decor + trees_above
     }
+
+    // ---------------------------------------------------------------------
+    // docs/api/IconSet.md and docs/api/Character.md: loading an icon set and
+    // displaying an icon above a character's sprite (story 70).
+    // ---------------------------------------------------------------------
+    /// <summary>
+    /// The icon-set example from the documentation: load a 96×64 icon set (3 columns × 2 rows),
+    /// load it into the engine, set <c>Player.Character.IconIndex</c> and render, then assert the
+    /// icon tile's unique color appears above the sprite.
+    /// </summary>
+    [Fact]
+    public void IconSet_LoadAndDisplayIcon_Example()
+    {
+        // 1. Load an icon set: a PNG divided into 32×32 tiles of arbitrary overall size; the
+        //    number of rows and columns is deduced from the dimensions.
+        using (var stream = new MemoryStream(IconSetTestHelper.CreateIconSetPng(rows: 2, cols: 3), writable: false))
+        {
+            var iconSet = IconSet.Load(stream);
+
+            Console.WriteLine(iconSet.RowCount);    // 2 (height / 32 = 64 / 32)
+            Console.WriteLine(iconSet.ColumnCount); // 3 (width / 32 = 96 / 32)
+            Console.WriteLine(iconSet.Count);       // 6 (RowCount * ColumnCount)
+
+            // Row-major indexing: on a 3-column set, index 1 is the second tile of the top row
+            // (to the right of index 0), and index 4 is the tile at (row = 4/3 = 1, col = 4%3 = 1).
+            using var icon = iconSet.GetIcon(4);
+            Assert.Equal(IconSetTestHelper.TileSize, icon.Width);  // 32
+            Assert.Equal(IconSetTestHelper.TileSize, icon.Height); // 32
+        }
+
+        // 2. Load the set into the engine and display an icon above a character's sprite.
+        var engine = new GameEngine();
+        using (var sheetStream = CharacterTestHelper.CreateSheetStream(seed: 1))
+        {
+            engine.LoadSpriteSheet("hero", sheetStream);
+        }
+
+        using (var iconStream = IconSetTestHelper.CreateIconSetStream(rows: 2, cols: 3))
+        {
+            engine.LoadIconSet(iconStream);
+        }
+
+        engine.Player.SpriteSheets.Add(new SpriteSheetRef("hero", CharacterIndex: 1));
+        engine.Player.Character.IconIndex = 0; // the top-left icon of the loaded set
+        engine.Player.Position = new Position(2.5, 3.0);
+
+        // 3. Render one frame and assert the icon is drawn above the sprite: the player's feet
+        //    are at (120, 144), the 48×48 sprite spans (96, 96)-(144, 144) and the 32×32 icon
+        //    spans (104, 64)-(136, 96), so the icon center is (120, 80) and the sprite center is
+        //    (120, 120).
+        const int canvasSize = 240;
+        using var bitmap = new SKBitmap(canvasSize, canvasSize);
+        using (var canvas = new SKCanvas(bitmap))
+        {
+            canvas.Clear(SKColors.Transparent);
+            engine.Render(canvas, FrameDt);
+        }
+
+        var expectedIcon = IconSetTestHelper.IconColor(rows: 2, cols: 3, iconIndex: 0);
+        Assert.Equal(expectedIcon, bitmap.GetPixel(120, 80));
+
+        var expectedSprite = CharacterTestHelper.SpriteColor(seed: 1, characterIndex: 1, Direction.Down, frame: 1);
+        Assert.Equal(expectedSprite, bitmap.GetPixel(120, 120));
+    }
 }
