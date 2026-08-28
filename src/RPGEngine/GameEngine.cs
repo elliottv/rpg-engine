@@ -108,10 +108,15 @@ namespace RPGEngine;
 /// is <em>fully blocked</em> (no net displacement after the axis-separated resolution, e.g.
 /// walking straight into a wall, into a corner, or a diagonal whose single free axis is also
 /// stopped), the engine reports a <em>collision stop</em>
-/// to the player (<see cref="Player.ReportBlockedMove(Direction)"/>), so <see cref="Player.OnMove"/>
-/// fires with <see cref="PlayerMoveEventArgs.IsMoving"/> set to <see langword="false"/> even
-/// while the movement key is held against the wall. See <c>docs/Architecture.md</c> for the
-/// collision model.
+/// to the player (<see cref="Player.ReportBlockedMove(Direction)"/>), so <see cref="Player.OnStopMoving"/>
+/// fires even while the movement key is held against the wall. A key move that starts from idle
+/// fires <see cref="Player.OnStartMoving"/> <em>before</em> the displacement is applied, and a
+/// fully blocked move fires <see cref="Player.OnStopMoving"/> right after (start then stop in
+/// the same frame when the very first move is blocked); while the key stays held against the same
+/// wall nothing more fires. <see cref="Player.OnStartMoving"/> also fires when the movement
+/// direction changes while the player is already moving (e.g. pressing a second key makes the
+/// effective direction a diagonal), so remote clients that mirror the player learn the new facing
+/// direction. See <c>docs/Architecture.md</c> for the collision model.
 /// </para>
 /// <para>
 /// The engine is <see cref="IDisposable"/>: it owns the assigned map and disposes it when
@@ -147,6 +152,18 @@ public sealed class GameEngine : IDisposable
     // tile is popped when the player reaches its center. A key press or an invalid click clears
     // the queue (see the input-precedence rules in the class remarks).
     private readonly Queue<(int X, int Y)> _autoWalkPath = new();
+
+    // Whether Player.OnStartMoving has already been raised for the current auto-walk step (the
+    // current waypoint leg). ReportAutoWalkStep fires once per step boundary; this flag prevents
+    // it from firing on the intermediate frames between two waypoints. Reset when a new path is
+    // set, when the walk is cancelled, or when the walk completes/stops.
+    private bool _autoWalkStepStarted;
+
+    // The direction of the last key move that ended in a collision stop (a fully blocked move).
+    // While it matches the direction the engine keeps resolving, the player is resting idle
+    // against that wall, so OnStartMoving is not re-reported on every frame; a direction change
+    // (or a fresh start after the player stopped) clears it so the new attempt is reported.
+    private Direction? _blockedMoveDirection;
 
     // The canvas size (in pixels) of the most recent Render call, stored so the future
     // click-to-move story can translate host-surface coordinates with the same camera without
@@ -338,7 +355,11 @@ public sealed class GameEngine : IDisposable
             return;
         }
 
-        // A valid click always replaces the current auto-walk path, even mid-walk.
+        // A valid click always replaces the current auto-walk path, even mid-walk. The new path
+        // starts a fresh auto-walk: the first step's OnStartMoving has not been raised yet, and
+        // any previous collision stop is no longer the current state.
+        _autoWalkStepStarted = false;
+        _blockedMoveDirection = null;
         _autoWalkPath.Clear();
         foreach (var tile in path)
         {
@@ -374,6 +395,10 @@ public sealed class GameEngine : IDisposable
         }
         else if (!TryAdvanceAutoWalk(dt))
         {
+            // All movement keys released and no auto-walk target: the player stops (raises
+            // Player.OnStopMoving). The collision-stop state is cleared so a future key press
+            // is reported as a fresh start.
+            _blockedMoveDirection = null;
             Player.Stop();
         }
 
@@ -940,12 +965,17 @@ public sealed class GameEngine : IDisposable
     /// <summary>
     /// Advances the auto-walk by one frame: moves the player toward the center of the next
     /// waypoint tile at <see cref="Player.DefaultBaseSpeed"/> (tile units), popping waypoints as
-    /// they are reached and calling <see cref="Player.Stop"/> when the queue empties. When a map
-    /// is set the displacement is resolved with the same per-axis slide-to-boundary clamping as
-    /// key movement (see <see cref="MovementCollisionResolver"/>), so the auto-walk never moves
-    /// the player through a solid tile: if the direct displacement toward the waypoint is
-    /// clamped (e.g. the player is not tile-centred and the first segment would cross a solid
-    /// corner), the path is cancelled and the player stops rather than walking through the wall.
+    /// they are reached and calling <see cref="Player.Stop"/> when the queue empties. Each
+    /// auto-walk step (a waypoint leg) begins with <see cref="Player.OnStartMoving"/> via
+    /// <see cref="Player.ReportAutoWalkStep(Direction)"/> <em>before</em> that step's position
+    /// update: on the first frame of the walk and every time a waypoint is reached while another
+    /// remains. The last step's completion stops the player (<see cref="Player.OnStopMoving"/>).
+    /// When a map is set the displacement is resolved with the same per-axis slide-to-boundary
+    /// clamping as key movement (see <see cref="MovementCollisionResolver"/>), so the auto-walk
+    /// never moves the player through a solid tile: if the direct displacement toward the
+    /// waypoint is clamped (e.g. the player is not tile-centred and the first segment would cross
+    /// a solid corner), the path is cancelled and the player stops (<see cref="Player.OnStopMoving"/>)
+    /// rather than walking through the wall.
     /// </summary>
     /// <param name="dt">The elapsed time in seconds since the previous frame.</param>
     /// <returns>
@@ -969,21 +999,26 @@ public sealed class GameEngine : IDisposable
 
         if (distance <= step)
         {
-            // The player reaches this waypoint: snap to its center and pop it.
+            // The player reaches this waypoint: snap to its center and pop it. This snap completes
+            // the current step's movement.
             Player.Position = target;
             _autoWalkPath.Dequeue();
 
             if (_autoWalkPath.Count == 0)
             {
-                // The path is complete: the player stops (raises Player.OnMove with IsMoving =
-                // false only if it was moving, which it is here).
+                // The path is complete: the last auto-walk step is reached, so the player stops
+                // (raises Player.OnStopMoving).
+                _autoWalkStepStarted = false;
                 Player.Stop();
                 return true;
             }
 
-            // More waypoints remain: keep the player moving, facing the next waypoint.
+            // A waypoint was reached and another remains: the next auto-walk step begins now,
+            // before any of its displacements (which happen on the following frames).
             var (nextTargetX, nextTargetY) = _autoWalkPath.Peek();
-            Player.ReportMovement(DirectionFromVector(new Position(nextTargetX + 0.5, nextTargetY + 0.5) - Player.Position));
+            var nextDirection = DirectionFromVector(new Position(nextTargetX + 0.5, nextTargetY + 0.5) - Player.Position);
+            Player.ReportAutoWalkStep(nextDirection);
+            _autoWalkStepStarted = true;
             return true;
         }
 
@@ -998,6 +1033,15 @@ public sealed class GameEngine : IDisposable
         var direction = DirectionFromVector(toTarget);
         var move = toTarget * (step / distance);
         var destination = before + move;
+
+        // A new auto-walk step begins before its first displacement. This branch runs on every
+        // frame between two waypoints, so the start is only reported once per step (the flag is
+        // set when the step begins and stays set until the next waypoint is reached).
+        if (!_autoWalkStepStarted)
+        {
+            Player.ReportAutoWalkStep(direction);
+            _autoWalkStepStarted = true;
+        }
 
         if (Map is null)
         {
@@ -1019,23 +1063,26 @@ public sealed class GameEngine : IDisposable
             // The direct displacement was clamped (blocked by a solid tile / the map edge): the
             // waypoint cannot be reached from the current position without crossing a solid tile,
             // so cancel the walk, leave the player where they were and stop them (raises
-            // Player.OnMove with IsMoving = false only if it was moving).
+            // Player.OnStopMoving). The step that was just started is cancelled with the walk.
             Player.Position = before;
             CancelAutoWalk();
             Player.Stop();
             return true;
         }
 
-        Player.ReportMovement(direction);
         return true;
     }
 
     /// <summary>
-    /// Cancels any in-progress auto-walk by clearing the waypoint queue. The player itself stops
-    /// on the next <see cref="Update"/> (no input and no path → <see cref="Player.Stop"/>).
+    /// Cancels any in-progress auto-walk by clearing the waypoint queue and resetting the
+    /// auto-walk step state (the current step's <see cref="Player.OnStartMoving"/> was not
+    /// reported, or no longer applies). The player itself stops on the next <see cref="Update"/>
+    /// (no input and no path &#8594; <see cref="Player.Stop"/>) unless it was stopped by the caller
+    /// (a blocked auto-walk step stops it immediately).
     /// </summary>
     private void CancelAutoWalk()
     {
+        _autoWalkStepStarted = false;
         _autoWalkPath.Clear();
     }
 
@@ -1100,14 +1147,21 @@ public sealed class GameEngine : IDisposable
     /// footprint was already illegal, e.g. left embedded in a wall by an external teleport), so
     /// key movement never moves the player through a solid tile while a move that clears the
     /// overlap (escaping the wall) is still allowed.
-    /// After the displacement is resolved, the outcome is reported to the player: a move with no
-    /// net displacement (fully blocked by solid tiles or the map edge on every axis) is reported
-    /// as a <em>collision stop</em> through <see cref="Player.ReportBlockedMove(Direction)"/>,
-    /// so <see cref="Player.OnMove"/> fires with <see cref="PlayerMoveEventArgs.IsMoving"/>
-    /// set to <see langword="false"/> even while the movement key stays held; a move that
-    /// actually displaced the player is reported as movement through
-    /// <see cref="Player.ReportMovement(Direction)"/> as before (a diagonal move whose full
-    /// displacement was clear counts as movement because both axes changed the position).
+    /// The movement events are raised at a deterministic time relative to the displacement:
+    /// <see cref="Player.ReportMovement(Direction)"/> is called <em>before</em> the position is
+    /// updated, so <see cref="Player.OnStartMoving"/> fires when the player starts moving in a new
+    /// direction (idle &#8594; moving, or a direction change while moving &#8212; e.g. pressing a second key so
+    /// the effective direction becomes a diagonal) and observes the pre-move position.
+    /// After the displacement is resolved, a move with no net displacement (fully blocked by solid
+    /// tiles or the map edge on every axis) is reported as a <em>collision stop</em> through
+    /// <see cref="Player.ReportBlockedMove(Direction)"/>, so <see cref="Player.OnStopMoving"/>
+    /// fires even while the movement key stays held. A key move that starts from idle and is
+    /// immediately fully blocked therefore fires <see cref="Player.OnStartMoving"/> then
+    /// <see cref="Player.OnStopMoving"/> in the same frame. While the key stays held against the
+    /// same wall, the start is not re-reported (the player is already resting idle against it), so
+    /// the stop fires exactly once. A move that actually displaced the player reports only the
+    /// start (a diagonal whose full displacement was clear counts as movement because both axes
+    /// changed the position).
     /// This method drives the player; every character's autonomous movement (the
     /// <c>StartMoving</c>/<c>Update</c> path, e.g. NPCs in <see cref="Characters"/>) is resolved
     /// with the same shared resolver by <see cref="Update(double)"/>, so all characters collide
@@ -1118,46 +1172,44 @@ public sealed class GameEngine : IDisposable
         // The engine resolves the displacement itself (axis by axis) instead of calling
         // Player.Move, which would move both axes at once. The position is captured before the
         // resolution so a fully blocked move (no net displacement) can be reported as a
-        // collision stop instead of movement below.
+        // collision stop below.
         var before = Player.Position;
         var delta = direction.Delta() * (Player.Character.BaseSpeed * dt);
 
-        if (Map is null)
+        // Report the start of movement BEFORE the position update. When the player is already
+        // resting idle against a wall in the same direction (the previous frame ended in a
+        // collision stop and the key is still held), ReportMovement is skipped so OnStartMoving
+        // does not re-fire every frame; a direction change (or a fresh start after the player
+        // stopped) clears the resting state and reports a new start.
+        if (!_blockedMoveDirection.HasValue || _blockedMoveDirection.Value != direction)
         {
-            Player.Position += delta;
+            Player.ReportMovement(direction); // OnStartMoving (idle -> moving, or a direction change) BEFORE the position update
         }
-        else
-        {
-            // Resolve the displacement with the shared resolver: a diagonal move is all-or-nothing
-            // (applied only when the full displacement is clear on both axes, so the player never
-            // slides along the free axis into a wall), while a cardinal move keeps the per-axis
-            // slide-to-boundary clamping (each axis slides to the closest legal position on that
-            // axis, so the leading edge of the fixed 0.5x0.5-tile lower-body box stops exactly at
-            // the near edge of the first blocking solid tile or at the map edge). A blocked
-            // diagonal leaves the position unchanged, so the fully-blocked collision stop is
-            // reported below (Player.Position == before -> ReportBlockedMove).
-            Player.Position = MovementCollisionResolver.ResolveDisplacement(
+
+        Player.Position = Map is null
+            ? Player.Position + delta
+            : MovementCollisionResolver.ResolveDisplacement(
                 Player.Position,
                 delta.X,
                 delta.Y,
                 Map,
                 MovementCollisionResolver.CollisionBoxHalfWidth,
                 MovementCollisionResolver.CollisionBoxHeightAboveFeet);
-        }
 
         if (Player.Position == before)
         {
             // The player is fully blocked (no net displacement after the axis-separated
             // resolution, e.g. walking straight into a wall or into a corner): report the
-            // collision stop instead of movement, so Player.OnMove fires with IsMoving = false
-            // exactly once while the movement key is held against the wall.
+            // collision stop, so Player.OnStopMoving fires with the blocked direction. Remember
+            // the blocked direction so the same held key does not re-report start/stop every frame.
             Player.ReportBlockedMove(direction);
+            _blockedMoveDirection = direction;
         }
         else
         {
-            // The player actually displaced: report movement as before (a diagonal whose full
-            // displacement was clear counts as movement because both axes changed the position).
-            Player.ReportMovement(direction);
+            // The player actually displaced: it is no longer resting against a wall, so the next
+            // blocked move (or a fresh start) is reported normally.
+            _blockedMoveDirection = null;
         }
     }
 

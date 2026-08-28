@@ -6,25 +6,27 @@ using Xunit;
 namespace RPGEngine.Tests;
 
 /// <summary>
-/// Acceptance tests for story 55: <see cref="Player.OnMove"/> fires when a collision stops the
-/// player. The engine reports a fully blocked move (no net displacement after the axis-separated
-/// resolution) through <c>Player.ReportBlockedMove</c> instead of <c>Player.ReportMovement</c>,
-/// so OnMove fires with <see cref="PlayerMoveEventArgs.IsMoving"/> set to <see langword="false"/>
-/// exactly once when the player stops because of a collision, even while the movement key is held
-/// against the wall. These tests assert the exact event sequence (not the exact frame on which
-/// the stop is reported), so they hold with either collision-resolution behavior.
+/// Acceptance tests for story 55/69: <see cref="Player.OnStartMoving"/> and
+/// <see cref="Player.OnStopMoving"/> fire around a collision stop. The engine reports a fully
+/// blocked move (no net displacement after the axis-separated resolution) through
+/// <c>Player.ReportBlockedMove</c> after reporting the start through <c>Player.ReportMovement</c>,
+/// so a move that starts from idle and is immediately blocked fires OnStartMoving then
+/// OnStopMoving in the same frame, and a move that becomes blocked mid-walk fires OnStartMoving
+/// when it starts and OnStopMoving exactly once when it stops — nothing more while the movement
+/// key stays held against the wall. These tests assert the exact event sequence (not the exact
+/// frame on which the stop is reported), so they hold with either collision-resolution behavior.
 /// </summary>
 public class GameEngineCollisionOnMoveTests
 {
     private const double FrameDt = 1.0 / 60;
 
     /// <summary>
-    /// Verifies holding D against a solid column fires (true, Right) when movement starts, then
-    /// (false, Right) exactly once when the player is fully blocked, and no further events while
-    /// D stays held for many more frames.
+    /// Verifies holding D against a solid column fires OnStartMoving(Right) when movement starts,
+    /// then exactly one OnStopMoving(Right) when the player is fully blocked, and no further
+    /// events while D stays held for many more frames.
     /// </summary>
     [Fact]
-    public void Update_KeyHeldAgainstSolidTile_FiresOnMoveFalseExactlyOnce()
+    public void Update_KeyHeldAgainstSolidTile_FiresOnStartMovingThenExactlyOneOnStopMoving()
     {
         // 4x4 map: a "walls" collision layer with a solid column at x=2 for every row.
         using var fixture = CreateCollisionMapFixture(4, 4, new uint[]
@@ -38,8 +40,10 @@ public class GameEngineCollisionOnMoveTests
         ConfigurePlayerSprite(engine, seed: 1);
         engine.Player.Position = new Position(0.5, 1.0);
 
-        var events = new List<PlayerMoveEventArgs>();
-        engine.Player.OnMove += (_, e) => events.Add(e);
+        var starts = new List<Direction>();
+        var stops = new List<Direction>();
+        engine.Player.OnStartMoving += (_, direction) => starts.Add(direction);
+        engine.Player.OnStopMoving += (_, direction) => stops.Add(direction);
 
         engine.Input(Key.D, true);
 
@@ -53,19 +57,14 @@ public class GameEngineCollisionOnMoveTests
         // The player stopped at the solid column: its footprint never enters it.
         Assert.True(engine.Player.Position.X + 0.25 <= 2.0 + 1e-9, "The footprint must never overlap the solid column.");
 
-        // Exact event sequence: one (true, Right) on start, then exactly one (false, Right) on
-        // the collision stop, and nothing more while D stays held.
-        Assert.Equal(
-            new[]
-            {
-                new PlayerMoveEventArgs(true, Direction.Right),
-                new PlayerMoveEventArgs(false, Direction.Right),
-            },
-            events);
+        // Exact event sequence: one OnStartMoving(Right) on start, then exactly one
+        // OnStopMoving(Right) on the collision stop, and nothing more while D stays held.
+        Assert.Equal(new[] { Direction.Right }, starts);
+        Assert.Equal(new[] { Direction.Right }, stops);
     }
 
     /// <summary>
-    /// Verifies releasing the movement key after the blocked (false, Right) was fired raises no
+    /// Verifies releasing the movement key after the blocked OnStopMoving was fired raises no
     /// additional event: the player is already idle, so the stop is reported exactly once.
     /// </summary>
     [Fact]
@@ -83,8 +82,10 @@ public class GameEngineCollisionOnMoveTests
         ConfigurePlayerSprite(engine, seed: 1);
         engine.Player.Position = new Position(0.5, 1.0);
 
-        var events = new List<PlayerMoveEventArgs>();
-        engine.Player.OnMove += (_, e) => events.Add(e);
+        var starts = new List<Direction>();
+        var stops = new List<Direction>();
+        engine.Player.OnStartMoving += (_, direction) => starts.Add(direction);
+        engine.Player.OnStopMoving += (_, direction) => stops.Add(direction);
 
         engine.Input(Key.D, true);
 
@@ -95,23 +96,25 @@ public class GameEngineCollisionOnMoveTests
         }
 
         // The collision stop was reported exactly once while D was held.
-        Assert.Equal(1, events.Count(e => !e.IsMoving));
-        events.Clear();
+        Assert.Single(stops);
+        starts.Clear();
+        stops.Clear();
 
         // Releasing D fires no additional event: the player is already idle.
         engine.Input(Key.D, false);
         engine.Update(FrameDt);
 
-        Assert.Empty(events);
+        Assert.Empty(starts);
+        Assert.Empty(stops);
     }
 
     /// <summary>
     /// Verifies a player already blocked and idle facing Right that presses Up (also blocked)
-    /// fires (false, Up) once (a direction change while idle), and a subsequent frame with the
-    /// same keys fires nothing.
+    /// fires OnStartMoving(Up) then OnStopMoving(Up) once (a fresh start from idle that is
+    /// immediately blocked), and a subsequent frame with the same keys fires nothing.
     /// </summary>
     [Fact]
-    public void Update_TurnWhileBlocked_FiresOnMoveFalseForNewDirectionOnce()
+    public void Update_TurnWhileBlocked_FiresStartThenStopForNewDirectionOnce()
     {
         // 4x4 map with a solid column at x=2 (blocks Right) and a solid row at y=0 (blocks Up).
         // The player starts with feet at y=1.5 so the fixed 0.5x0.5 box (y in [1.0, 1.5]) just
@@ -132,8 +135,10 @@ public class GameEngineCollisionOnMoveTests
         ConfigurePlayerSprite(engine, seed: 1);
         engine.Player.Position = new Position(0.5, 1.5);
 
-        var events = new List<PlayerMoveEventArgs>();
-        engine.Player.OnMove += (_, e) => events.Add(e);
+        var starts = new List<Direction>();
+        var stops = new List<Direction>();
+        engine.Player.OnStartMoving += (_, direction) => starts.Add(direction);
+        engine.Player.OnStopMoving += (_, direction) => stops.Add(direction);
 
         // Walk right into the solid column and stop there (idle, facing Right).
         engine.Input(Key.D, true);
@@ -142,32 +147,38 @@ public class GameEngineCollisionOnMoveTests
             engine.Update(FrameDt);
         }
 
-        // Blocked at the wall (footprint never enters the solid column), facing Right.
+        // Blocked at the wall (footprint never enters the solid column), facing Right, with the
+        // collision stop reported once.
         Assert.True(engine.Player.Position.X + 0.25 <= 2.0 + 1e-9, "The footprint must never overlap the solid column.");
-        Assert.Equal(new PlayerMoveEventArgs(false, Direction.Right), events[^1]);
-        events.Clear();
+        Assert.Equal(Direction.Right, stops[^1]);
+        starts.Clear();
+        stops.Clear();
 
-        // Press Up (also blocked): a direction change while idle -> (false, Up) exactly once.
+        // Press Up (also blocked): a fresh start from idle -> OnStartMoving(Up) then the
+        // collision stop -> OnStopMoving(Up), both in the same frame.
         engine.Input(Key.D, false);
         engine.Input(Key.W, true);
         engine.Update(FrameDt);
 
-        Assert.Equal(new[] { new PlayerMoveEventArgs(false, Direction.Up) }, events);
+        Assert.Equal(new[] { Direction.Up }, starts);
+        Assert.Equal(new[] { Direction.Up }, stops);
 
         // A subsequent frame with the same keys fires nothing.
-        events.Clear();
+        starts.Clear();
+        stops.Clear();
         engine.Update(FrameDt);
-        Assert.Empty(events);
+        Assert.Empty(starts);
+        Assert.Empty(stops);
     }
 
     /// <summary>
     /// Verifies a diagonal move into a wall where only one axis is free stops the player
     /// entirely (diagonal movement is all-or-nothing: no wall-sliding along the free axis). The
-    /// blocked move is reported once with IsMoving = false and nothing more fires while the keys
-    /// stay held.
+    /// blocked move fires OnStartMoving(UpRight) then OnStopMoving(UpRight) on the first frame
+    /// and nothing more fires while the keys stay held.
     /// </summary>
     [Fact]
-    public void Update_DiagonalIntoWall_StopsEntirelyAndFiresOnMoveFalseOnce()
+    public void Update_DiagonalIntoWall_FiresStartThenStopOnce()
     {
         // 5x5 map: a "walls" collision layer with a solid column at x=3 for every row.
         var gids = new uint[25];
@@ -186,8 +197,10 @@ public class GameEngineCollisionOnMoveTests
         // player stops entirely instead of sliding straight up along the wall.
         engine.Player.Position = new Position(2.75, 4.0);
 
-        var events = new List<PlayerMoveEventArgs>();
-        engine.Player.OnMove += (_, e) => events.Add(e);
+        var starts = new List<Direction>();
+        var stops = new List<Direction>();
+        engine.Player.OnStartMoving += (_, direction) => starts.Add(direction);
+        engine.Player.OnStopMoving += (_, direction) => stops.Add(direction);
 
         engine.Input(Key.W, true);
         engine.Input(Key.D, true);
@@ -201,17 +214,17 @@ public class GameEngineCollisionOnMoveTests
         Assert.Equal(2.75, engine.Player.Position.X, precision: 6);
         Assert.Equal(4.0, engine.Player.Position.Y, precision: 6);
 
-        // The blocked diagonal was reported exactly once: the player was idle facing Down, so
-        // the (false, UpRight) fires as a direction change while blocked, and nothing more while
-        // W+D stay held.
-        Assert.Equal(new[] { new PlayerMoveEventArgs(false, Direction.UpRight) }, events);
+        // From idle, the immediately-blocked diagonal fires OnStartMoving(UpRight) then
+        // OnStopMoving(UpRight) in the same frame, and nothing more while W+D stay held.
+        Assert.Equal(new[] { Direction.UpRight }, starts);
+        Assert.Equal(new[] { Direction.UpRight }, stops);
     }
 
     /// <summary>
     /// Verifies a diagonal move that becomes blocked mid-walk stops the player entirely and
-    /// reports IsMoving = false exactly once: (true, UpRight) fires while both axes are free and
-    /// the player moves, then exactly one (false, UpRight) fires when one axis is blocked, and
-    /// nothing more while the keys stay held (the free axis never slides).
+    /// reports OnStopMoving exactly once: OnStartMoving(UpRight) fires while both axes are free
+    /// and the player moves, then exactly one OnStopMoving(UpRight) fires when one axis is
+    /// blocked, and nothing more while the keys stay held (the free axis never slides).
     /// </summary>
     [Fact]
     public void Update_DiagonalMovement_StopsEntirelyWhenOneAxisBlocked()
@@ -232,8 +245,10 @@ public class GameEngineCollisionOnMoveTests
         // player must stop entirely rather than sliding up along the wall.
         engine.Player.Position = new Position(1.5, 4.0);
 
-        var events = new List<PlayerMoveEventArgs>();
-        engine.Player.OnMove += (_, e) => events.Add(e);
+        var starts = new List<Direction>();
+        var stops = new List<Direction>();
+        engine.Player.OnStartMoving += (_, direction) => starts.Add(direction);
+        engine.Player.OnStopMoving += (_, direction) => stops.Add(direction);
 
         engine.Input(Key.W, true);
         engine.Input(Key.D, true);
@@ -250,27 +265,24 @@ public class GameEngineCollisionOnMoveTests
         Assert.True(stopped.Y < 4.0, "The player moved up before stopping.");
         Assert.True(stopped.X + 0.25 <= 3.0 + 1e-9, "The footprint must never overlap the solid column.");
 
-        // Exact sequence: (true, UpRight) on start, then exactly one (false, UpRight) when one
-        // axis became blocked, and nothing more while W+D stay held.
-        Assert.Equal(
-            new[]
-            {
-                new PlayerMoveEventArgs(true, Direction.UpRight),
-                new PlayerMoveEventArgs(false, Direction.UpRight),
-            },
-            events);
+        // Exact sequence: one OnStartMoving(UpRight) on start, then exactly one
+        // OnStopMoving(UpRight) when one axis became blocked, and nothing more while W+D stay held.
+        Assert.Equal(new[] { Direction.UpRight }, starts);
+        Assert.Equal(new[] { Direction.UpRight }, stops);
 
         // A subsequent frame with the same keys fires nothing and does not move the player.
-        events.Clear();
+        starts.Clear();
+        stops.Clear();
         engine.Update(FrameDt);
-        Assert.Empty(events);
+        Assert.Empty(starts);
+        Assert.Empty(stops);
         Assert.Equal(stopped, engine.Player.Position);
     }
 
     /// <summary>
     /// Verifies a diagonal move whose full displacement is clear on both axes moves the player
-    /// diagonally: OnMove fires (true, UpRight) once on start, the position changes on both
-    /// axes each frame, and no (false, ...) stop event fires mid-move.
+    /// diagonally: OnStartMoving fires (UpRight) once on start, the position changes on both
+    /// axes each frame, and no OnStopMoving fires mid-move.
     /// </summary>
     [Fact]
     public void Update_DiagonalMovement_BothAxesFree_MovesDiagonally()
@@ -281,8 +293,10 @@ public class GameEngineCollisionOnMoveTests
         ConfigurePlayerSprite(engine, seed: 1);
         engine.Player.Position = new Position(1.5, 3.0);
 
-        var events = new List<PlayerMoveEventArgs>();
-        engine.Player.OnMove += (_, e) => events.Add(e);
+        var starts = new List<Direction>();
+        var stops = new List<Direction>();
+        engine.Player.OnStartMoving += (_, direction) => starts.Add(direction);
+        engine.Player.OnStopMoving += (_, direction) => stops.Add(direction);
 
         engine.Input(Key.W, true);
         engine.Input(Key.D, true);
@@ -296,18 +310,20 @@ public class GameEngineCollisionOnMoveTests
         Assert.True(engine.Player.Position.X > 1.5, "The player must move right.");
         Assert.True(engine.Player.Position.Y < 3.0, "The player must move up.");
 
-        // Movement only: (true, UpRight) on start, and no stop event (the position changed
-        // every frame).
-        Assert.Equal(new[] { new PlayerMoveEventArgs(true, Direction.UpRight) }, events);
+        // Movement only: OnStartMoving(UpRight) on start, and no stop event (the position
+        // changed every frame).
+        Assert.Equal(new[] { Direction.UpRight }, starts);
+        Assert.Empty(stops);
     }
 
     /// <summary>
-    /// Verifies a player fully blocked on both axes (a corner) reports (false, direction)
-    /// exactly once: walking into a corner fires (true, ...) on start and (false, ...) once when
-    /// both axes become blocked, then nothing more while the keys stay held.
+    /// Verifies a player fully blocked on both axes (a corner) reports the collision stop
+    /// exactly once: walking into a corner fires OnStartMoving(UpLeft) on start and
+    /// OnStopMoving(UpLeft) once when both axes become blocked, then nothing more while the keys
+    /// stay held.
     /// </summary>
     [Fact]
-    public void Update_FullyBlockedCorner_FiresOnMoveFalseOnce()
+    public void Update_FullyBlockedCorner_FiresStartThenStopOnce()
     {
         // A 2x2 filled map (no collision layer): only the map edge is solid.
         using var fixture = CreateFilledMapFixture(2, 2);
@@ -315,8 +331,10 @@ public class GameEngineCollisionOnMoveTests
         ConfigurePlayerSprite(engine, seed: 1);
         engine.Player.Position = new Position(1.5, 1.5);
 
-        var events = new List<PlayerMoveEventArgs>();
-        engine.Player.OnMove += (_, e) => events.Add(e);
+        var starts = new List<Direction>();
+        var stops = new List<Direction>();
+        engine.Player.OnStartMoving += (_, direction) => starts.Add(direction);
+        engine.Player.OnStopMoving += (_, direction) => stops.Add(direction);
 
         // Walk up-left into the top-left corner of the map. Diagonal movement is all-or-nothing:
         // the player moves while both axes are free and stops entirely at the first position
@@ -340,20 +358,17 @@ public class GameEngineCollisionOnMoveTests
         Assert.True(blockedPosition.X >= 0.25 - 1e-9 && blockedPosition.X < 1.1, "The player must be stopped in the top-left corner region.");
         Assert.True(blockedPosition.Y >= 0.5 - 1e-9 && blockedPosition.Y < 0.6, "The player must be stopped near the top map edge.");
 
-        // Exact sequence: (true, UpLeft) when the walk started, then exactly one (false, UpLeft)
-        // when both axes became blocked, and nothing more while W+A stay held.
-        Assert.Equal(
-            new[]
-            {
-                new PlayerMoveEventArgs(true, Direction.UpLeft),
-                new PlayerMoveEventArgs(false, Direction.UpLeft),
-            },
-            events);
+        // Exact sequence: OnStartMoving(UpLeft) when the walk started, then exactly one
+        // OnStopMoving(UpLeft) when both axes became blocked, and nothing more while W+A stay held.
+        Assert.Equal(new[] { Direction.UpLeft }, starts);
+        Assert.Equal(new[] { Direction.UpLeft }, stops);
 
         // A subsequent frame with the same keys fires nothing and does not move the player.
-        events.Clear();
+        starts.Clear();
+        stops.Clear();
         engine.Update(FrameDt);
-        Assert.Empty(events);
+        Assert.Empty(starts);
+        Assert.Empty(stops);
         Assert.Equal(blockedPosition, engine.Player.Position);
     }
 

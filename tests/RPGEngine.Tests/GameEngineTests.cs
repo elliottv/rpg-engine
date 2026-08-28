@@ -998,49 +998,133 @@ public partial class GameEngineTests
     }
 
     /// <summary>
-    /// Verifies manual key movement still raises OnMove with the exact start/stop sequence (the
-    /// engine reports movement through Player.ReportMovement after its collision resolution).
+    /// Verifies manual key movement raises OnStartMoving when the player starts moving and
+    /// OnStopMoving when the key is released (the engine reports movement through
+    /// Player.ReportMovement before its collision resolution, and the release stops the player
+    /// through Player.Stop in Update).
     /// </summary>
     [Fact]
-    public void Update_KeyMovement_RaisesOnMoveOnStartAndStop()
+    public void Update_KeyMovement_RaisesOnStartMovingAndOnStopMoving()
     {
         var engine = new GameEngine();
         engine.Player.Character.BaseSpeed = 2;
         engine.Player.Position = new Position(10, 10);
 
-        var events = new List<PlayerMoveEventArgs>();
-        engine.Player.OnMove += (_, e) => events.Add(e);
+        var starts = new List<Direction>();
+        var stops = new List<Direction>();
+        engine.Player.OnStartMoving += (_, direction) => starts.Add(direction);
+        engine.Player.OnStopMoving += (_, direction) => stops.Add(direction);
 
         engine.Input(Key.D, true);
         engine.Update(FrameDt);
-        Assert.Equal(new[] { new PlayerMoveEventArgs(true, Direction.Right) }, events);
+        Assert.Equal(new[] { Direction.Right }, starts);
+        Assert.Empty(stops);
 
         engine.Input(Key.D, false);
-        events.Clear();
+        starts.Clear();
         engine.Update(FrameDt);
-        Assert.Equal(new[] { new PlayerMoveEventArgs(false, Direction.Right) }, events);
+        Assert.Empty(starts);
+        Assert.Equal(new[] { Direction.Right }, stops);
     }
 
-    /// <summary>Verifies changing direction with the keys while moving raises OnMove with the new direction.</summary>
+    /// <summary>
+    /// Verifies changing direction with the keys while moving raises OnStartMoving with the new
+    /// direction exactly once (a direction change while moving is a new start, not a stop).
+    /// </summary>
     [Fact]
-    public void Update_KeyMovement_ChangingDirectionRaisesOnMove()
+    public void Update_KeyMovement_ChangingDirectionRaisesOnStartMoving()
     {
         var engine = new GameEngine();
         engine.Player.Character.BaseSpeed = 2;
         engine.Player.Position = new Position(10, 10);
 
-        var events = new List<PlayerMoveEventArgs>();
-        engine.Player.OnMove += (_, e) => events.Add(e);
+        var starts = new List<Direction>();
+        var stops = new List<Direction>();
+        engine.Player.OnStartMoving += (_, direction) => starts.Add(direction);
+        engine.Player.OnStopMoving += (_, direction) => stops.Add(direction);
 
         engine.Input(Key.D, true);
-        engine.Update(FrameDt); // moving right
+        engine.Update(FrameDt); // moving right: OnStartMoving(Right)
 
-        // Switch to moving down: direction change while moving.
+        // Switch to moving down: a direction change while moving is a new start (Down).
         engine.Input(Key.D, false);
         engine.Input(Key.S, true);
+        starts.Clear();
+        stops.Clear();
         engine.Update(FrameDt);
 
-        Assert.Contains(new PlayerMoveEventArgs(true, Direction.Down), events);
+        Assert.Equal(new[] { Direction.Down }, starts);
+        Assert.Empty(stops);
+    }
+
+    /// <summary>
+    /// Verifies pressing a second movement key while the first is still held fires OnStartMoving
+    /// with the resulting diagonal direction (e.g. D held &#8594; press W &#8594; the effective direction
+    /// becomes UpRight), so remote clients that mirror the player learn the diagonal facing
+    /// change. The same keys on later frames raise nothing more (no per-frame events).
+    /// </summary>
+    [Fact]
+    public void Update_KeyMovement_PressingSecondKeyForDiagonal_RaisesOnStartMoving()
+    {
+        var engine = new GameEngine();
+        engine.Player.Character.BaseSpeed = 2;
+        engine.Player.Position = new Position(10, 10);
+
+        var starts = new List<Direction>();
+        var stops = new List<Direction>();
+        engine.Player.OnStartMoving += (_, direction) => starts.Add(direction);
+        engine.Player.OnStopMoving += (_, direction) => stops.Add(direction);
+
+        engine.Input(Key.D, true);
+        engine.Update(FrameDt); // OnStartMoving(Right)
+
+        // Press W while D is still down: the direction changes to the UpRight diagonal.
+        engine.Input(Key.W, true);
+        starts.Clear();
+        stops.Clear();
+        engine.Update(FrameDt);
+        Assert.Equal(new[] { Direction.UpRight }, starts);
+        Assert.Empty(stops);
+        Assert.Equal(Direction.UpRight, engine.Player.Direction);
+
+        // Holding the same diagonal for more frames fires nothing more (not per-frame).
+        starts.Clear();
+        stops.Clear();
+        engine.Update(FrameDt);
+        Assert.Empty(starts);
+        Assert.Empty(stops);
+    }
+
+    /// <summary>
+    /// Verifies releasing one key of a held diagonal pair reverts the direction to the remaining
+    /// cardinal and fires OnStartMoving with it (the direction change while moving is a new
+    /// start), so remote clients that mirror the player learn the reverted facing direction.
+    /// </summary>
+    [Fact]
+    public void Update_KeyMovement_ReleasingOneKeyOfDiagonal_RevertsAndRaisesOnStartMoving()
+    {
+        var engine = new GameEngine();
+        engine.Player.Character.BaseSpeed = 2;
+        engine.Player.Position = new Position(10, 10);
+
+        var starts = new List<Direction>();
+        var stops = new List<Direction>();
+        engine.Player.OnStartMoving += (_, direction) => starts.Add(direction);
+        engine.Player.OnStopMoving += (_, direction) => stops.Add(direction);
+
+        engine.Input(Key.D, true);
+        engine.Input(Key.W, true);
+        engine.Update(FrameDt); // OnStartMoving(UpRight)
+
+        // Release W: the effective direction reverts to the remaining cardinal (Right).
+        engine.Input(Key.W, false);
+        starts.Clear();
+        stops.Clear();
+        engine.Update(FrameDt);
+
+        Assert.Equal(new[] { Direction.Right }, starts);
+        Assert.Empty(stops);
+        Assert.Equal(Direction.Right, engine.Player.Direction);
     }
 
     // ---------------------------------------------------------------------

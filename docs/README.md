@@ -120,13 +120,16 @@ foreach (var layer in engine.Map?.ObjectLayers ?? [])
 > size), the host can pass a mouse click to `engine.Click(surfaceX, surfaceY)` and the player
 > **auto-walks** along an A* tile path to the clicked tile, stopping centered on it. Clicking a
 > solid tile or an unreachable target cancels the walk without moving; a key press cancels it and
-> a click mid-walk replaces the destination. `Player.OnMove` fires on every movement-state
-> transition (start / stop / direction change) with the current facing direction — including a
-> stop caused by a collision while a movement key is held (the engine reports the blocked move,
-> so `OnMove` fires with `IsMoving = false` even against a wall). Diagonal key movement is
-> all-or-nothing (no wall-sliding): a diagonal into a wall where only one axis is free stops the
-> player entirely and reports the collision stop the same way. See
-> `docs/api/GameEngine.md` and `docs/api/Player.md`.
+> a click mid-walk replaces the destination. `Player.OnStartMoving` fires when the player begins
+> moving in a new direction — on the first frame a key takes effect for move-by-key, when the
+> direction changes while moving (e.g. pressing a second key makes the effective direction a
+> diagonal), and once **per auto-walk step** for click-to-move, **before** the position is
+> updated — and `Player.OnStopMoving` fires when every key is released, when the last auto-walk
+> step is reached, or when the player is blocked by a collision (the engine reports the blocked
+> move, so `OnStopMoving` fires even against a wall). Both events carry only the facing
+> `Direction`. Diagonal key movement is all-or-nothing (no wall-sliding): a diagonal into a wall
+> where only one axis is free stops the player entirely and reports the collision stop the same
+> way. See `docs/api/GameEngine.md` and `docs/api/Player.md`.
 
 ### Reading order
 
@@ -134,7 +137,7 @@ foreach (var layer in engine.Map?.ObjectLayers ?? [])
 | --- | --- |
 | [Architecture](Architecture.md) | Composition model, camera, spritesheet layout, part ordering, rendering order and the Tiled read model. |
 | [api/GameEngine.md](api/GameEngine.md) | Root object: game loop, input (8 directions), **click-to-move auto-walk (`Click`)** and the input-precedence rules, asset loading (sync + async) and `SpriteSheetExists`, camera, black background / map centering, **Y-sorted character rendering** (NPCs + player by `Position.Y`, higher Y drawn on top), map ownership (`IDisposable`), and the minimap (`RenderMinimap` — fit/zoom semantics, green player + yellow NPC dots). |
-| [api/Character.md](api/Character.md) / [api/Player.md](api/Player.md) | In-world state, sprite references, the speed-scaled walk-cycle animation (`AnimationCycleSpeed`), autonomous movement (`StartMoving` / `StopMoving` / `IsMoving`), and the movement-state event (`OnMove` / `PlayerMoveEventArgs` / `Stop()`). |
+| [api/Character.md](api/Character.md) / [api/Player.md](api/Player.md) | In-world state, sprite references, the speed-scaled walk-cycle animation (`AnimationCycleSpeed`), autonomous movement (`StartMoving` / `StopMoving` / `IsMoving`), and the movement-state events (`OnStartMoving` / `OnStopMoving` / `Stop()`). |
 | [api/SpriteSheet.md](api/SpriteSheet.md) | The 12×8 sheet layout (derived cell size, e.g. 576×384 or 936×864) and the **1..8 character index** semantics. |
 | [api/SpriteSheetManager.md](api/SpriteSheetManager.md) | Loading full/part sheets by path or stream, including the async `LoadAsync`/`LoadPartAsync` overloads. |
 | [api/TileMap.md](api/TileMap.md) / [api/TileSet.md](api/TileSet.md) | Tiled TMX/TSX loading (sync + async); prerendered layer images, viewport-culled image-blit rendering and `IDisposable`; map custom properties, object layers, the `above_player` flag and collision (`IsSolid`, the `is_collision` layer convention). |

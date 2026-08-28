@@ -42,7 +42,9 @@ registry and the pressed-keys state, and exposes the game-loop entry points `Upd
   computes an **A*** tile path from the player's tile to the clicked tile over the non-solid
   tiles, and queues those tiles. Each `Update` then moves the player toward the center of the next
   waypoint at `BaseSpeed`, popping waypoints as they are reached and calling `Player.Stop()` when
-  the path completes. Clicking a **solid tile** or an **unreachable target** cancels the walk
+  the path completes. Each auto-walk step begins with `Player.OnStartMoving` **before** that
+  step's position update (once per waypoint), and the completed path stops the player with
+  `Player.OnStopMoving` exactly once. Clicking a **solid tile** or an **unreachable target** cancels the walk
   without moving; a click that yields a path **replaces** the current walk even mid-walk. Each
   auto-walk displacement is resolved against the map's solid tiles like key movement, so the
   auto-walk never moves the player through (or into) a solid tile: when the direct displacement
@@ -73,7 +75,13 @@ registry and the pressed-keys state, and exposes the game-loop entry points `Upd
   floating-point overshoot accumulation. As a safety net the resolver refuses a displacement whose
   resulting footprint would still overlap a solid tile (only possible when the starting footprint
   was already illegal, e.g. embedded in a wall), so movement never moves a character through a
-  solid tile. See [Architecture](../Architecture.md).
+  solid tile. A key move that starts from idle — or changes direction while moving, e.g. pressing
+  a second key makes the effective direction a diagonal — fires `Player.OnStartMoving` **before**
+  the displacement is applied; a move with **no net displacement** (fully blocked on every axis,
+  e.g. walking straight into a wall or into a corner) is reported as a **collision stop** through
+  `Player.ReportBlockedMove`, so `Player.OnStopMoving` fires even while the movement key is held
+  against the wall — exactly once, with the direction the player tried to move in (a blocked move
+  from idle fires start then stop in the same frame). See [Architecture](../Architecture.md).
 - A minimap can be rendered on a separate surface with `RenderMinimap`: it draws the map's
   prerendered tile layers, a green dot for the player and a yellow dot for each NPC.
   `zoomLevel` `1.0` fits the whole map to the canvas; values above `1` zoom in and pan around
