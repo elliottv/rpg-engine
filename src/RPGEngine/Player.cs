@@ -22,12 +22,13 @@ namespace RPGEngine;
 /// <para>
 /// The player exposes a movement-state machine through two events: <see cref="OnStartMoving"/>
 /// fires <em>before</em> the position is updated, exactly when the player <em>begins</em> moving
-/// (idle &#8594; moving for key movement, and once per auto-walk step for click-to-move), and
-/// never on direction changes while moving or on every frame. <see cref="OnStopMoving"/> fires
-/// when the player stops moving: every movement key is released, the last auto-walk step is
-/// reached, or the player is blocked by a collision. Both events carry only the facing
-/// direction (<see cref="PlayerMoveEventArgs.Direction"/>), which is all a host needs to mirror
-/// the player on other clients via <c>Character.StartMoving</c> / <c>Character.StopMoving</c>.
+/// in a new direction (idle &#8594; moving for key movement, a direction change while moving &#8212;
+/// e.g. pressing a second key so the player moves diagonally &#8212; and once per auto-walk step for
+/// click-to-move), and never per frame. <see cref="OnStopMoving"/> fires when the player stops
+/// moving: every movement key is released, the last auto-walk step is reached, or the player is
+/// blocked by a collision. Both events carry only the facing <see cref="Direction"/>, which is
+/// all a host needs to mirror the player on other clients via
+/// <c>Character.StartMoving</c> / <c>Character.StopMoving</c>.
 /// </para>
 /// </remarks>
 public sealed class Player
@@ -45,26 +46,26 @@ public sealed class Player
     // The player's movement-state machine. _isMoving tracks whether the engine (or a direct
     // Move call) is currently moving the player; _lastDirection is the last facing direction the
     // event machinery reported, used to report the facing direction in OnStopMoving when the
-    // player stops.
+    // player stops and to detect direction changes while moving (a new direction is a new start).
     private bool _isMoving;
     private Direction _lastDirection = Direction.Down;
 
     /// <summary>
-    /// Occurs when the player starts moving: from idle &#8594; moving for key movement, and once
-    /// per auto-walk step for click-to-move. The event is raised <em>before</em> the position is
-    /// updated and carries the direction the player is moving in
-    /// (<see cref="PlayerMoveEventArgs.Direction"/>). It is not raised on direction changes
-    /// while moving and not on every frame.
+    /// Occurs when the player starts moving in a new direction: from idle &#8594; moving for key
+    /// movement, when the movement direction changes while already moving (e.g. a second key is
+    /// pressed so the player moves diagonally), and once per auto-walk step for click-to-move.
+    /// The event is raised <em>before</em> the position is updated and carries the
+    /// <see cref="Direction"/> the player is moving in. It is not raised per frame: a move that
+    /// keeps the same direction while already moving raises nothing.
     /// </summary>
-    public event EventHandler<PlayerMoveEventArgs>? OnStartMoving;
+    public event EventHandler<Direction>? OnStartMoving;
 
     /// <summary>
     /// Occurs when the player stops moving: when every movement key is released, when the last
     /// auto-walk step is reached, or when the player is blocked by a collision. The event carries
-    /// the direction the player was last moving in
-    /// (<see cref="PlayerMoveEventArgs.Direction"/>).
+    /// the <see cref="Direction"/> the player was last moving in.
     /// </summary>
-    public event EventHandler<PlayerMoveEventArgs>? OnStopMoving;
+    public event EventHandler<Direction>? OnStopMoving;
 
     /// <summary>Gets or sets the <see cref="Character"/> that represents the player in the game world.</summary>
     /// <remarks>
@@ -147,8 +148,9 @@ public sealed class Player
     /// This method also drives the movement-state machine: with <paramref name="speedFactor"/>
     /// greater than zero the player is considered <em>moving</em> (it actually moves), so
     /// <see cref="OnStartMoving"/> fires <em>before</em> the displacement when the player starts
-    /// moving (idle &#8594; moving). A move while already moving (same or new direction) raises
-    /// nothing: a direction change while moving is not a start, so it is not reported.
+    /// moving in a new direction &#8212; from idle &#8594; moving, or when the direction changes while
+    /// already moving (e.g. right &#8594; up-right when a second key is pressed). A move while already
+    /// moving in the <em>same</em> direction raises nothing (no per-frame events).
     /// </para>
     /// <para>
     /// With <paramref name="speedFactor"/> equal to zero the player only turns to face
@@ -160,6 +162,9 @@ public sealed class Player
     /// <param name="dt">The elapsed time in seconds.</param>
     public void Move(Direction direction, double speedFactor = 1, double dt = 1)
     {
+        // Capture whether the facing direction changes before the Direction setter re-syncs
+        // _lastDirection: a direction change while moving is a new start.
+        var directionChanged = direction != _lastDirection;
         Direction = direction;
         if (speedFactor == 0)
         {
@@ -168,9 +173,9 @@ public sealed class Player
         }
 
         // Raise OnStartMoving BEFORE the displacement so handlers observe the pre-move position.
-        if (!_isMoving)
+        if (!_isMoving || directionChanged)
         {
-            OnStartMoving?.Invoke(this, new PlayerMoveEventArgs(direction));
+            OnStartMoving?.Invoke(this, direction);
         }
 
         Character.Move(direction, speedFactor, dt); // the position update
@@ -205,33 +210,36 @@ public sealed class Player
         }
 
         _isMoving = false;
-        OnStopMoving?.Invoke(this, new PlayerMoveEventArgs(_lastDirection));
+        OnStopMoving?.Invoke(this, _lastDirection);
     }
 
     /// <summary>
-    /// Records that the player moved and raises <see cref="OnStartMoving"/> only on the idle &#8594;
-    /// moving transition, mirroring the start semantics of <see cref="Move(Direction, double, double)"/>.
+    /// Records that the player moved in <paramref name="direction"/> and raises
+    /// <see cref="OnStartMoving"/> when the player begins moving in a new direction: from idle
+    /// &#8594; moving, or when the direction changes while already moving (a direction change while
+    /// moving is a new start, e.g. right &#8594; up-right when a second key is pressed). A move in the
+    /// same direction while already moving raises nothing.
     /// </summary>
     /// <remarks>
     /// This is the internal bridge the engine uses for movement it resolves itself (the
     /// axis-separated collision resolution of <see cref="GameEngine"/>), which cannot go through
     /// <see cref="Move(Direction, double, double)"/> because that method applies the whole
-    /// displacement at once. It faces the player and marks it as moving; <see cref="OnStartMoving"/>
-    /// is raised <em>before</em> the engine applies the displacement, and only when the player was
-    /// idle (a direction change while moving raises nothing). The engine calls it before applying
-    /// the displacement.
+    /// displacement at once. It faces the player and marks it as moving;
+    /// <see cref="OnStartMoving"/> is raised <em>before</em> the engine applies the displacement.
+    /// The engine calls it before applying the displacement.
     /// </remarks>
     /// <param name="direction">The direction the player moved in (and now faces).</param>
     internal void ReportMovement(Direction direction)
     {
         var wasMoving = _isMoving;
+        var directionChanged = direction != _lastDirection;
 
         Direction = direction;
         _isMoving = true;
 
-        if (!wasMoving)
+        if (!wasMoving || directionChanged)
         {
-            OnStartMoving?.Invoke(this, new PlayerMoveEventArgs(direction));
+            OnStartMoving?.Invoke(this, direction);
         }
     }
 
@@ -250,7 +258,7 @@ public sealed class Player
     {
         Direction = direction;
         _isMoving = true;
-        OnStartMoving?.Invoke(this, new PlayerMoveEventArgs(direction));
+        OnStartMoving?.Invoke(this, direction);
     }
 
     /// <summary>
@@ -278,6 +286,6 @@ public sealed class Player
         }
 
         _isMoving = false;
-        OnStopMoving?.Invoke(this, new PlayerMoveEventArgs(direction));
+        OnStopMoving?.Invoke(this, direction);
     }
 }

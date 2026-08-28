@@ -113,7 +113,10 @@ namespace RPGEngine;
 /// fires <see cref="Player.OnStartMoving"/> <em>before</em> the displacement is applied, and a
 /// fully blocked move fires <see cref="Player.OnStopMoving"/> right after (start then stop in
 /// the same frame when the very first move is blocked); while the key stays held against the same
-/// wall nothing more fires. See <c>docs/Architecture.md</c> for the collision model.
+/// wall nothing more fires. <see cref="Player.OnStartMoving"/> also fires when the movement
+/// direction changes while the player is already moving (e.g. pressing a second key makes the
+/// effective direction a diagonal), so remote clients that mirror the player learn the new facing
+/// direction. See <c>docs/Architecture.md</c> for the collision model.
 /// </para>
 /// <para>
 /// The engine is <see cref="IDisposable"/>: it owns the assigned map and disposes it when
@@ -1146,8 +1149,9 @@ public sealed class GameEngine : IDisposable
     /// overlap (escaping the wall) is still allowed.
     /// The movement events are raised at a deterministic time relative to the displacement:
     /// <see cref="Player.ReportMovement(Direction)"/> is called <em>before</em> the position is
-    /// updated, so <see cref="Player.OnStartMoving"/> fires when the player starts moving (idle
-    /// &#8594; moving, never on a direction change while moving) and observes the pre-move position.
+    /// updated, so <see cref="Player.OnStartMoving"/> fires when the player starts moving in a new
+    /// direction (idle &#8594; moving, or a direction change while moving &#8212; e.g. pressing a second key so
+    /// the effective direction becomes a diagonal) and observes the pre-move position.
     /// After the displacement is resolved, a move with no net displacement (fully blocked by solid
     /// tiles or the map edge on every axis) is reported as a <em>collision stop</em> through
     /// <see cref="Player.ReportBlockedMove(Direction)"/>, so <see cref="Player.OnStopMoving"/>
@@ -1179,7 +1183,7 @@ public sealed class GameEngine : IDisposable
         // stopped) clears the resting state and reports a new start.
         if (!_blockedMoveDirection.HasValue || _blockedMoveDirection.Value != direction)
         {
-            Player.ReportMovement(direction); // OnStartMoving (idle -> moving) BEFORE the position update
+            Player.ReportMovement(direction); // OnStartMoving (idle -> moving, or a direction change) BEFORE the position update
         }
 
         Player.Position = Map is null
