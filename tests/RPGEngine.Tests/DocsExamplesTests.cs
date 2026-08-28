@@ -77,16 +77,17 @@ public class DocsExamplesTests
 
     // ---------------------------------------------------------------------
     // docs/api/GameEngine.md and docs/api/Player.md: click-to-move auto-walk
-    // and the OnMove movement-state event (story 38).
+    // and the movement-state events OnStartMoving / OnStopMoving (story 38/69).
     // ---------------------------------------------------------------------
     /// <summary>
     /// The click-to-move example from the documentation: render once so the engine knows the
     /// canvas size, click a distant walkable tile, and the player auto-walks along the A* path
-    /// to the clicked tile center while <see cref="Player.OnMove"/> fires on the start and the
-    /// completion.
+    /// to the clicked tile center while <see cref="Player.OnStartMoving"/> fires when the walk
+    /// (and each step) starts and <see cref="Player.OnStopMoving"/> fires exactly once when it
+    /// completes.
     /// </summary>
     [Fact]
-    public void ClickToMove_AutoWalksToClickedTileAndFiresOnMove()
+    public void ClickToMove_AutoWalksToClickedTileAndFiresOnStartAndStopMoving()
     {
         using var fixture = new TiledTestFixture(
             10, 10,
@@ -94,8 +95,10 @@ public class DocsExamplesTests
         var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
         engine.Player.Position = new Position(0.5, 1.5);
 
-        var moveEvents = new List<PlayerMoveEventArgs>();
-        engine.Player.OnMove += (_, e) => moveEvents.Add(e);
+        var starts = new List<PlayerMoveEventArgs>();
+        var stops = new List<PlayerMoveEventArgs>();
+        engine.Player.OnStartMoving += (_, e) => starts.Add(e);
+        engine.Player.OnStopMoving += (_, e) => stops.Add(e);
 
         // Render at least once so the engine knows the canvas size, then translate a mouse click.
         const int canvas = 480; // 10 tiles x 48 px: the whole map is visible
@@ -117,8 +120,8 @@ public class DocsExamplesTests
         }
 
         Assert.Equal(target, engine.Player.Position);
-        Assert.Contains(moveEvents, e => e.IsMoving);   // the walk started
-        Assert.Contains(moveEvents, e => !e.IsMoving);  // and completed (stopped)
+        Assert.NotEmpty(starts);  // the walk (and each step) started
+        Assert.Single(stops);     // and completed (stopped) exactly once at the end
     }
 
     // ---------------------------------------------------------------------
