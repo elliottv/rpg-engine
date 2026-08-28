@@ -998,39 +998,50 @@ public partial class GameEngineTests
     }
 
     /// <summary>
-    /// Verifies manual key movement still raises OnMove with the exact start/stop sequence (the
-    /// engine reports movement through Player.ReportMovement after its collision resolution).
+    /// Verifies manual key movement raises OnStartMoving when the player starts moving and
+    /// OnStopMoving when the key is released (the engine reports movement through
+    /// Player.ReportMovement before its collision resolution, and the release stops the player
+    /// through Player.Stop in Update).
     /// </summary>
     [Fact]
-    public void Update_KeyMovement_RaisesOnMoveOnStartAndStop()
+    public void Update_KeyMovement_RaisesOnStartMovingAndOnStopMoving()
     {
         var engine = new GameEngine();
         engine.Player.Character.BaseSpeed = 2;
         engine.Player.Position = new Position(10, 10);
 
-        var events = new List<PlayerMoveEventArgs>();
-        engine.Player.OnMove += (_, e) => events.Add(e);
+        var starts = new List<PlayerMoveEventArgs>();
+        var stops = new List<PlayerMoveEventArgs>();
+        engine.Player.OnStartMoving += (_, e) => starts.Add(e);
+        engine.Player.OnStopMoving += (_, e) => stops.Add(e);
 
         engine.Input(Key.D, true);
         engine.Update(FrameDt);
-        Assert.Equal(new[] { new PlayerMoveEventArgs(true, Direction.Right) }, events);
+        Assert.Equal(new[] { new PlayerMoveEventArgs(Direction.Right) }, starts);
+        Assert.Empty(stops);
 
         engine.Input(Key.D, false);
-        events.Clear();
+        starts.Clear();
         engine.Update(FrameDt);
-        Assert.Equal(new[] { new PlayerMoveEventArgs(false, Direction.Right) }, events);
+        Assert.Empty(starts);
+        Assert.Equal(new[] { new PlayerMoveEventArgs(Direction.Right) }, stops);
     }
 
-    /// <summary>Verifies changing direction with the keys while moving raises OnMove with the new direction.</summary>
+    /// <summary>
+    /// Verifies changing direction with the keys while moving raises no movement event: a
+    /// direction change while moving is neither a start nor a stop.
+    /// </summary>
     [Fact]
-    public void Update_KeyMovement_ChangingDirectionRaisesOnMove()
+    public void Update_KeyMovement_ChangingDirectionRaisesNoEvent()
     {
         var engine = new GameEngine();
         engine.Player.Character.BaseSpeed = 2;
         engine.Player.Position = new Position(10, 10);
 
-        var events = new List<PlayerMoveEventArgs>();
-        engine.Player.OnMove += (_, e) => events.Add(e);
+        var starts = new List<PlayerMoveEventArgs>();
+        var stops = new List<PlayerMoveEventArgs>();
+        engine.Player.OnStartMoving += (_, e) => starts.Add(e);
+        engine.Player.OnStopMoving += (_, e) => stops.Add(e);
 
         engine.Input(Key.D, true);
         engine.Update(FrameDt); // moving right
@@ -1038,9 +1049,12 @@ public partial class GameEngineTests
         // Switch to moving down: direction change while moving.
         engine.Input(Key.D, false);
         engine.Input(Key.S, true);
+        starts.Clear();
+        stops.Clear();
         engine.Update(FrameDt);
 
-        Assert.Contains(new PlayerMoveEventArgs(true, Direction.Down), events);
+        Assert.Empty(starts);
+        Assert.Empty(stops);
     }
 
     // ---------------------------------------------------------------------
