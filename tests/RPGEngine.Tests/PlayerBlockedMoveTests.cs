@@ -21,15 +21,15 @@ public class PlayerBlockedMoveTests
     public void ReportBlockedMove_WhenMoving_RaisesOnStopMoving()
     {
         var player = new Player();
-        var events = new List<PlayerMoveEventArgs>();
-        player.OnStopMoving += (_, e) => events.Add(e);
+        var events = new List<Direction>();
+        player.OnStopMoving += (_, direction) => events.Add(direction);
 
         player.Move(Direction.Right, speedFactor: 1, dt: 1);
         events.Clear();
 
         player.ReportBlockedMove(Direction.Right);
 
-        Assert.Equal(new[] { new PlayerMoveEventArgs(Direction.Right) }, events);
+        Assert.Equal(new[] { Direction.Right }, events);
         Assert.Equal(Direction.Right, player.Direction);
     }
 
@@ -42,8 +42,8 @@ public class PlayerBlockedMoveTests
     public void ReportBlockedMove_WhenIdleSameDirection_IsNoOp()
     {
         var player = new Player { Direction = Direction.Right };
-        var events = new List<PlayerMoveEventArgs>();
-        player.OnStopMoving += (_, e) => events.Add(e);
+        var events = new List<Direction>();
+        player.OnStopMoving += (_, direction) => events.Add(direction);
 
         player.ReportBlockedMove(Direction.Right);
 
@@ -60,8 +60,8 @@ public class PlayerBlockedMoveTests
     public void ReportBlockedMove_WhenIdleDirectionChanged_RaisesNoEvent()
     {
         var player = new Player { Direction = Direction.Right };
-        var events = new List<PlayerMoveEventArgs>();
-        player.OnStopMoving += (_, e) => events.Add(e);
+        var events = new List<Direction>();
+        player.OnStopMoving += (_, direction) => events.Add(direction);
 
         player.ReportBlockedMove(Direction.Up);
 
@@ -78,16 +78,16 @@ public class PlayerBlockedMoveTests
     public void MoveThenBlocked_ProducesExactEventSequence()
     {
         var player = new Player();
-        var starts = new List<PlayerMoveEventArgs>();
-        var stops = new List<PlayerMoveEventArgs>();
-        player.OnStartMoving += (_, e) => starts.Add(e);
-        player.OnStopMoving += (_, e) => stops.Add(e);
+        var starts = new List<Direction>();
+        var stops = new List<Direction>();
+        player.OnStartMoving += (_, direction) => starts.Add(direction);
+        player.OnStopMoving += (_, direction) => stops.Add(direction);
 
         player.Move(Direction.Right, speedFactor: 1, dt: 1);
         player.ReportBlockedMove(Direction.Right); // moving -> idle (the collision stop)
         player.ReportBlockedMove(Direction.Right); // already idle, same direction: no event
 
-        Assert.Equal(new[] { new PlayerMoveEventArgs(Direction.Right) }, starts);
-        Assert.Equal(new[] { new PlayerMoveEventArgs(Direction.Right) }, stops);
+        Assert.Equal(new[] { Direction.Right }, starts);
+        Assert.Equal(new[] { Direction.Right }, stops);
     }
 }

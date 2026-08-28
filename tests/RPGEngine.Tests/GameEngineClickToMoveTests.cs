@@ -84,10 +84,10 @@ public partial class GameEngineTests
         ConfigurePlayerSprite(engine, seed: 1);
         engine.Player.Position = new Position(0.5, 1.5);
 
-        var starts = new List<PlayerMoveEventArgs>();
-        var stops = new List<PlayerMoveEventArgs>();
-        engine.Player.OnStartMoving += (_, e) => starts.Add(e);
-        engine.Player.OnStopMoving += (_, e) => stops.Add(e);
+        var starts = new List<Direction>();
+        var stops = new List<Direction>();
+        engine.Player.OnStartMoving += (_, direction) => starts.Add(direction);
+        engine.Player.OnStopMoving += (_, direction) => stops.Add(direction);
 
         const int canvas = 480;
         ClickOnTile(engine, 3, 4, canvas, canvas);
@@ -109,7 +109,7 @@ public partial class GameEngineTests
         // OnStopMoving fires at completion, facing the last movement direction (down-right).
         Assert.Equal(path.Count, starts.Count);
         Assert.Single(stops);
-        Assert.Equal(new PlayerMoveEventArgs(Direction.DownRight), stops[^1]);
+        Assert.Equal(Direction.DownRight, stops[^1]);
     }
 
     /// <summary>
@@ -259,10 +259,10 @@ public partial class GameEngineTests
         ConfigurePlayerSprite(engine, seed: 1);
         engine.Player.Position = new Position(0.5, 1.5);
 
-        var starts = new List<PlayerMoveEventArgs>();
-        var stops = new List<PlayerMoveEventArgs>();
-        engine.Player.OnStartMoving += (_, e) => starts.Add(e);
-        engine.Player.OnStopMoving += (_, e) => stops.Add(e);
+        var starts = new List<Direction>();
+        var stops = new List<Direction>();
+        engine.Player.OnStartMoving += (_, direction) => starts.Add(direction);
+        engine.Player.OnStopMoving += (_, direction) => stops.Add(direction);
 
         const int canvas = 480;
         ClickOnTile(engine, 5, 5, canvas, canvas);

@@ -95,10 +95,10 @@ public class DocsExamplesTests
         var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
         engine.Player.Position = new Position(0.5, 1.5);
 
-        var starts = new List<PlayerMoveEventArgs>();
-        var stops = new List<PlayerMoveEventArgs>();
-        engine.Player.OnStartMoving += (_, e) => starts.Add(e);
-        engine.Player.OnStopMoving += (_, e) => stops.Add(e);
+        var starts = new List<Direction>();
+        var stops = new List<Direction>();
+        engine.Player.OnStartMoving += (_, direction) => starts.Add(direction);
+        engine.Player.OnStopMoving += (_, direction) => stops.Add(direction);
 
         // Render at least once so the engine knows the canvas size, then translate a mouse click.
         const int canvas = 480; // 10 tiles x 48 px: the whole map is visible

@@ -172,11 +172,13 @@ public class PlayerTests
 
     // ---------------------------------------------------------------------
     // Story 69: Player.OnStartMoving / Player.OnStopMoving movement-state
-    // events. OnStartMoving fires exactly when the player begins moving
-    // (idle -> moving) and BEFORE the position is updated; it never fires on
-    // direction changes while moving and never per frame. OnStopMoving fires
-    // when the player stops moving (via Stop()). A speed-factor-zero Move only
-    // turns and raises no event.
+    // events. OnStartMoving fires exactly when the player begins moving in a
+    // new direction (idle -> moving, or a direction change while moving, e.g.
+    // right -> up-right when a second key is pressed) and BEFORE the position
+    // is updated; it never fires per frame (a same-direction move while moving
+    // raises nothing). OnStopMoving fires when the player stops moving (via
+    // Stop()). A speed-factor-zero Move only turns and raises no event. Both
+    // events carry only the facing Direction (PlayerMoveEventArgs was removed).
     // ---------------------------------------------------------------------
 
     /// <summary>
@@ -189,41 +191,66 @@ public class PlayerTests
     {
         var player = new Player { Position = new Position(10, 20) };
         player.Character.BaseSpeed = 2;
-        var events = new List<PlayerMoveEventArgs>();
-        player.OnStartMoving += (_, e) =>
+        var events = new List<Direction>();
+        player.OnStartMoving += (_, direction) =>
         {
-            events.Add(e);
+            events.Add(direction);
             // The event fires before the displacement: the handler sees the pre-move position.
             Assert.Equal(new Position(10, 20), player.Position);
         };
 
         player.Move(Direction.Right, speedFactor: 1, dt: 1);
 
-        Assert.Equal(new[] { new PlayerMoveEventArgs(Direction.Right) }, events);
+        Assert.Equal(new[] { Direction.Right }, events);
         Assert.Equal(new Position(12, 20), player.Position);
     }
 
     /// <summary>
-    /// Verifies a Move while already moving raises no event: neither the same direction nor a
-    /// direction change is a start (a direction change while moving is no longer reported).
+    /// Verifies a Move while already moving in the <em>same</em> direction raises no event: it is
+    /// neither a start nor a stop, and it never fires per frame.
     /// </summary>
     [Fact]
-    public void Move_WhileMoving_NoEvent()
+    public void Move_WhileMovingSameDirection_NoEvent()
     {
         var player = new Player();
-        var events = new List<PlayerMoveEventArgs>();
-        player.OnStartMoving += (_, e) => events.Add(e);
-        player.OnStopMoving += (_, e) => events.Add(e);
+        var starts = new List<Direction>();
+        var stops = new List<Direction>();
+        player.OnStartMoving += (_, direction) => starts.Add(direction);
+        player.OnStopMoving += (_, direction) => stops.Add(direction);
 
         player.Move(Direction.Right, speedFactor: 1, dt: 1);
-        events.Clear();
+        starts.Clear();
+        stops.Clear();
 
-        // Same direction while moving: no event.
+        // Same direction while moving: no event (no per-frame events).
         player.Move(Direction.Right, speedFactor: 1, dt: 1);
-        // Direction change while moving: still no event (neither a start nor a stop).
-        player.Move(Direction.Down, speedFactor: 1, dt: 1);
 
-        Assert.Empty(events);
+        Assert.Empty(starts);
+        Assert.Empty(stops);
+    }
+
+    /// <summary>
+    /// Verifies a Move that changes direction while moving raises OnStartMoving with the new
+    /// direction (e.g. right &#8594; down-right, the diagonal produced when a second key is pressed),
+    /// and no OnStopMoving: a direction change while moving is a new start, not a stop.
+    /// </summary>
+    [Fact]
+    public void Move_WhileMovingDirectionChange_RaisesOnStartMoving()
+    {
+        var player = new Player();
+        var starts = new List<Direction>();
+        var stops = new List<Direction>();
+        player.OnStartMoving += (_, direction) => starts.Add(direction);
+        player.OnStopMoving += (_, direction) => stops.Add(direction);
+
+        player.Move(Direction.Right, speedFactor: 1, dt: 1);
+        starts.Clear();
+
+        // Direction change while moving: a new start with the new direction.
+        player.Move(Direction.DownRight, speedFactor: 1, dt: 1);
+
+        Assert.Equal(new[] { Direction.DownRight }, starts);
+        Assert.Empty(stops);
     }
 
     /// <summary>
@@ -234,13 +261,15 @@ public class PlayerTests
     public void Move_SpeedFactorZero_TurnOnly_NoEvent()
     {
         var player = new Player();
-        var events = new List<PlayerMoveEventArgs>();
-        player.OnStartMoving += (_, e) => events.Add(e);
-        player.OnStopMoving += (_, e) => events.Add(e);
+        var starts = new List<Direction>();
+        var stops = new List<Direction>();
+        player.OnStartMoving += (_, direction) => starts.Add(direction);
+        player.OnStopMoving += (_, direction) => stops.Add(direction);
 
         player.Move(Direction.Right, speedFactor: 0);
 
-        Assert.Empty(events);
+        Assert.Empty(starts);
+        Assert.Empty(stops);
         Assert.Equal(Direction.Right, player.Direction);
         Assert.Equal(new Position(0, 0), player.Position); // a turn never moves
     }
@@ -250,14 +279,14 @@ public class PlayerTests
     public void Stop_WhenMoving_RaisesOnStopMoving()
     {
         var player = new Player();
-        var events = new List<PlayerMoveEventArgs>();
-        player.OnStopMoving += (_, e) => events.Add(e);
+        var stops = new List<Direction>();
+        player.OnStopMoving += (_, direction) => stops.Add(direction);
 
         player.Move(Direction.Right, speedFactor: 1, dt: 1);
-        events.Clear();
+        stops.Clear();
         player.Stop();
 
-        Assert.Equal(new[] { new PlayerMoveEventArgs(Direction.Right) }, events);
+        Assert.Equal(new[] { Direction.Right }, stops);
         Assert.Equal(Direction.Right, player.Direction);
     }
 
@@ -266,31 +295,35 @@ public class PlayerTests
     public void Stop_WhenIdle_NoEvent()
     {
         var player = new Player();
-        var events = new List<PlayerMoveEventArgs>();
-        player.OnStopMoving += (_, e) => events.Add(e);
+        var stops = new List<Direction>();
+        player.OnStopMoving += (_, direction) => stops.Add(direction);
 
         player.Stop();
 
-        Assert.Empty(events);
+        Assert.Empty(stops);
     }
 
-    /// <summary>Verifies the exact event sequence across start, same-direction move, direction change and stop.</summary>
+    /// <summary>
+    /// Verifies the exact event sequence across start, same-direction move, direction change and
+    /// stop: OnStartMoving fires on start and again on the direction change (a new start), and
+    /// OnStopMoving fires once with the last facing direction.
+    /// </summary>
     [Fact]
     public void MoveThenStop_ExactEventSequence()
     {
         var player = new Player();
-        var starts = new List<PlayerMoveEventArgs>();
-        var stops = new List<PlayerMoveEventArgs>();
-        player.OnStartMoving += (_, e) => starts.Add(e);
-        player.OnStopMoving += (_, e) => stops.Add(e);
+        var starts = new List<Direction>();
+        var stops = new List<Direction>();
+        player.OnStartMoving += (_, direction) => starts.Add(direction);
+        player.OnStopMoving += (_, direction) => stops.Add(direction);
 
         player.Move(Direction.Right, speedFactor: 1, dt: 1);
         player.Move(Direction.Right, speedFactor: 1, dt: 1); // same direction: no event
-        player.Move(Direction.Down, speedFactor: 1, dt: 1);  // direction change: still no event
+        player.Move(Direction.Down, speedFactor: 1, dt: 1);  // direction change: a new start
         player.Stop();
         player.Stop(); // already idle: no event
 
-        Assert.Equal(new[] { new PlayerMoveEventArgs(Direction.Right) }, starts);
-        Assert.Equal(new[] { new PlayerMoveEventArgs(Direction.Down) }, stops);
+        Assert.Equal(new[] { Direction.Right, Direction.Down }, starts);
+        Assert.Equal(new[] { Direction.Down }, stops);
     }
 }
