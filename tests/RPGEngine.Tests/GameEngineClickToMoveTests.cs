@@ -15,13 +15,16 @@ namespace RPGEngine.Tests;
 public partial class GameEngineTests
 {
     // ---------------------------------------------------------------------
-    // Story 38: click-to-move with A* auto-walk and Player.OnMove. Click
-    // converts a host-surface click (using the canvas size recorded by the most
-    // recent Render) to a tile, computes an A* path over the non-solid tiles,
-    // and auto-walks the player along it at BaseSpeed, stopping on the clicked
-    // tile center. Clicking a solid tile or an unreachable target cancels the
-    // walk without moving; a key press cancels it (a release does not); a click
-    // mid-walk replaces the destination. OnMove fires for auto-walk too.
+    // Story 38/69: click-to-move with A* auto-walk and Player.OnStartMoving /
+    // Player.OnStopMoving. Click converts a host-surface click (using the
+    // canvas size recorded by the most recent Render) to a tile, computes an
+    // A* path over the non-solid tiles, and auto-walks the player along it at
+    // BaseSpeed, stopping on the clicked tile center. Clicking a solid tile or
+    // an unreachable target cancels the walk without moving; a key press
+    // cancels it (a release does not); a click mid-walk replaces the
+    // destination. OnStartMoving fires once per auto-walk step (per waypoint),
+    // before that step's position update, and OnStopMoving fires exactly once
+    // when the path completes.
     // ---------------------------------------------------------------------
 
     /// <summary>
@@ -69,28 +72,30 @@ public partial class GameEngineTests
     }
 
     /// <summary>
-    /// Verifies OnMove fires for auto-walk: clicking a distant walkable tile starts the walk
-    /// (IsMoving = true on the first Update) and completing it stops the player (IsMoving =
-    /// false), both with the correct facing direction.
+    /// Verifies OnStartMoving fires once per auto-walk step (per waypoint in the A* path) and
+    /// OnStopMoving fires exactly once when the path completes, with the correct facing
+    /// direction.
     /// </summary>
     [Fact]
-    public void Click_OnMove_FiresTrueWhenWalkStartsAndFalseWhenItCompletes()
+    public void Click_OnStartMoving_FiresPerStep_AndOnStopMovingOnCompletion()
     {
         using var fixture = CreateFilledMapFixture(10, 10);
         var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
         ConfigurePlayerSprite(engine, seed: 1);
         engine.Player.Position = new Position(0.5, 1.5);
 
-        var events = new List<PlayerMoveEventArgs>();
-        engine.Player.OnMove += (_, e) => events.Add(e);
+        var starts = new List<PlayerMoveEventArgs>();
+        var stops = new List<PlayerMoveEventArgs>();
+        engine.Player.OnStartMoving += (_, e) => starts.Add(e);
+        engine.Player.OnStopMoving += (_, e) => stops.Add(e);
 
         const int canvas = 480;
         ClickOnTile(engine, 3, 4, canvas, canvas);
 
-        // The first Update starts the walk toward (1.5, 2.5): down-right.
-        engine.Update(FrameDt);
-        Assert.Equal(new[] { new PlayerMoveEventArgs(true, Direction.DownRight) }, events);
-        events.Clear();
+        // Snapshot the path before the walk consumes it: it leads from the player's tile (0,1)
+        // to the clicked tile (3,4) through several waypoints.
+        var path = engine.AutoWalkPath;
+        Assert.True(path.Count >= 2, "The test needs a multi-tile path.");
 
         var target = new Position(3.5, 4.5);
         for (var frame = 0; frame < 5000 && engine.Player.Position != target; frame++)
@@ -99,7 +104,12 @@ public partial class GameEngineTests
         }
 
         Assert.Equal(target, engine.Player.Position);
-        Assert.Equal(new[] { new PlayerMoveEventArgs(false, Direction.DownRight) }, events);
+
+        // OnStartMoving fires once per auto-walk step (count == path length) and exactly one
+        // OnStopMoving fires at completion, facing the last movement direction (down-right).
+        Assert.Equal(path.Count, starts.Count);
+        Assert.Single(stops);
+        Assert.Equal(new PlayerMoveEventArgs(Direction.DownRight), stops[^1]);
     }
 
     /// <summary>
@@ -239,7 +249,7 @@ public partial class GameEngineTests
 
     /// <summary>
     /// Verifies a click during auto-walk replaces the destination: the player changes course
-    /// toward the new target without stopping first (no IsMoving = false before the final stop).
+    /// toward the new target without stopping first (no OnStopMoving before the final stop).
     /// </summary>
     [Fact]
     public void Click_DuringAutoWalk_ReplacesDestinationWithoutStopping()
@@ -249,15 +259,17 @@ public partial class GameEngineTests
         ConfigurePlayerSprite(engine, seed: 1);
         engine.Player.Position = new Position(0.5, 1.5);
 
-        var events = new List<PlayerMoveEventArgs>();
-        engine.Player.OnMove += (_, e) => events.Add(e);
+        var starts = new List<PlayerMoveEventArgs>();
+        var stops = new List<PlayerMoveEventArgs>();
+        engine.Player.OnStartMoving += (_, e) => starts.Add(e);
+        engine.Player.OnStopMoving += (_, e) => stops.Add(e);
 
         const int canvas = 480;
         ClickOnTile(engine, 5, 5, canvas, canvas);
-        engine.Update(FrameDt); // the walk starts (IsMoving = true)
+        engine.Update(FrameDt); // the walk starts (OnStartMoving fires)
         Assert.NotEmpty(engine.AutoWalkPath);
 
-        // Mid-walk, click a different target: the path is replaced.
+        // Mid-walk, click a different target: the path is replaced without stopping.
         ClickOnTile(engine, 8, 1, canvas, canvas);
         Assert.NotEmpty(engine.AutoWalkPath);
         Assert.Equal((8, 1), engine.AutoWalkPath[^1]);
@@ -269,11 +281,10 @@ public partial class GameEngineTests
         }
 
         Assert.Equal(target, engine.Player.Position);
-        // The player never stopped mid-course: the only stop event is the final one.
-        Assert.Equal(1, events.Count(e => !e.IsMoving));
-        Assert.False(events[^1].IsMoving);
-        // It did start moving from the first click.
-        Assert.Contains(events, e => e.IsMoving);
+        // The player never stopped mid-course: the only OnStopMoving is the final one.
+        Assert.Single(stops);
+        // It did start moving from the first click (and from each new step of the replaced walk).
+        Assert.NotEmpty(starts);
     }
 
     /// <summary>
