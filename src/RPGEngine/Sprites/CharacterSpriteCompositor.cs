@@ -37,6 +37,16 @@ namespace RPGEngine.Sprites;
 /// A cell's top-left is therefore at
 /// <c>(anchorPosition.X - width/2, anchorPosition.Y - height)</c> in pixels.
 /// </para>
+/// <para>
+/// When the character has a non-null <c>IconIndex</c> (see <c>Character.IconIndex</c>) and an
+/// icon set is supplied to <see cref="Draw"/>, the selected 32×32 icon is drawn <em>after</em>
+/// the sprite, <em>above</em> it: centered horizontally on the character's feet X, with its
+/// bottom edge at the sprite's top edge, within the character's Y-sorted draw pass (the engine
+/// sorts characters by <c>Position.Y</c> before drawing, so the icon moves with its character).
+/// A non-null icon index with no icon set loaded throws <see cref="InvalidOperationException"/>;
+/// an icon index outside the set's range throws <see cref="ArgumentOutOfRangeException"/> from
+/// <see cref="IconSet.GetIcon"/>.
+/// </para>
 /// </remarks>
 internal sealed class CharacterSpriteCompositor
 {
@@ -44,8 +54,17 @@ internal sealed class CharacterSpriteCompositor
     private const int MaxCharacterIndex = 8;
 
     /// <summary>
+    /// The cell height used to place an icon when the character has no spritesheet: the
+    /// documented default sprite size of 48 (the same default as <c>Character.GetSpriteSize</c>),
+    /// so a marker can be shown on a spriteless character.
+    /// </summary>
+    private const int DefaultCellHeight = 48;
+
+    /// <summary>
     /// Draws the character described by <paramref name="spriteSheetRefs"/> at
-    /// <paramref name="anchorPosition"/>.
+    /// <paramref name="anchorPosition"/>. When <paramref name="iconIndex"/> is non-null and
+    /// <paramref name="iconSet"/> is non-null, the selected 32×32 icon is drawn above the sprite
+    /// after it (see <see cref="DrawIcon"/>).
     /// </summary>
     /// <param name="canvas">The canvas to draw onto.</param>
     /// <param name="anchorPosition">The middle-bottom (feet) anchor of the sprite, in pixels:
@@ -55,12 +74,19 @@ internal sealed class CharacterSpriteCompositor
     /// <param name="direction">The direction the character faces.</param>
     /// <param name="frame">The animation frame (0..2).</param>
     /// <param name="manager">Resolves sheet names to <see cref="SpriteSheet"/> instances.</param>
+    /// <param name="iconSet">The icon set loaded into the engine, or <see langword="null"/> when
+    /// none is loaded. Required to be non-null when <paramref name="iconIndex"/> is non-null.</param>
+    /// <param name="iconIndex">The zero-based icon index to draw above the sprite, or
+    /// <see langword="null"/> to draw no icon.</param>
     /// <exception cref="ArgumentOutOfRangeException">
-    /// A reference has a <see cref="SpriteSheetRef.CharacterIndex"/> outside 1..8.
+    /// A reference has a <see cref="SpriteSheetRef.CharacterIndex"/> outside 1..8, or
+    /// <paramref name="iconIndex"/> is outside the set's <c>0..Count-1</c> range.
     /// </exception>
     /// <exception cref="KeyNotFoundException">A referenced sheet name is not loaded in <paramref name="manager"/>.</exception>
     /// <exception cref="InvalidOperationException">
-    /// The list mixes full and part sheets, or contains more than one full sheet.
+    /// The list mixes full and part sheets, or contains more than one full sheet, or
+    /// <paramref name="iconIndex"/> is non-null while <paramref name="iconSet"/> is
+    /// <see langword="null"/> (no icon set is loaded).
     /// </exception>
     public void Draw(
         SKCanvas canvas,
@@ -68,10 +94,26 @@ internal sealed class CharacterSpriteCompositor
         IReadOnlyList<SpriteSheetRef> spriteSheetRefs,
         Direction direction,
         int frame,
-        SpriteSheetManager manager)
+        SpriteSheetManager manager,
+        IconSet? iconSet,
+        int? iconIndex)
     {
+        // Strict validation up front, mirroring the existing full/part and character-index
+        // checks: an icon can only be drawn from a loaded icon set, so a non-null index with no
+        // loaded set is a misconfiguration.
+        if (iconIndex is not null && iconSet is null)
+        {
+            throw new InvalidOperationException(
+                "No icon set is loaded. Call GameEngine.LoadIconSet (or LoadIconSetAsync) " +
+                "before setting a character's IconIndex.");
+        }
+
         if (spriteSheetRefs.Count == 0)
         {
+            // A spriteless character: draw only the icon, placed above the documented default
+            // sprite size of 48×48 (the same default as Character.GetSpriteSize), so a marker
+            // can be shown on a character without a sheet.
+            DrawIcon(canvas, anchorPosition, DefaultCellHeight, iconSet, iconIndex);
             return;
         }
 
@@ -84,6 +126,7 @@ internal sealed class CharacterSpriteCompositor
         {
             // A single full sheet: draw its cell directly, no composition.
             DrawCell(canvas, anchorPosition, resolved[0], direction, frame);
+            DrawIcon(canvas, anchorPosition, resolved[0].Sheet.CellHeight, iconSet, iconIndex);
             return;
         }
 
@@ -96,6 +139,11 @@ internal sealed class CharacterSpriteCompositor
         }
 
         ComposeParts(canvas, anchorPosition, resolved, direction, frame);
+
+        // The icon is placed above the sprite using the derived cell height the parts were drawn
+        // at (all parts of a composition come from the same RPG Maker MZ export, so they share a
+        // cell size; the first resolved part is authoritative).
+        DrawIcon(canvas, anchorPosition, resolved[0].Sheet.CellHeight, iconSet, iconIndex);
     }
 
     /// <summary>
@@ -207,6 +255,43 @@ internal sealed class CharacterSpriteCompositor
         canvas.DrawImage(sprite, new SKPoint(
             (float)(anchorPosition.X - sprite.Width / 2.0),
             (float)(anchorPosition.Y - sprite.Height)));
+    }
+
+    /// <summary>
+    /// Draws the selected icon above the sprite when one is configured: the 32×32 icon is drawn
+    /// centered horizontally on the character's feet X, with its bottom edge at the sprite's top
+    /// edge. The sprite's top is at <c>anchorPosition.Y - cellHeight</c>, so the icon's top-left
+    /// is at <c>(anchorPosition.X - icon.Width / 2, anchorPosition.Y - cellHeight - icon.Height)</c>.
+    /// </summary>
+    /// <param name="canvas">The canvas to draw onto.</param>
+    /// <param name="anchorPosition">The feet (middle-bottom) anchor of the sprite, in pixels.</param>
+    /// <param name="cellHeight">The derived cell height the sprite was drawn at (the default 48
+    /// for a spriteless character).</param>
+    /// <param name="iconSet">The icon set loaded into the engine, or <see langword="null"/>.</param>
+    /// <param name="iconIndex">The zero-based icon index, or <see langword="null"/> for no icon.</param>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="iconIndex"/> is outside the set's <c>0..Count-1</c> range.
+    /// </exception>
+    private static void DrawIcon(
+        SKCanvas canvas,
+        Position anchorPosition,
+        int cellHeight,
+        IconSet? iconSet,
+        int? iconIndex)
+    {
+        if (iconIndex is null || iconSet is null)
+        {
+            return;
+        }
+
+        // The icon is drawn above the sprite: 32x32, centered horizontally on the character's
+        // feet X, its bottom edge at the sprite's top edge. The sprite's top is at
+        // anchorPosition.Y - cellHeight, so the icon's top-left is at
+        // (anchorPosition.X - 16, anchorPosition.Y - cellHeight - 32).
+        using var icon = iconSet.GetIcon(iconIndex.Value);
+        canvas.DrawImage(icon, new SKPoint(
+            (float)(anchorPosition.X - icon.Width / 2.0),
+            (float)(anchorPosition.Y - cellHeight - icon.Height)));
     }
 
     /// <summary>Returns the first resolved part of the given type, or <see langword="null"/> when absent.</summary>
