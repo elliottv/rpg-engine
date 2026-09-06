@@ -17,7 +17,7 @@ documented**. Every page below includes a commented, compilable example; the tes
 | `GameConfig` | class | [GameConfig.md](GameConfig.md) |
 | `Character` | class | [Character.md](Character.md) |
 | `Player` | class | [Player.md](Player.md) |
-| `Direction` | enum | [Direction.md](Direction.md) |
+| `Direction` | readonly record struct | [Direction.md](Direction.md) |
 | `DirectionExtensions` | static class | [DirectionExtensions.md](DirectionExtensions.md) |
 | `Position` | readonly record struct | [Position.md](Position.md) |
 | `Vector2` | readonly record struct | [Vector2.md](Vector2.md) |

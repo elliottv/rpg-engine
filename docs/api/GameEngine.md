@@ -34,9 +34,12 @@ registry and the pressed-keys state, and exposes the game-loop entry points `Upd
   to the viewer) is drawn last and appears on top of the others, so the player may be drawn
   behind an NPC whose Y is higher. Without a map the canvas is left untouched and only the
   characters (Y-sorted) are drawn.
-- Movement input combines every held bound key into a single 8-direction vector: opposite keys
-  cancel (`W`+`S` or `A`+`D`), and a diagonal pair combines into a diagonal (`W`+`D` → up-right)
-  at the same speed as cardinal movement (see [Architecture](../Architecture.md)).
+- Movement input combines every held bound key into a single direction vector (`Direction` is a
+  continuous 2-D vector, see `Direction.md`) which is then snapped to the nearest of the eight
+  canonical directions: opposite keys cancel (`W`+`S` or `A`+`D`), and a diagonal pair combines
+  into a canonical diagonal (`W`+`D` → up-right) at the same speed as cardinal movement. Key
+  input always yields one of the eight canonical directions; sprites render 8 directions
+  (see [Architecture](../Architecture.md)).
 - **Click-to-move** (auto-walk): `Click(surfaceX, surfaceY)` converts a host-surface click on the
   main canvas (using the canvas size recorded by the most recent `Render`) to a world position,
   computes an **A*** tile path from the player's tile to the clicked tile over the non-solid

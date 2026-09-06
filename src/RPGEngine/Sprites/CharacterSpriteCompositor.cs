@@ -71,7 +71,9 @@ internal sealed class CharacterSpriteCompositor
     /// the sprite is drawn above and centered on this point, so its top-left is at
     /// <c>(anchorPosition.X - width/2, anchorPosition.Y - height)</c>.</param>
     /// <param name="spriteSheetRefs">The spritesheet references to use (sheet name + character index).</param>
-    /// <param name="direction">The direction the character faces.</param>
+    /// <param name="direction">The direction the character faces. The character renderer passes
+    /// <c>Direction.Nearest8()</c> here, so this is always one of the eight canonical directions
+    /// (the 8-direction sprite rules, including the facing-up hair adjustment, stay exact).</param>
     /// <param name="frame">The animation frame (0..2).</param>
     /// <param name="manager">Resolves sheet names to <see cref="SpriteSheet"/> instances.</param>
     /// <param name="iconSet">The icon set loaded into the engine, or <see langword="null"/> when

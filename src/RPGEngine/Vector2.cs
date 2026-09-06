@@ -19,8 +19,9 @@ public readonly record struct Vector2(double X, double Y)
 
     /// <summary>
     /// Returns the component-wise product of <paramref name="v"/> and the scalar
-    /// <paramref name="scalar"/>. Used by movement logic to scale a direction delta by a
-    /// distance (<c>direction.Delta() * (BaseSpeed * factor * dt)</c>).
+    /// <paramref name="scalar"/>. Used by movement logic to scale a direction vector by a
+    /// distance (a <see cref="Direction"/> scaled by <c>BaseSpeed * factor * dt</c> and added to
+    /// a <see cref="Position"/>).
     /// </summary>
     public static Vector2 operator *(Vector2 v, double scalar) => new(v.X * scalar, v.Y * scalar);
 

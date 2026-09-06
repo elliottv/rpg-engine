@@ -2,8 +2,9 @@
 
 Namespace: `RPGEngine` — a character present in the game world (the player or an NPC).
 
-`Character` holds the position (in **tiles**), facing direction (8 directions, cardinal +
-diagonal), movement speed (in tiles per second), the walk-cycle animation state and the list of
+`Character` holds the position (in **tiles**), facing direction (a continuous 2-D direction
+vector, see `Direction.md`; the eight canonical directions remain for key input and sprite
+rows), movement speed (in tiles per second), the walk-cycle animation state and the list of
 spritesheet references used to render it.
 
 ## Remarks
@@ -47,10 +48,18 @@ var character = new Character { Position = new Position(3.5, 4.5) };
 
 ### `Direction Direction`
 
-Gets or sets the direction the character is facing.
+Gets or sets the direction the character is facing: a continuous 2-D direction vector
+(`X`, `Y` doubles, Y grows down), typically one of the eight canonical unit directions but
+allowed to be any continuous unit vector. Defaults to `Direction.Down` (the historical default
+facing), even though `default(Direction)` is the zero vector. Movement is
+`Direction * BaseSpeed * factor * dt`, so the vector should be unit-length; when rendering, the
+facing is snapped to the nearest canonical 8 direction for the sprite row
+(`DirectionExtensions.Nearest8`), so sprites stay 8-direction.
 
 ```csharp
 var character = new Character { Direction = Direction.Down };
+// A continuous facing is also possible:
+character.Direction = new Direction(0.6, 0.8);
 ```
 
 ### `double BaseSpeed`

@@ -1,104 +1,109 @@
 namespace RPGEngine;
 
 /// <summary>
-/// Provides convenience members for the <see cref="Direction"/> enum: screen-space deltas,
-/// opposites, sprite-sheet row indices and axis classification.
+/// Provides the 8-direction adaptation layer for the <see cref="Direction"/> vector type: it
+/// adapts a (possibly continuous) direction to the nearest of the eight canonical unit
+/// directions (<see cref="Nearest8"/>), maps a direction to its RPG Maker MZ character-sheet
+/// row (<see cref="RowIndex"/>) and returns its opposite (<see cref="Opposite"/>).
 /// </summary>
+/// <remarks>
+/// <para>
+/// <see cref="Direction"/> is a continuous 2-D vector (see its documentation). Key input still
+/// yields one of the eight canonical unit directions (see
+/// <see cref="GameConfig.GetMovementDirection(System.Collections.Generic.IEnumerable{Key})"/>),
+/// but a facing direction may in general be continuous. Sprites remain 8-direction: the
+/// direction vector is adapted to the nearest of the eight canonical directions
+/// (<see cref="Nearest8"/>) and then to a sheet row (<see cref="RowIndex"/>) — the epic's
+/// &quot;the direction vector is adapted to the old 8 directions&quot;.
+/// </para>
+/// </remarks>
 public static class DirectionExtensions
 {
     /// <summary>
-    /// Returns the screen-space unit delta for the direction. Screen coordinates grow Y
-    /// downward, so <see cref="Direction.Down"/> is <c>(0, +1)</c> and
-    /// <see cref="Direction.Up"/> is <c>(0, -1)</c>. Diagonal deltas are normalized (magnitude 1,
-    /// not &#8730;2), so diagonal movement is exactly as fast as cardinal movement.
-    /// </summary>
-    /// <param name="d">The direction.</param>
-    /// <returns>The unit vector the direction points to.</returns>
-    /// <exception cref="ArgumentOutOfRangeException"><paramref name="d"/> is not a defined <see cref="Direction"/>.</exception>
-    public static Vector2 Delta(this Direction d) => d switch
-    {
-        Direction.Down => new Vector2(0, 1),
-        Direction.Left => new Vector2(-1, 0),
-        Direction.Right => new Vector2(1, 0),
-        Direction.Up => new Vector2(0, -1),
-        Direction.DownLeft => new Vector2(-RootHalf, RootHalf),
-        Direction.DownRight => new Vector2(RootHalf, RootHalf),
-        Direction.UpLeft => new Vector2(-RootHalf, -RootHalf),
-        Direction.UpRight => new Vector2(RootHalf, -RootHalf),
-        _ => throw new ArgumentOutOfRangeException(nameof(d), d, "Unknown direction."),
-    };
-
-    /// <summary>
-    /// Returns the direction opposite to this one: <see cref="Direction.Down"/> &#8596;
-    /// <see cref="Direction.Up"/>, <see cref="Direction.Left"/> &#8596;
-    /// <see cref="Direction.Right"/>, <see cref="Direction.DownLeft"/> &#8596;
-    /// <see cref="Direction.UpRight"/> and <see cref="Direction.DownRight"/> &#8596;
-    /// <see cref="Direction.UpLeft"/>.
-    /// </summary>
-    /// <param name="d">The direction.</param>
-    /// <returns>The opposite direction.</returns>
-    /// <exception cref="ArgumentOutOfRangeException"><paramref name="d"/> is not a defined <see cref="Direction"/>.</exception>
-    public static Direction Opposite(this Direction d) => d switch
-    {
-        Direction.Down => Direction.Up,
-        Direction.Left => Direction.Right,
-        Direction.Right => Direction.Left,
-        Direction.Up => Direction.Down,
-        Direction.DownLeft => Direction.UpRight,
-        Direction.DownRight => Direction.UpLeft,
-        Direction.UpLeft => Direction.DownRight,
-        Direction.UpRight => Direction.DownLeft,
-        _ => throw new ArgumentOutOfRangeException(nameof(d), d, "Unknown direction."),
-    };
-
-    /// <summary>
-    /// Returns the RPG Maker MZ character sheet row for this direction
-    /// (<c>0 = down</c>, <c>1 = left</c>, <c>2 = right</c>, <c>3 = up</c>).
+    /// Returns the closest of the eight canonical unit directions in <see cref="Direction.All"/>
+    /// to this direction, chosen by dot product against each canonical unit vector after
+    /// normalizing <paramref name="d"/> (so only the direction matters, not its length). The zero
+    /// vector <c>(0, 0)</c> has no direction and snaps to <see cref="Direction.Down"/>.
     /// </summary>
     /// <remarks>
-    /// Cardinal directions return their enum value (<c>0..3</c>). Diagonal directions have no
-    /// dedicated sheet row, so they deliberately fall back to their <em>horizontal</em>
-    /// component's row: <see cref="Direction.DownLeft"/> and <see cref="Direction.UpLeft"/> map to
-    /// row 1 (the Left row) and <see cref="Direction.DownRight"/> and
-    /// <see cref="Direction.UpRight"/> map to row 2 (the Right row). A diagonally-facing
-    /// character therefore renders with the side-view row, which reads better than the front or
-    /// back rows for an oblique facing.
+    /// This is the &quot;adapt the direction vector to the old 8 directions&quot; operation used
+    /// at the sprite boundary: a continuous facing such as <c>(0.9, 0.2)</c> maps to
+    /// <see cref="Direction.Right"/>.
+    /// </remarks>
+    /// <param name="d">The direction to snap.</param>
+    /// <returns>The nearest canonical unit direction (one of <see cref="Direction.All"/>).</returns>
+    public static Direction Nearest8(this Direction d)
+    {
+        if (d.IsZero)
+        {
+            return Direction.Down;
+        }
+
+        // The canonical directions are all unit vectors, so after normalizing d the dot product
+        // with each candidate is exactly the cosine of the angle between them: the largest dot
+        // product is the closest direction. Ties (vectors exactly between two directions) are
+        // resolved by All's order (the first best wins).
+        var normalized = d.Normalized;
+        Direction best = Direction.Down;
+        var bestDot = double.NegativeInfinity;
+        foreach (var candidate in Direction.All)
+        {
+            var dot = (normalized.X * candidate.X) + (normalized.Y * candidate.Y);
+            if (dot > bestDot)
+            {
+                bestDot = dot;
+                best = candidate;
+            }
+        }
+
+        return best;
+    }
+
+    /// <summary>
+    /// Returns the RPG Maker MZ character-sheet row the character should render with for this
+    /// direction: <c>0 = down</c>, <c>1 = left</c>, <c>2 = right</c>, <c>3 = up</c>.
+    /// </summary>
+    /// <remarks>
+    /// The direction is first snapped with <see cref="Nearest8"/>, so a continuous vector maps
+    /// to the row of its nearest canonical direction. Cardinal directions return their own row;
+    /// canonical diagonals have no dedicated sheet row, so they deliberately fall back to their
+    /// <em>horizontal</em> component's row (<see cref="Direction.DownLeft"/> and
+    /// <see cref="Direction.UpLeft"/> → 1, <see cref="Direction.DownRight"/> and
+    /// <see cref="Direction.UpRight"/> → 2): a diagonally-facing character renders with the
+    /// side-view row, which reads better than the front or back rows for an oblique facing.
     /// </remarks>
     /// <param name="d">The direction.</param>
     /// <returns>The 0-based sprite-sheet row (0..3).</returns>
-    public static int RowIndex(this Direction d) => d switch
+    public static int RowIndex(this Direction d)
     {
-        Direction.DownLeft or Direction.UpLeft => 1,
-        Direction.DownRight or Direction.UpRight => 2,
-        _ => (int)d,
-    };
+        var nearest = d.Nearest8();
+
+        if (nearest == Direction.Left || nearest == Direction.DownLeft || nearest == Direction.UpLeft)
+        {
+            return 1;
+        }
+
+        if (nearest == Direction.Right || nearest == Direction.DownRight || nearest == Direction.UpRight)
+        {
+            return 2;
+        }
+
+        if (nearest == Direction.Up)
+        {
+            return 3;
+        }
+
+        return 0; // Direction.Down
+    }
 
     /// <summary>
-    /// Returns whether the direction is horizontal (<see cref="Direction.Left"/> or
-    /// <see cref="Direction.Right"/>). Diagonals are neither horizontal nor vertical.
+    /// Returns the direction opposite to this one. This is exactly the vector negation
+    /// <c>-d</c>: for the eight canonical directions it matches the enum's historical opposite
+    /// (<see cref="Direction.Down"/> ↔ <see cref="Direction.Up"/>,
+    /// <see cref="Direction.Left"/> ↔ <see cref="Direction.Right"/>, and each diagonal
+    /// flips both signs), and it remains well-defined for any continuous direction.
     /// </summary>
     /// <param name="d">The direction.</param>
-    /// <returns><see langword="true"/> when the direction is horizontal; otherwise <see langword="false"/>.</returns>
-    public static bool IsHorizontal(this Direction d) => d is Direction.Left or Direction.Right;
-
-    /// <summary>
-    /// Returns whether the direction is vertical (<see cref="Direction.Down"/> or
-    /// <see cref="Direction.Up"/>). Diagonals are neither horizontal nor vertical.
-    /// </summary>
-    /// <param name="d">The direction.</param>
-    /// <returns><see langword="true"/> when the direction is vertical; otherwise <see langword="false"/>.</returns>
-    public static bool IsVertical(this Direction d) => d is Direction.Down or Direction.Up;
-
-    /// <summary>
-    /// Returns whether the direction is one of the four diagonal directions
-    /// (<see cref="Direction.DownLeft"/>, <see cref="Direction.DownRight"/>,
-    /// <see cref="Direction.UpLeft"/> or <see cref="Direction.UpRight"/>).
-    /// </summary>
-    /// <param name="d">The direction.</param>
-    /// <returns><see langword="true"/> when the direction is diagonal; otherwise <see langword="false"/>.</returns>
-    public static bool IsDiagonal(this Direction d)
-        => d is Direction.DownLeft or Direction.DownRight or Direction.UpLeft or Direction.UpRight;
-
-    /// <summary>The magnitude of a normalized diagonal component: &#8730;&#189; &#8776; 0.7071067811865476.</summary>
-    private const double RootHalf = 0.7071067811865476;
+    /// <returns>The opposite direction.</returns>
+    public static Direction Opposite(this Direction d) => -d;
 }

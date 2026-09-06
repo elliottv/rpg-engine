@@ -1,7 +1,8 @@
 # Vector2
 
 Namespace: `RPGEngine` — a two-dimensional vector with double-precision components, used for
-screen-space offsets, deltas and distances.
+screen-space offsets, deltas and distances. It is a `readonly record struct Vector2(double X,
+double Y)`.
 
 ```csharp
 var v = new Vector2(3, -4);
@@ -28,12 +29,16 @@ Returns the negation of `v`.
 ### `static Vector2 operator *(Vector2 v, double scalar)` / `static Vector2 operator *(double scalar, Vector2 v)`
 
 Returns the component-wise product of the vector and the scalar. Used by movement logic to scale
-a direction delta by a distance.
+a vector by a distance.
 
 ```csharp
-var delta = Direction.Up.Delta();         // (0, -1)
-var step = delta * (2 * 1 * 0.5);         // (0, -1) — 1 tile up at 2 tiles/s for 0.5 s
+var direction = new Vector2(0, -1);   // up
+var step = direction * (2 * 1 * 0.5); // (0, -1) — 1 tile up at 2 tiles/s for 0.5 s
 ```
+
+> `Direction` (the continuous direction type) implicitly converts to a `Vector2` with the same
+> components, so a direction can be used wherever a `Vector2` offset is expected (e.g. adding a
+> scaled direction to a `Position`). See `Direction.md`.
 
 ## Example
 

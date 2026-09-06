@@ -450,26 +450,27 @@ public class DocsExamplesTests
         Assert.Equal(5, distance, precision: 10);
     }
 
-    /// <summary>Verifies the Direction extension examples (deltas, opposites, rows, diagonals).</summary>
+    /// <summary>Verifies the Direction example (a continuous vector next to the canonical 8 directions, opposites and rows).</summary>
     [Fact]
-    public void Direction_DeltasOppositesAndRows()
+    public void Direction_VectorsOppositesAndRows()
     {
-        Assert.Equal(new Vector2(0, -1), Direction.Up.Delta());
+        // A direction is a 2-D vector; the eight canonical unit directions are static members.
         Assert.Equal(Direction.Down, Direction.Up.Opposite());
         Assert.Equal(3, Direction.Up.RowIndex()); // RPG Maker MZ row 3
-        Assert.True(Direction.Left.IsHorizontal());
-        Assert.False(Direction.Left.IsVertical());
 
-        // Diagonal support: normalized delta, diagonal opposite, side-view row fallback and the
-        // IsDiagonal classification.
-        var upRight = Direction.UpRight.Delta();
-        Assert.Equal(Math.Sqrt(0.5), upRight.X, precision: 9);
-        Assert.Equal(-Math.Sqrt(0.5), upRight.Y, precision: 9);
-        Assert.Equal(Direction.DownLeft, Direction.UpRight.Opposite());
-        Assert.Equal(2, Direction.UpRight.RowIndex()); // falls back to the Right (side-view) row
-        Assert.True(Direction.UpRight.IsDiagonal());
-        Assert.False(Direction.UpRight.IsHorizontal());
-        Assert.False(Direction.UpRight.IsVertical());
+        // A continuous direction is adapted to the nearest canonical direction and its sheet row.
+        var diagonal = new Direction(0.7071067811865476, -0.7071067811865476); // == Direction.UpRight
+        Assert.Equal(Direction.UpRight, diagonal.Nearest8());
+        Assert.Equal(2, diagonal.RowIndex()); // falls back to the Right (side-view) row
+        Assert.Equal(Direction.DownLeft, diagonal.Opposite());
+
+        // The same continuous facing math applies to a non-canonical vector.
+        var continuous = new Direction(0.6, 0.8);
+        Assert.Equal(1, continuous.Length, precision: 9); // after normalization below
+        Assert.Equal(0.6, continuous.Normalized.X, precision: 9);
+        Assert.Equal(0.8, continuous.Normalized.Y, precision: 9);
+        Assert.Equal(Direction.DownRight, continuous.Nearest8()); // (0.6, 0.8) is closest to DownRight
+        Assert.Equal(2, continuous.RowIndex());                   // ... which renders on the Right (side-view) row
     }
 
     // ---------------------------------------------------------------------

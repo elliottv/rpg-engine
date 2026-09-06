@@ -48,10 +48,7 @@ public class GameConfigTests
 
     /// <summary>Verifies that reassigning any direction key takes effect immediately and unbinds the previous key.</summary>
     [Theory]
-    [InlineData("UpKey", Key.P, Direction.Up, Key.W)]
-    [InlineData("DownKey", Key.P, Direction.Down, Key.S)]
-    [InlineData("LeftKey", Key.P, Direction.Left, Key.A)]
-    [InlineData("RightKey", Key.P, Direction.Right, Key.D)]
+    [MemberData(nameof(ReassignKeyCases))]
     public void ReassigningAnyDirectionKey_TakesEffectImmediately(
         string propertyName,
         Key newKey,
@@ -86,14 +83,7 @@ public class GameConfigTests
     // ---------------------------------------------------------------------
     /// <summary>Verifies that binding an already-used key throws ArgumentException and leaves the configuration unchanged.</summary>
     [Theory]
-    [InlineData("UpKey", Key.S, Direction.Down)]    // S is bound to Down
-    [InlineData("UpKey", Key.A, Direction.Left)]    // A is bound to Left
-    [InlineData("DownKey", Key.W, Direction.Up)]    // W is bound to Up
-    [InlineData("DownKey", Key.D, Direction.Right)] // D is bound to Right
-    [InlineData("LeftKey", Key.W, Direction.Up)]    // W is bound to Up
-    [InlineData("LeftKey", Key.S, Direction.Down)]  // S is bound to Down
-    [InlineData("RightKey", Key.S, Direction.Down)] // S is bound to Down
-    [InlineData("RightKey", Key.A, Direction.Left)] // A is bound to Left
+    [MemberData(nameof(ConflictingKeyCases))]
     public void AssigningKeyAlreadyUsedByAnotherDirection_ThrowsAndLeavesConfigUnchanged(
         string propertyName,
         Key conflictingKey,
@@ -275,6 +265,28 @@ public class GameConfigTests
 
         Assert.Throws<ArgumentNullException>(() => config.GetMovementDirection(null!));
     }
+
+    /// <summary>The rebind cases: property, new key, the bound direction and the previous key it replaces.</summary>
+    public static TheoryData<string, Key, Direction, Key> ReassignKeyCases => new()
+    {
+        { "UpKey", Key.P, Direction.Up, Key.W },
+        { "DownKey", Key.P, Direction.Down, Key.S },
+        { "LeftKey", Key.P, Direction.Left, Key.A },
+        { "RightKey", Key.P, Direction.Right, Key.D },
+    };
+
+    /// <summary>The conflicting-binding cases: property, the key that is already bound and the direction it is bound to.</summary>
+    public static TheoryData<string, Key, Direction> ConflictingKeyCases => new()
+    {
+        { "UpKey", Key.S, Direction.Down },    // S is bound to Down
+        { "UpKey", Key.A, Direction.Left },    // A is bound to Left
+        { "DownKey", Key.W, Direction.Up },    // W is bound to Up
+        { "DownKey", Key.D, Direction.Right }, // D is bound to Right
+        { "LeftKey", Key.W, Direction.Up },    // W is bound to Up
+        { "LeftKey", Key.S, Direction.Down },  // S is bound to Down
+        { "RightKey", Key.S, Direction.Down }, // S is bound to Down
+        { "RightKey", Key.A, Direction.Left }, // A is bound to Left
+    };
 
     private static void Set(GameConfig config, string propertyName, Key key)
     {

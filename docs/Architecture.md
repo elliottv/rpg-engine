@@ -32,7 +32,10 @@ the in-world state lives on `Character`:
   character stands), in **tiles**. The sprite is rendered above and centered on this point; its
   size is the configured sheet's derived cell size, in pixels, used only for clamping and the
   collision footprint.
-- `Character.Direction` — the facing direction (8 directions: Down/Left/Right/Up plus the four diagonals).
+- `Character.Direction` — the facing direction: a continuous 2-D direction vector (`X`, `Y`
+  doubles; Y grows down). The old 8 directions survive as the eight canonical unit `Direction`
+  statics (Down/Left/Right/Up plus the four diagonals), which key input always yields and which
+  sprites still use.
 - `Character.BaseSpeed` — movement speed in **tiles per second** (the player default is 2,
   i.e. the tile-unit equivalent of 96 px/s at 48 px tiles).
 - `Character.SpriteSheets` — the list of `SpriteSheetRef`s (sheet name + 1..8 character index).
@@ -146,9 +149,10 @@ charRow = (i - 1) / 4
 
 Its cell `(frame, direction)` is at column `charCol * 3 + frame` and row
 `charRow * 4 + direction.RowIndex()`, where the direction rows are
-`0 = Down`, `1 = Left`, `2 = Right`, `3 = Up`. Diagonal directions have no dedicated row and
-fall back to their horizontal component's row (`DownLeft`/`UpLeft` → 1, `DownRight`/`UpRight`
-→ 2), so a diagonally-facing character renders with the side-view row.
+`0 = Down`, `1 = Left`, `2 = Right`, `3 = Up`. `RowIndex` snaps a (possibly continuous)
+direction to its nearest canonical direction first; canonical diagonal directions have no
+dedicated row and fall back to their horizontal component's row (`DownLeft`/`UpLeft` → 1,
+`DownRight`/`UpRight` → 2), so a diagonally-facing character renders with the side-view row.
 
 A `SpriteSheetRef(Name, CharacterIndex)` pairs a loaded sheet name with one of the **8
 characters** in that sheet. The index is enforced (1..8) where the reference is consumed — at
@@ -207,14 +211,16 @@ There are **two ways a character moves**, and both go through the same `Characte
 (internal, `map` nullable) called by the engine's update loop every frame:
 
 1. **Engine key input (the player).** `GameEngine.Update` combines every held bound key into a
-   single **8-direction vector**: each key that is bound to a movement direction (via
-   `GameConfig.GetDirection`) contributes its unit delta, the deltas are summed, normalized and
-   quantized to the nearest of the eight `Direction` values. Opposite keys cancel (`W`+`S` or
-   `A`+`D`), and a diagonal pair combines into a diagonal (`W`+`D` → up-right) at the same
-   speed as cardinal movement (the diagonal deltas are normalized, magnitude 1). When no bound
-   key is held the player stops and the animation snaps back to the standing frame. The engine
-   reads `GameConfig` at input time and never caches a snapshot. The player's displacement is
-   resolved (and collision-checked) by the engine itself, then handed to `Player.ReportMovement`.
+   single direction vector (`Direction` is a continuous 2-D vector, like `Position`): each key
+   that is bound to a movement direction (via `GameConfig.GetDirection`) contributes its
+   canonical unit direction vector, the vectors are summed, normalized and snapped to the
+   nearest of the eight canonical `Direction` values (key input always yields one of the eight).
+   Opposite keys cancel (`W`+`S` or `A`+`D`), and a diagonal pair combines into a canonical
+   diagonal (`W`+`D` → up-right) at the same speed as cardinal movement (all canonical
+   directions are unit vectors, magnitude 1). When no bound key is held the player stops and the
+   animation snaps back to the standing frame. The engine reads `GameConfig` at input time and
+   never caches a snapshot. The player's displacement is resolved (and collision-checked) by the
+   engine itself, then handed to `Player.ReportMovement`.
 2. **Autonomous movement (`Character.StartMoving` / `StopMoving`).** A host starts a character
    (typically an NPC in `GameEngine.Characters`) with `StartMoving(direction)`, which faces it
    and sets `IsMoving = true`. While `IsMoving`, every `Character.Update(dt, map)` moves the
@@ -401,7 +407,7 @@ auto-walk never moves the player through or into a solid tile.
   path) **cancels** it.
 
 **Movement-state events**: `Player` exposes `OnStartMoving` and `OnStopMoving`
-(`EventHandler<Direction>`, carrying only the facing `Direction` — the old
+(`EventHandler<Direction>`, carrying only the facing `Direction` vector — the old
 `PlayerMoveEventArgs` wrapper was removed). `OnStartMoving` fires **exactly** when the player
 begins moving in a new direction and **before** the position is updated: on the first frame a
 movement key takes effect (idle → moving) for move-by-key, on **direction changes while

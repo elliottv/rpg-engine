@@ -96,10 +96,7 @@ public class PlayerTests
     // ---------------------------------------------------------------------
     /// <summary>Verifies Move(direction, factor, dt) moves the underlying Character exactly BaseSpeed × factor × dt tiles along the right axis and updates its Direction.</summary>
     [Theory]
-    [InlineData(Direction.Down, 0.0, 100.0)]
-    [InlineData(Direction.Up, 0.0, -100.0)]
-    [InlineData(Direction.Left, -100.0, 0.0)]
-    [InlineData(Direction.Right, 100.0, 0.0)]
+    [MemberData(nameof(CardinalMoveCases))]
     public void Move_WithDirectionFactorAndDt_MovesUnderlyingCharacter(
         Direction direction,
         double expectedX,
@@ -231,7 +228,7 @@ public class PlayerTests
 
     /// <summary>
     /// Verifies a Move that changes direction while moving raises OnStartMoving with the new
-    /// direction (e.g. right &#8594; down-right, the diagonal produced when a second key is pressed),
+    /// direction (e.g. right → down-right, the diagonal produced when a second key is pressed),
     /// and no OnStopMoving: a direction change while moving is a new start, not a stop.
     /// </summary>
     [Fact]
@@ -326,4 +323,13 @@ public class PlayerTests
         Assert.Equal(new[] { Direction.Right, Direction.Down }, starts);
         Assert.Equal(new[] { Direction.Down }, stops);
     }
+
+    /// <summary>The cardinal directions and the exact X/Y displacement Move(d, 2, 0.5) must produce at BaseSpeed 100.</summary>
+    public static TheoryData<Direction, double, double> CardinalMoveCases => new()
+    {
+        { Direction.Down, 0.0, 100.0 },
+        { Direction.Up, 0.0, -100.0 },
+        { Direction.Left, -100.0, 0.0 },
+        { Direction.Right, 100.0, 0.0 },
+    };
 }

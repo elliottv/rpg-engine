@@ -134,7 +134,7 @@ foreach (var layer in engine.Map?.ObjectLayers ?? [])
 > updated — and `Player.OnStopMoving` fires when every key is released, when the last auto-walk
 > step is reached, or when the player is blocked by a collision (the engine reports the blocked
 > move, so `OnStopMoving` fires even against a wall). Both events carry only the facing
-> `Direction`. Diagonal key movement is all-or-nothing (no wall-sliding): a diagonal into a wall
+> `Direction` (the direction vector). Diagonal key movement is all-or-nothing (no wall-sliding): a diagonal into a wall
 > where only one axis is free stops the player entirely and reports the collision stop the same
 > way. See `docs/api/GameEngine.md` and `docs/api/Player.md`.
 

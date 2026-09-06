@@ -46,12 +46,9 @@ public class SpriteSheetTests
         }
     }
 
-    /// <summary>Verifies the four direction rows map to rows 0..3 within a character block.</summary>
+    /// <summary>Verifies the four canonical direction rows map to rows 0..3 within a character block.</summary>
     [Theory]
-    [InlineData(Direction.Down, 0)]
-    [InlineData(Direction.Left, 1)]
-    [InlineData(Direction.Right, 2)]
-    [InlineData(Direction.Up, 3)]
+    [MemberData(nameof(DirectionRowCases))]
     public void GetSprite_MapsDirectionsToRows(Direction direction, int expectedRow)
     {
         var manager = new SpriteSheetManager();
@@ -61,6 +58,15 @@ public class SpriteSheetTests
         using var sprite = sheet.GetSprite(1, direction, frame: 0);
         AssertCell(sprite, expectedRow, col: 0);
     }
+
+    /// <summary>The four canonical directions and their sheet rows within a character block.</summary>
+    public static TheoryData<Direction, int> DirectionRowCases => new()
+    {
+        { Direction.Down, 0 },
+        { Direction.Left, 1 },
+        { Direction.Right, 2 },
+        { Direction.Up, 3 },
+    };
 
     // ---------------------------------------------------------------------
     // Acceptance (story 23): a 936×864 sheet derives 78×108 cells and

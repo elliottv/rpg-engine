@@ -49,10 +49,7 @@ public class CharacterTests
     // ---------------------------------------------------------------------
     /// <summary>Verifies Move(direction, factor, dt) moves exactly BaseSpeed × factor × dt tiles along the correct axis and direction, and sets Direction.</summary>
     [Theory]
-    [InlineData(Direction.Down, 0.0, 100.0)]
-    [InlineData(Direction.Up, 0.0, -100.0)]
-    [InlineData(Direction.Left, -100.0, 0.0)]
-    [InlineData(Direction.Right, 100.0, 0.0)]
+    [MemberData(nameof(CardinalMoveCases))]
     public void Move_WithDirectionFactorAndDt_MovesExactly(
         Direction direction,
         double expectedX,
@@ -782,6 +779,15 @@ public class CharacterTests
     // ---------------------------------------------------------------------
     // Helpers
     // ---------------------------------------------------------------------
+
+    /// <summary>The cardinal directions and the exact X/Y displacement Move(d, 2, 0.5) must produce at BaseSpeed 100.</summary>
+    public static TheoryData<Direction, double, double> CardinalMoveCases => new()
+    {
+        { Direction.Down, 0.0, 100.0 },
+        { Direction.Up, 0.0, -100.0 },
+        { Direction.Left, -100.0, 0.0 },
+        { Direction.Right, 100.0, 0.0 },
+    };
 
     /// <summary>Moves the character one step (dt = 1) and updates it, advancing the walk cycle.</summary>
     private static void MoveAndUpdate(Character character, Direction direction)

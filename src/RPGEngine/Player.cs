@@ -22,8 +22,8 @@ namespace RPGEngine;
 /// <para>
 /// The player exposes a movement-state machine through two events: <see cref="OnStartMoving"/>
 /// fires <em>before</em> the position is updated, exactly when the player <em>begins</em> moving
-/// in a new direction (idle &#8594; moving for key movement, a direction change while moving &#8212;
-/// e.g. pressing a second key so the player moves diagonally &#8212; and once per auto-walk step for
+/// in a new direction (idle → moving for key movement, a direction change while moving —
+/// e.g. pressing a second key so the player moves diagonally — and once per auto-walk step for
 /// click-to-move), and never per frame. <see cref="OnStopMoving"/> fires when the player stops
 /// moving: every movement key is released, the last auto-walk step is reached, or the player is
 /// blocked by a collision. Both events carry only the facing <see cref="Direction"/>, which is
@@ -48,22 +48,22 @@ public sealed class Player
     // event machinery reported, used to report the facing direction in OnStopMoving when the
     // player stops and to detect direction changes while moving (a new direction is a new start).
     private bool _isMoving;
-    private Direction _lastDirection = Direction.Down;
+    private Direction _lastDirection = RPGEngine.Direction.Down;
 
     /// <summary>
-    /// Occurs when the player starts moving in a new direction: from idle &#8594; moving for key
+    /// Occurs when the player starts moving in a new direction: from idle → moving for key
     /// movement, when the movement direction changes while already moving (e.g. a second key is
     /// pressed so the player moves diagonally), and once per auto-walk step for click-to-move.
-    /// The event is raised <em>before</em> the position is updated and carries the
-    /// <see cref="Direction"/> the player is moving in. It is not raised per frame: a move that
-    /// keeps the same direction while already moving raises nothing.
+    /// The event is raised <em>before</em> the position is updated and carries the direction
+    /// <em>vector</em> (see <see cref="Direction"/>) the player is moving in. It is not raised
+    /// per frame: a move that keeps the same direction while already moving raises nothing.
     /// </summary>
     public event EventHandler<Direction>? OnStartMoving;
 
     /// <summary>
     /// Occurs when the player stops moving: when every movement key is released, when the last
     /// auto-walk step is reached, or when the player is blocked by a collision. The event carries
-    /// the <see cref="Direction"/> the player was last moving in.
+    /// the direction <em>vector</em> (see <see cref="Direction"/>) the player was last moving in.
     /// </summary>
     public event EventHandler<Direction>? OnStopMoving;
 
@@ -114,10 +114,11 @@ public sealed class Player
     }
 
     /// <summary>
-    /// Gets or sets the direction the player is facing. Forwards to
-    /// <see cref="Character.Direction"/> and keeps the movement event state in sync so
-    /// <see cref="OnStartMoving"/> / <see cref="OnStopMoving"/> report the correct facing
-    /// direction.
+    /// Gets or sets the direction the player is facing: a continuous 2-D direction vector (see
+    /// <see cref="Direction"/>). Forwards to <see cref="Character.Direction"/> and keeps the
+    /// movement event state in sync so <see cref="OnStartMoving"/> / <see cref="OnStopMoving"/>
+    /// report the correct facing direction vector. Defaults to <see cref="Direction.Down"/> via
+    /// the underlying <see cref="Character"/>.
     /// </summary>
     public Direction Direction
     {
@@ -148,8 +149,8 @@ public sealed class Player
     /// This method also drives the movement-state machine: with <paramref name="speedFactor"/>
     /// greater than zero the player is considered <em>moving</em> (it actually moves), so
     /// <see cref="OnStartMoving"/> fires <em>before</em> the displacement when the player starts
-    /// moving in a new direction &#8212; from idle &#8594; moving, or when the direction changes while
-    /// already moving (e.g. right &#8594; up-right when a second key is pressed). A move while already
+    /// moving in a new direction — from idle → moving, or when the direction changes while
+    /// already moving (e.g. right → up-right when a second key is pressed). A move while already
     /// moving in the <em>same</em> direction raises nothing (no per-frame events).
     /// </para>
     /// <para>
@@ -216,8 +217,8 @@ public sealed class Player
     /// <summary>
     /// Records that the player moved in <paramref name="direction"/> and raises
     /// <see cref="OnStartMoving"/> when the player begins moving in a new direction: from idle
-    /// &#8594; moving, or when the direction changes while already moving (a direction change while
-    /// moving is a new start, e.g. right &#8594; up-right when a second key is pressed). A move in the
+    /// → moving, or when the direction changes while already moving (a direction change while
+    /// moving is a new start, e.g. right → up-right when a second key is pressed). A move in the
     /// same direction while already moving raises nothing.
     /// </summary>
     /// <remarks>

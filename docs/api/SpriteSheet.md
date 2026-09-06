@@ -63,8 +63,11 @@ and disposes. Throws `ArgumentOutOfRangeException` when `characterIndex` is outs
 
 Character `i` is located at `charCol = (i - 1) % 4`, `charRow = (i - 1) / 4`; its cell
 `(frame, direction)` is at column `charCol * 3 + frame` and row `charRow * 4 + direction.RowIndex()`.
-Row selection uses `DirectionExtensions.RowIndex`, so diagonal directions (which have no dedicated
-sheet row) fall back to the side-view row of their horizontal component.
+`direction` is a continuous 2-D vector (see `Direction.md`); `DirectionExtensions.RowIndex`
+snaps it to the nearest of the eight canonical directions first, so a continuous facing renders
+with the row of its nearest canonical direction. Canonical cardinals map to their own row and
+canonical diagonals (which have no dedicated sheet row) fall back to the side-view row of their
+horizontal component.
 
 ```csharp
 using var sprite = sheet.GetSprite(characterIndex: 1, Direction.Down, frame: 1);
