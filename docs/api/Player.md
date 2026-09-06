@@ -33,7 +33,7 @@ The player exposes a **movement-state machine** through two events:
   - click-to-move: the last auto-walk step is reached (the path completes);
   - the player is blocked by a collision (a fully blocked move).
 
-Both events carry only the facing `Direction`, which is all a host needs to mirror the player
+Both events carry only the facing `Direction` — the direction **vector** — which is all a host needs to mirror the player
 on other clients via `Character.StartMoving` / `Character.StopMoving`.
 
 ## Fields
@@ -85,9 +85,10 @@ player.Position = new Position(6, 6); // feet at the centre of tile (6, 6)
 
 ### `Direction Direction`
 
-Gets or sets the direction the player is facing. Forwards to `Character.Direction` and keeps
-the movement event state in sync so `OnStartMoving` / `OnStopMoving` report the correct facing
-direction.
+Gets or sets the direction the player is facing: a continuous 2-D direction vector (`X`, `Y`
+doubles, Y grows down; see `Direction.md`). Forwards to `Character.Direction` and keeps the
+movement event state in sync so `OnStartMoving` / `OnStopMoving` report the correct facing
+direction vector. Defaults to `Direction.Down` via the underlying `Character`.
 
 ```csharp
 player.Direction = Direction.Up;
@@ -122,7 +123,7 @@ Occurs when the player **starts moving in a new direction**, **before the positi
   once **per auto-walk step** (once per waypoint in the path), and the event is raised before
   that step's displacement is applied.
 
-The event carries the `Direction` the player is moving in.
+The event carries the direction **vector** (`Direction`) the player is moving in.
 
 ```csharp
 var player = new Player();
@@ -149,7 +150,7 @@ Occurs when the player **stops moving**:
   `OnStartMoving` then `OnStopMoving` in the same frame. The reported direction is the
   direction the player tried to move in (the player turns to face the wall).
 
-The event carries the `Direction` the player was last moving in. Stopping does not change the
+The event carries the direction **vector** (`Direction`) the player was last moving in. Stopping does not change the
 facing direction.
 
 ```csharp
@@ -167,7 +168,7 @@ player.Stop();                                       // prints "stopped moving R
 // when the player is blocked; keeping D held against the same wall raises nothing more.
 ```
 
-Both events carry the facing `Direction` directly — the previous
+Both events carry the facing direction **vector** (`Direction`) directly — the previous
 `PlayerMoveEventArgs` wrapper was removed, so a handler reads the direction from the event's
 second argument:
 
