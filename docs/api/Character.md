@@ -151,9 +151,22 @@ direction. When `speedFactor` is zero the character only turns to face the direc
 moving. `dt` defaults to 1, so `Move(d, factor)` moves `BaseSpeed * factor` tiles (per-second
 semantics).
 
+`direction` is a **continuous unit vector** (`Direction.md`): the displacement is exactly
+`direction * (BaseSpeed * factor * dt)`, so any unit vector moves the character in that
+direction at the same speed, and a non-unit vector scales the displacement by its length. The
+engine always produces unit vectors (`Direction.Normalized`); key input yields the eight
+canonical unit directions, and click-to-move yields the exact unit vector toward each waypoint.
+
 ```csharp
 var character = new Character { BaseSpeed = 2 };
-character.Move(Direction.Right, speedFactor: 1, dt: 0.5); // 1 tile right
+character.Move(Direction.Right, speedFactor: 1, dt: 0.5); // 1 tile right (a canonical vector)
+
+// A continuous direction moves along the same vector * speed formula: (0.6, 0.8) * (2 * 1 * 1)
+// = (1.2, 1.6) tiles. 0.6^2 + 0.8^2 = 1, so the vector is unit length.
+character.Move(new Direction(0.6, 0.8), speedFactor: 1, dt: 1); // feet end at (1.2, 1.6)
+
+// A speed-factor-zero Move only turns to face the continuous direction.
+character.Move(new Direction(0.8, 0.6), speedFactor: 0); // faces (0.8, 0.6), never moves
 ```
 
 ### `void Move(double speedFactor = 1, double dt = 1)`
@@ -177,9 +190,18 @@ against the map's solid tiles and the map edge when the engine supplies a map, e
 player's key-driven movement; a fully blocked character simply stays put. Do not combine
 `StartMoving` on the player's character with the engine's key-driven player movement.
 
+`direction` is a **continuous unit vector** (see `Direction.md`): while `IsMoving`, every
+`Update(dt)` displaces the character by `Direction * (BaseSpeed * dt)` along that vector —
+continuous directions move exactly like the canonical ones.
+
 ```csharp
 var npc = new Character { BaseSpeed = 2, Position = new Position(3, 4) };
 npc.StartMoving(Direction.Right); // faces right and begins moving on the next Update
+
+// A continuous direction is equally valid: the NPC faces (0.6, 0.8) and each Update(dt) moves
+// it by (0.6, 0.8) * (BaseSpeed * dt) — a host can feed any unit vector (e.g. a future
+// analogue-stick input) straight into StartMoving.
+npc.StartMoving(new Direction(0.6, 0.8));
 ```
 
 ### `void StopMoving()`
