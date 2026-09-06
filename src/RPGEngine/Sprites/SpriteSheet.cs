@@ -103,9 +103,11 @@ public sealed class SpriteSheet
     /// sheet this is a 48×48 crop; for a 936×864 sheet it is 78×108.
     /// </summary>
     /// <param name="characterIndex">The 1-based index (1..8) of the character in the sheet.</param>
-    /// <param name="direction">The direction the sprite faces. Cardinal directions map to
-    /// their own sheet row; diagonal directions map to the side-view row of their horizontal
-    /// component (see <see cref="DirectionExtensions.RowIndex"/>).</param>
+    /// <param name="direction">The direction the sprite faces: a continuous 2-D direction
+    /// vector (see <see cref="Direction"/>), adapted to the nearest of the eight canonical
+    /// directions for the sheet row via <see cref="DirectionExtensions.RowIndex"/>. Cardinal
+    /// canonical directions map to their own row; canonical diagonals map to the side-view row
+    /// of their horizontal component.</param>
     /// <param name="frame">The animation frame (0..2).</param>
     /// <returns>
     /// An <see cref="SKImage"/> cropped from the decoded source. The caller owns and disposes it.
@@ -116,7 +118,8 @@ public sealed class SpriteSheet
     /// <remarks>
     /// Character <c>i</c> is located at <c>charCol = (i - 1) % 4</c>, <c>charRow = (i - 1) / 4</c>;
     /// its cell <c>(frame, direction)</c> is at column <c>charCol * 3 + frame</c> and row
-    /// <c>charRow * 4 + direction.RowIndex()</c>.
+    /// <c>charRow * 4 + direction.RowIndex()</c> (the row computation snaps a continuous
+    /// direction to its nearest canonical direction first).
     /// <para>
     /// The returned image is an independent <see cref="CellWidth"/>×<see cref="CellHeight"/>
     /// raster crop of the decoded source, produced with nearest-neighbour sampling (a 1:1 pixel
