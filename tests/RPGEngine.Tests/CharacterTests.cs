@@ -777,6 +777,161 @@ public class CharacterTests
     }
 
     // ---------------------------------------------------------------------
+    // Story 75 (direction rework 2/2): continuous movement is activated and
+    // locked in. Character.Move / StartMoving / Update displace along an
+    // arbitrary (continuous) unit vector by Direction * (BaseSpeed * factor *
+    // dt), a direction-less Move reuses the previous (continuous) direction,
+    // a speed-factor-zero Move only turns, and sprites still adapt a
+    // continuous facing to the nearest canonical 8-direction row at draw time.
+    // ---------------------------------------------------------------------
+
+    /// <summary>
+    /// Verifies a continuous (non-canonical) Move from the origin at BaseSpeed 2 displaces
+    /// exactly <c>Direction * (BaseSpeed * factor * dt) = (0.6, 0.8) * (2 * 1 * 1) = (1.2, 1.6)</c>
+    /// tiles and keeps the continuous facing vector.
+    /// </summary>
+    [Fact]
+    public void Move_ContinuousDirection_MovesExactlyDirectionTimesSpeed()
+    {
+        var character = new Character { BaseSpeed = 2, Position = new Position(0, 0) };
+        var continuous = new Direction(0.6, 0.8);
+
+        character.Move(continuous, speedFactor: 1, dt: 1);
+
+        Assert.Equal(1.2, character.Position.X, precision: 9);
+        Assert.Equal(1.6, character.Position.Y, precision: 9);
+        Assert.Equal(continuous, character.Direction);
+    }
+
+    /// <summary>
+    /// Verifies a direction-less Move reuses the previous (continuous) Direction: after facing
+    /// and moving along (0.6, 0.8), a <c>Move(dt: 1)</c> continues along the same continuous
+    /// vector by <c>Direction * BaseSpeed * dt</c>.
+    /// </summary>
+    [Fact]
+    public void Move_WithoutDirection_ReusesPreviousContinuousDirection()
+    {
+        var character = new Character { BaseSpeed = 2, Position = new Position(0, 0) };
+        var continuous = new Direction(0.6, 0.8);
+        character.Move(continuous, speedFactor: 1, dt: 1); // (1.2, 1.6)
+
+        character.Move(dt: 1); // reuses (0.6, 0.8): another (1.2, 1.6)
+
+        Assert.Equal(2.4, character.Position.X, precision: 9);
+        Assert.Equal(3.2, character.Position.Y, precision: 9);
+        Assert.Equal(continuous, character.Direction);
+    }
+
+    /// <summary>
+    /// Verifies StartMoving with a continuous direction + Update(dt, map: null) displaces along
+    /// the continuous vector by <c>Direction * BaseSpeed * dt</c> (raw, no map).
+    /// </summary>
+    [Fact]
+    public void StartMoving_ContinuousDirection_UpdateNoMap_DisplacesAlongVector()
+    {
+        var character = new Character { BaseSpeed = 2, Position = new Position(0, 0) };
+        var continuous = new Direction(0.6, 0.8);
+
+        character.StartMoving(continuous);
+        character.Update(dt: 1); // no map: raw displacement Direction * BaseSpeed * dt
+
+        Assert.Equal(1.2, character.Position.X, precision: 9);
+        Assert.Equal(1.6, character.Position.Y, precision: 9);
+        Assert.Equal(continuous, character.Direction);
+        Assert.True(character.IsMoving);
+    }
+
+    /// <summary>
+    /// Verifies a speed-factor-zero Move with a continuous direction turns the character to that
+    /// continuous facing without moving.
+    /// </summary>
+    [Fact]
+    public void Move_ContinuousDirection_ZeroSpeedFactor_TurnsWithoutMoving()
+    {
+        var character = new Character { BaseSpeed = 2, Position = new Position(10, 20) };
+        var continuous = new Direction(0.6, 0.8);
+
+        character.Move(continuous, speedFactor: 0);
+
+        Assert.Equal(continuous, character.Direction);
+        Assert.Equal(new Position(10, 20), character.Position);
+    }
+
+    /// <summary>
+    /// Verifies the walk cycle advances while the character moves along a continuous direction
+    /// (the animation logic is independent of the direction vector's quantization).
+    /// </summary>
+    [Fact]
+    public void Update_ContinuousDirection_MovingAdvancesWalkCycle()
+    {
+        var character = new Character { BaseSpeed = 2, Position = new Position(0, 0) };
+        character.StartMoving(new Direction(0.6, 0.8));
+
+        character.Update(dt: 0.25); // (0.6, 0.8) * (2 * 0.25) = (0.3, 0.4) tiles, one frame due
+
+        Assert.Equal(0, character.AnimationFrame);
+        Assert.Equal(0.3, character.Position.X, precision: 9);
+        Assert.Equal(0.4, character.Position.Y, precision: 9);
+    }
+
+    // ---------------------------------------------------------------------
+    // Story 75: sprite 8-direction adaptation of a continuous facing. The
+    // character's facing may be continuous; at draw time Character.Draw snaps
+    // it via Direction.Nearest8, so the sprite renders with the row of the
+    // nearest canonical 8 direction. Mirror the Render/AssertPixel helpers.
+    // ---------------------------------------------------------------------
+
+    /// <summary>
+    /// Verifies a continuous facing whose nearest canonical direction is DownRight (e.g.
+    /// <c>(0.9, 0.7)</c>) renders the same sheet row as the canonical <see cref="Direction.DownRight"/>
+    /// facing.
+    /// </summary>
+    [Fact]
+    public void Draw_ContinuousFacingNearestDownRight_RendersSameRowAsCanonicalDownRight()
+    {
+        var manager = CreateManager(
+            (Name: "hero", PartType: null, Seed: 0, Transparent: false));
+
+        // Canonical DownRight facing: renders the DownRight (side-view Right) row.
+        var canonical = new Character();
+        canonical.SpriteSheets.Add(new SpriteSheetRef("hero", CharacterIndex: 1));
+        canonical.Move(Direction.DownRight, speedFactor: 0);
+        using var canonicalBitmap = Render(canonical, manager);
+        var expected = CharacterTestHelper.SpriteColor(seed: 0, characterIndex: 1, Direction.DownRight, StandingFrame);
+        AssertPixel(canonicalBitmap, expected);
+
+        // Continuous (0.9, 0.7) is closest to DownRight (it is not one of the 8 canonical
+        // directions), so it must render the exact same row.
+        var continuous = new Character();
+        continuous.SpriteSheets.Add(new SpriteSheetRef("hero", CharacterIndex: 1));
+        continuous.Move(new Direction(0.9, 0.7), speedFactor: 0);
+        using var continuousBitmap = Render(continuous, manager);
+        AssertPixel(continuousBitmap, expected);
+
+        Assert.NotEqual(Direction.DownRight, new Direction(0.9, 0.7));
+    }
+
+    /// <summary>
+    /// Verifies a continuous facing whose nearest canonical direction is Up (e.g. <c>(0.2, -0.98)</c>)
+    /// renders the Up row (row 3) of the sheet.
+    /// </summary>
+    [Fact]
+    public void Draw_ContinuousFacingNearestUp_RendersUpRow()
+    {
+        var manager = CreateManager(
+            (Name: "hero", PartType: null, Seed: 0, Transparent: false));
+
+        var character = new Character();
+        character.SpriteSheets.Add(new SpriteSheetRef("hero", CharacterIndex: 1));
+        character.Move(new Direction(0.2, -0.98), speedFactor: 0);
+
+        using var bitmap = Render(character, manager);
+
+        var expected = CharacterTestHelper.SpriteColor(seed: 0, characterIndex: 1, Direction.Up, StandingFrame);
+        AssertPixel(bitmap, expected);
+    }
+
+    // ---------------------------------------------------------------------
     // Helpers
     // ---------------------------------------------------------------------
 
