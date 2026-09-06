@@ -70,10 +70,13 @@ Returns the movement direction to use for the given set of currently pressed key
 when no movement should happen (no bound key, or the bound directions cancel out, e.g. Up+Down
 or Left+Right held together).
 
-Every pressed key bound to a movement direction contributes its unit delta; the deltas are
-summed, normalized and quantized to the **nearest of the eight `Direction` values** by dot
-product against each direction's unit delta. This is what makes diagonal movement work: `W`+`D`
-resolves to `UpRight`, while `W`+`A`+`D` resolves to `Up` because A and D cancel.
+`Direction` is a continuous 2-D vector (see `Direction.md`), but key input always maps to the
+eight canonical unit directions: every pressed key bound to a movement direction contributes its
+own canonical unit vector; the vectors are summed, normalized and snapped to the **nearest of the
+eight canonical directions in `Direction.All`** by dot product (`DirectionExtensions.Nearest8`).
+A non-null result is therefore always one of the eight canonical directions. This is what makes
+diagonal movement work: `W`+`D` resolves to `UpRight`, while `W`+`A`+`D` resolves to `Up`
+because A and D cancel.
 
 ```csharp
 var config = new GameConfig();
