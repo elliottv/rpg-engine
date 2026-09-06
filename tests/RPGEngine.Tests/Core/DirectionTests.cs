@@ -4,126 +4,204 @@ using Xunit;
 namespace RPGEngine.Tests.Core;
 
 /// <summary>
-/// Acceptance tests for <see cref="Direction"/> and <see cref="DirectionExtensions"/>
-/// (stories 4 and 21: core primitives — Direction and Position, plus 8-direction support).
+/// Acceptance tests for <see cref="Direction"/> and <see cref="DirectionExtensions"/> after the
+/// Direction rework (story 74): <see cref="Direction"/> is an immutable 2-D vector value type
+/// whose eight canonical unit directions (<see cref="Direction.All"/>) preserve the old 8
+/// directions, and <see cref="DirectionExtensions.Nearest8"/>/<see cref="DirectionExtensions.RowIndex"/>/
+/// <see cref="DirectionExtensions.Opposite"/> adapt it to the 8-direction sprite/key model.
 /// </summary>
 public class DirectionTests
 {
+    /// <summary>The exact √½ diagonal component shared with the library's canonical diagonals.</summary>
+    private const double RootHalf = 0.7071067811865476;
+
     /// <summary>
-    /// Verifies <see cref="DirectionExtensions.Delta"/> returns the correct screen-space unit
-    /// vector for every direction. Cardinal values are exact; diagonal values are normalized
-    /// (each component is ±√½) so their magnitude is 1 and diagonal movement is exactly as fast
-    /// as cardinal movement.
+    /// Verifies the eight canonical unit directions have exactly the documented components:
+    /// cardinals are exact axis vectors and diagonals are <c>(±√½, ±√½)</c>
+    /// (normalized, so diagonal movement is as fast as cardinal movement).
     /// </summary>
     [Theory]
-    [InlineData(Direction.Down, 0, 1, false)]
-    [InlineData(Direction.Left, -1, 0, false)]
-    [InlineData(Direction.Right, 1, 0, false)]
-    [InlineData(Direction.Up, 0, -1, false)]
-    [InlineData(Direction.DownLeft, -1, 1, true)]
-    [InlineData(Direction.DownRight, 1, 1, true)]
-    [InlineData(Direction.UpLeft, -1, -1, true)]
-    [InlineData(Direction.UpRight, 1, -1, true)]
-    public void Delta_IsCorrect_ForAllDirections(Direction direction, int signX, int signY, bool isDiagonal)
+    [MemberData(nameof(CanonicalComponents))]
+    public void CanonicalStatics_HaveExactUnitComponents(Direction direction, double expectedX, double expectedY)
     {
-        var delta = direction.Delta();
+        Assert.Equal(expectedX, direction.X);
+        Assert.Equal(expectedY, direction.Y);
 
-        if (isDiagonal)
-        {
-            var component = Math.Sqrt(0.5);
-            Assert.Equal(signX * component, delta.X, precision: 9);
-            Assert.Equal(signY * component, delta.Y, precision: 9);
-        }
-        else
-        {
-            Assert.Equal(signX, delta.X);
-            Assert.Equal(signY, delta.Y);
-        }
-
-        // Every delta is a unit vector, so diagonal movement is no faster than cardinal movement.
-        Assert.Equal(1, Magnitude(delta), precision: 9);
-    }
-
-    /// <summary>Verifies <see cref="DirectionExtensions.Opposite"/> returns the opposite direction for every direction.</summary>
-    [Theory]
-    [InlineData(Direction.Down, Direction.Up)]
-    [InlineData(Direction.Left, Direction.Right)]
-    [InlineData(Direction.Right, Direction.Left)]
-    [InlineData(Direction.Up, Direction.Down)]
-    [InlineData(Direction.DownLeft, Direction.UpRight)]
-    [InlineData(Direction.DownRight, Direction.UpLeft)]
-    [InlineData(Direction.UpLeft, Direction.DownRight)]
-    [InlineData(Direction.UpRight, Direction.DownLeft)]
-    public void Opposite_IsCorrect_ForAllDirections(Direction direction, Direction expected)
-    {
-        Assert.Equal(expected, direction.Opposite());
+        // Every canonical direction is a unit vector.
+        Assert.Equal(1, direction.Length, precision: 12);
+        Assert.False(direction.IsZero);
     }
 
     /// <summary>
-    /// Verifies <see cref="DirectionExtensions.RowIndex"/> equals the RPG Maker MZ sprite-sheet
-    /// row (0/1/2/3) for Down/Left/Right/Up and falls back to the horizontal component's row for
-    /// diagonals (DownLeft/UpLeft → 1, DownRight/UpRight → 2) so a diagonally-facing character
-    /// renders with the side-view row.
+    /// Verifies <see cref="Direction.All"/> contains exactly the eight canonical unit directions,
+    /// in the historical enum order (Down, Left, Right, Up, DownLeft, DownRight, UpLeft, UpRight).
+    /// </summary>
+    [Fact]
+    public void All_ContainsExactlyTheEightCanonicalDirectionsInHistoricalOrder()
+    {
+        Assert.Equal(
+            new[]
+            {
+                Direction.Down,
+                Direction.Left,
+                Direction.Right,
+                Direction.Up,
+                Direction.DownLeft,
+                Direction.DownRight,
+                Direction.UpLeft,
+                Direction.UpRight,
+            },
+            Direction.All);
+
+        // All eight are distinct and unit-length.
+        Assert.Equal(8, Direction.All.Distinct().Count());
+        Assert.All(Direction.All, d => Assert.Equal(1, d.Length, precision: 12));
+    }
+
+    /// <summary>Verifies vector negation / <see cref="DirectionExtensions.Opposite"/>: canonical opposites and exact continuous negation.</summary>
+    [Fact]
+    public void Negation_AndOpposite_AreExact()
+    {
+        Assert.Equal(Direction.Up, -Direction.Down); // negation of Down is Up
+        Assert.Equal(Direction.Up, Direction.Down.Opposite());
+        Assert.Equal(Direction.Down, Direction.Up.Opposite());
+        Assert.Equal(Direction.Right, Direction.Left.Opposite());
+        Assert.Equal(Direction.Left, Direction.Right.Opposite());
+
+        // Diagonals flip both signs (DownLeft <-> UpRight, DownRight <-> UpLeft).
+        Assert.Equal(Direction.UpRight, Direction.DownLeft.Opposite());
+        Assert.Equal(Direction.DownLeft, Direction.UpRight.Opposite());
+        Assert.Equal(Direction.UpLeft, Direction.DownRight.Opposite());
+        Assert.Equal(Direction.DownRight, Direction.UpLeft.Opposite());
+
+        // operator - negates each component exactly, so it stays well-defined for continuous vectors.
+        Assert.Equal(new Direction(-0.6, 0.8), -new Direction(0.6, -0.8));
+        Assert.Equal(new Direction(-0.6, 0.8), new Direction(0.6, -0.8).Opposite());
+        Assert.Equal(new Direction(0, 0), -new Direction(0, 0));
+    }
+
+    /// <summary>
+    /// Verifies <see cref="DirectionExtensions.Nearest8"/> snaps continuous vectors to the closest
+    /// canonical unit direction and maps the zero vector to <see cref="Direction.Down"/>.
     /// </summary>
     [Theory]
-    [InlineData(Direction.Down, 0)]
-    [InlineData(Direction.Left, 1)]
-    [InlineData(Direction.Right, 2)]
-    [InlineData(Direction.Up, 3)]
-    [InlineData(Direction.DownLeft, 1)]
-    [InlineData(Direction.DownRight, 2)]
-    [InlineData(Direction.UpLeft, 1)]
-    [InlineData(Direction.UpRight, 2)]
-    public void RowIndex_EqualsSpriteSheetRow_ForAllDirections(Direction direction, int expectedRow)
+    [MemberData(nameof(Nearest8Cases))]
+    public void Nearest8_SnapsToExpectedCanonicalDirection(Direction input, Direction expected)
+    {
+        Assert.Equal(expected, input.Nearest8());
+    }
+
+    /// <summary>Verifies <see cref="DirectionExtensions.Nearest8"/> leaves each canonical direction unchanged.</summary>
+    [Fact]
+    public void Nearest8_LeavesCanonicalDirectionsUnchanged()
+    {
+        foreach (var canonical in Direction.All)
+        {
+            Assert.Equal(canonical, canonical.Nearest8());
+        }
+    }
+
+    /// <summary>
+    /// Verifies <see cref="DirectionExtensions.RowIndex"/> maps the canonical directions to the
+    /// RPG Maker MZ sheet rows 0/1/2/3/1/2/1/2 (diagonals fall back to their horizontal
+    /// component's row) and maps continuous vectors to the row of their nearest canonical direction.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(RowIndexCases))]
+    public void RowIndex_IsCorrect(Direction direction, int expectedRow)
     {
         Assert.Equal(expectedRow, direction.RowIndex());
     }
 
-    /// <summary>Verifies <see cref="DirectionExtensions.IsHorizontal"/> distinguishes horizontal from vertical and diagonal directions.</summary>
-    [Theory]
-    [InlineData(Direction.Down, false)]
-    [InlineData(Direction.Left, true)]
-    [InlineData(Direction.Right, true)]
-    [InlineData(Direction.Up, false)]
-    [InlineData(Direction.DownLeft, false)]
-    [InlineData(Direction.DownRight, false)]
-    [InlineData(Direction.UpLeft, false)]
-    [InlineData(Direction.UpRight, false)]
-    public void IsHorizontal_IsCorrect_ForAllDirections(Direction direction, bool expected)
+    /// <summary>
+    /// Verifies <see cref="Direction.Length"/>, <see cref="Direction.IsZero"/> and
+    /// <see cref="Direction.Normalized"/>: the zero vector is zero (and throws on
+    /// <c>Normalized</c>), and a non-unit vector normalizes to unit length with the same direction.
+    /// </summary>
+    [Fact]
+    public void Length_IsZero_AndNormalized()
     {
-        Assert.Equal(expected, direction.IsHorizontal());
+        var zero = new Direction(0, 0);
+        Assert.True(zero.IsZero);
+        Assert.Equal(0, zero.Length);
+        Assert.Throws<InvalidOperationException>(() => zero.Normalized);
+
+        var vector = new Direction(3, 4);
+        Assert.False(vector.IsZero);
+        Assert.Equal(5, vector.Length, precision: 12);
+
+        var normalized = vector.Normalized;
+        Assert.Equal(1, normalized.Length, precision: 12);
+        Assert.Equal(0.6, normalized.X, precision: 12);
+        Assert.Equal(0.8, normalized.Y, precision: 12);
     }
 
-    /// <summary>Verifies <see cref="DirectionExtensions.IsVertical"/> distinguishes vertical from horizontal and diagonal directions.</summary>
-    [Theory]
-    [InlineData(Direction.Down, true)]
-    [InlineData(Direction.Left, false)]
-    [InlineData(Direction.Right, false)]
-    [InlineData(Direction.Up, true)]
-    [InlineData(Direction.DownLeft, false)]
-    [InlineData(Direction.DownRight, false)]
-    [InlineData(Direction.UpLeft, false)]
-    [InlineData(Direction.UpRight, false)]
-    public void IsVertical_IsCorrect_ForAllDirections(Direction direction, bool expected)
+    /// <summary>
+    /// Verifies <see cref="Direction.ToString"/> returns the canonical name for each canonical
+    /// direction and the component pair for a continuous direction.
+    /// </summary>
+    [Fact]
+    public void ToString_ReturnsCanonicalNameForCanonicalDirections()
     {
-        Assert.Equal(expected, direction.IsVertical());
+        Assert.Equal("Down", Direction.Down.ToString());
+        Assert.Equal("Left", Direction.Left.ToString());
+        Assert.Equal("Right", Direction.Right.ToString());
+        Assert.Equal("Up", Direction.Up.ToString());
+        Assert.Equal("DownLeft", Direction.DownLeft.ToString());
+        Assert.Equal("DownRight", Direction.DownRight.ToString());
+        Assert.Equal("UpLeft", Direction.UpLeft.ToString());
+        Assert.Equal("UpRight", Direction.UpRight.ToString());
+
+        // A continuous (non-canonical) vector prints its components.
+        Assert.Equal("(0.6, 0.8)", new Direction(0.6, 0.8).ToString());
+
+        // A vector numerically equal to a canonical diagonal prints the canonical name (the
+        // components are bit-exact with the canonical constant).
+        Assert.Equal("UpRight", new Direction(RootHalf, -RootHalf).ToString());
     }
 
-    /// <summary>Verifies <see cref="DirectionExtensions.IsDiagonal"/> is true for the four diagonals and false for the cardinals.</summary>
-    [Theory]
-    [InlineData(Direction.Down, false)]
-    [InlineData(Direction.Left, false)]
-    [InlineData(Direction.Right, false)]
-    [InlineData(Direction.Up, false)]
-    [InlineData(Direction.DownLeft, true)]
-    [InlineData(Direction.DownRight, true)]
-    [InlineData(Direction.UpLeft, true)]
-    [InlineData(Direction.UpRight, true)]
-    public void IsDiagonal_IsCorrect_ForAllDirections(Direction direction, bool expected)
+    /// <summary>The canonical directions and their exact components.</summary>
+    public static TheoryData<Direction, double, double> CanonicalComponents => new()
     {
-        Assert.Equal(expected, direction.IsDiagonal());
-    }
+        { Direction.Down, 0, 1 },
+        { Direction.Left, -1, 0 },
+        { Direction.Right, 1, 0 },
+        { Direction.Up, 0, -1 },
+        { Direction.DownLeft, -RootHalf, RootHalf },
+        { Direction.DownRight, RootHalf, RootHalf },
+        { Direction.UpLeft, -RootHalf, -RootHalf },
+        { Direction.UpRight, RootHalf, -RootHalf },
+    };
 
-    /// <summary>Returns the Euclidean magnitude of <paramref name="v"/>.</summary>
-    private static double Magnitude(Vector2 v) => Math.Sqrt((v.X * v.X) + (v.Y * v.Y));
+    /// <summary>Continuous vectors and the canonical direction <see cref="DirectionExtensions.Nearest8"/> must snap them to.</summary>
+    public static TheoryData<Direction, Direction> Nearest8Cases => new()
+    {
+        { new Direction(0.9, 0.2), Direction.Right },
+        { new Direction(-0.9, 0.2), Direction.Left },
+        { new Direction(0.03, -0.99), Direction.Up },
+        { new Direction(-0.03, -0.99), Direction.Up },
+        { new Direction(0.9, -0.2), Direction.Right },
+        { new Direction(-0.9, -0.2), Direction.Left },
+        { new Direction(0.2, 0.9), Direction.Down },
+        { new Direction(0.2, -0.9), Direction.Up },
+        { new Direction(0, 0), Direction.Down }, // the zero vector snaps to Down
+    };
+
+    /// <summary>Directions and their expected RPG Maker MZ sprite-sheet rows (canonical and continuous).</summary>
+    public static TheoryData<Direction, int> RowIndexCases => new()
+    {
+        { Direction.Down, 0 },
+        { Direction.Left, 1 },
+        { Direction.Right, 2 },
+        { Direction.Up, 3 },
+        { Direction.DownLeft, 1 },
+        { Direction.DownRight, 2 },
+        { Direction.UpLeft, 1 },
+        { Direction.UpRight, 2 },
+        // A continuous vector maps to the row of its nearest canonical direction.
+        { new Direction(0.9, 0.2), 2 },        // -> Right
+        { new Direction(-0.9, 0.2), 1 },       // -> Left
+        { new Direction(0.03, -0.99), 3 },     // -> Up
+        { new Direction(0.2, 0.9), 0 },        // -> Down
+    };
 }

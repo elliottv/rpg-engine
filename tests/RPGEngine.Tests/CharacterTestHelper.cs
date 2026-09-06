@@ -109,7 +109,9 @@ internal static class CharacterTestHelper
         var charCol = (characterIndex - 1) % 4;
         var charRow = (characterIndex - 1) / 4;
         var col = (charCol * 3) + frame;
-        var row = (charRow * 4) + (int)direction;
+        // Direction is now a vector: its sprite row is the row of its (nearest canonical)
+        // direction, exactly as SpriteSheet.GetSprite computes it.
+        var row = (charRow * 4) + direction.RowIndex();
         return (row, col);
     }
 
