@@ -48,7 +48,7 @@ public sealed class Character
     /// <summary>The middle column of the 3-frame walk cycle: the standing frame in RPG Maker MZ.</summary>
     private const int StandingFrame = 1;
 
-    /// <summary>The number of frame steps in one complete walk cycle: <c>0 &#8594; 1 &#8594; 2 &#8594; 1</c>.</summary>
+    /// <summary>The number of frame steps in one complete walk cycle: <c>0 → 1 → 2 → 1</c>.</summary>
     private const int FramesPerCycle = 4;
 
     private readonly CharacterSpriteCompositor _compositor = new();
@@ -73,8 +73,23 @@ public sealed class Character
     /// </summary>
     public Position Position { get; set; }
 
-    /// <summary>Gets or sets the direction the character is facing.</summary>
-    public Direction Direction { get; set; }
+    /// <summary>
+    /// Gets or sets the direction the character is facing: a 2-D vector (see
+    /// <see cref="Direction"/>), typically one of the eight canonical unit directions
+    /// (<see cref="Direction.Down"/>, …) but allowed to be any continuous unit vector.
+    /// Defaults to <see cref="Direction.Down"/> (the historical default facing), even though the
+    /// zero vector <c>(0, 0)</c> is <c>default(Direction)</c>.
+    /// </summary>
+    /// <remarks>
+    /// Movement assumes a unit-length direction: the displacement applied by
+    /// <see cref="Move(Direction, double, double)"/> (and by the autonomous
+    /// <see cref="Update(double, TileMap)"/> path) is <c>Direction * BaseSpeed * factor * dt</c>,
+    /// so a non-unit vector scales the displacement by its length. All engine-produced directions
+    /// are unit vectors. When rendering, the (possibly continuous) facing is snapped to the
+    /// nearest canonical 8 direction for the sprite row (see
+    /// <see cref="DirectionExtensions.Nearest8"/>), so sprites stay 8-direction.
+    /// </remarks>
+    public Direction Direction { get; set; } = RPGEngine.Direction.Down;
 
     /// <summary>Gets or sets the movement speed of the character in tiles per second.</summary>
     public double BaseSpeed { get; set; }
@@ -99,7 +114,7 @@ public sealed class Character
     /// cycle per second. Defaults to 2, matching <see cref="Player.DefaultBaseSpeed"/>.
     /// </summary>
     /// <remarks>
-    /// The walk cycle is the bounce <c>0 &#8594; 1 &#8594; 2 &#8594; 1</c>, i.e.
+    /// The walk cycle is the bounce <c>0 → 1 → 2 → 1</c>, i.e.
     /// <see cref="FramesPerCycle"/> frame steps. The time per frame is
     /// <c>secondsPerFrame = AnimationCycleSpeed / (BaseSpeed * FramesPerCycle)</c>, so at
     /// <c>BaseSpeed == AnimationCycleSpeed == 2</c> one frame lasts 0.25 s (4 frames/s =
@@ -173,8 +188,7 @@ public sealed class Character
             return;
         }
 
-        var delta = direction.Delta() * (BaseSpeed * speedFactor * dt);
-        Position = Position + delta;
+        Position += direction * (BaseSpeed * speedFactor * dt);
     }
 
     /// <summary>
@@ -245,7 +259,7 @@ public sealed class Character
     {
         if (IsMoving)
         {
-            var delta = Direction.Delta() * (BaseSpeed * dt);
+            var delta = Direction * (BaseSpeed * dt);
             Position = map is null
                 ? Position + delta
                 : MovementCollisionResolver.ResolveDisplacement(
@@ -307,7 +321,10 @@ public sealed class Character
     /// </exception>
     internal void Draw(SKCanvas canvas, Position anchorPosition, double dt, SpriteSheetManager spriteSheetManager, IconSet? iconSet)
     {
-        _compositor.Draw(canvas, anchorPosition, _spriteSheets, Direction, _animationFrame, spriteSheetManager, iconSet, IconIndex);
+        // Snap at the draw boundary: the compositor (and its direction == Direction.Up-style
+        // checks) always receives a canonical 8 direction. This is the single place that turns
+        // the character's (possibly continuous) facing into the 8-direction sprite facing.
+        _compositor.Draw(canvas, anchorPosition, _spriteSheets, Direction.Nearest8(), _animationFrame, spriteSheetManager, iconSet, IconIndex);
     }
 
     /// <summary>
