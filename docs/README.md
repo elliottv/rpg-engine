@@ -123,6 +123,22 @@ foreach (var layer in engine.Map?.ObjectLayers ?? [])
 > clears its canvas to **black** first (like the main camera), so the unused margins are black
 > (see `docs/api/GameEngine.md`).
 >
+> **Movement & direction model:** `Direction` is a **continuous 2-D vector** (X, Y doubles, Y
+> grows down; see `docs/api/Direction.md`), and every character moves by `Direction *
+> (BaseSpeed * factor * dt)` along whatever unit vector it faces. Three surfaces consume the
+> type:
+> - **Key input** maps to the **8 canonical unit directions** (`W`+`D` → up-right, opposites
+>   cancel), so keyboard movement is unchanged.
+> - **Click-to-move** uses **continuous directions**: each auto-walk leg faces and reports the
+>   exact unit vector toward the next waypoint centre (never quantized), while displacement still
+>   ends centred on the clicked tile.
+> - **Sprites stay 8-direction**: at draw time a (possibly continuous) facing is adapted to the
+>   nearest canonical 8 direction for the sheet row (`Direction.Nearest8` / `RowIndex`).
+>
+> `Player.OnStartMoving` / `Player.OnStopMoving` carry the movement/facing direction **vector**
+> (X, Y) — canonical for key movement, exact-continuous for click-to-move legs and for any
+> host-driven continuous `Move`/`StartMoving`.
+>
 > **Click-to-move (optional demo):** after at least one `Render` (so the engine knows the canvas
 > size), the host can pass a mouse click to `engine.Click(surfaceX, surfaceY)` and the player
 > **auto-walks** along an A* tile path to the clicked tile, stopping centered on it. Clicking a
