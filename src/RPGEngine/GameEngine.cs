@@ -51,11 +51,13 @@ namespace RPGEngine;
 /// Without a map the canvas is left untouched and only the characters (Y-sorted) are drawn.
 /// </para>
 /// <para>
-/// Movement input combines every held bound key into a single 8-direction vector: each key that
-/// is bound to a movement direction contributes its unit delta, opposite keys cancel
-/// (<c>W</c>+<c>S</c> or <c>A</c>+<c>D</c>), and the resulting direction can be diagonal
-/// (<c>W</c>+<c>D</c> resolves to up-right). When no bound key is held the player stops and its
-/// animation snaps back to the standing frame.
+/// Movement input combines every held bound key into a single direction vector: each key that
+/// is bound to a movement direction contributes its canonical unit direction vector, opposite
+/// keys cancel (<c>W</c>+<c>S</c> or <c>A</c>+<c>D</c>), and the resulting direction can be a
+/// canonical diagonal (<c>W</c>+<c>D</c> resolves to up-right). The summed vector is snapped to
+/// the nearest of the eight canonical directions, so key input always yields one of the eight
+/// canonical directions. When no bound key is held the player stops and its animation snaps back
+/// to the standing frame.
 /// </para>
 /// <para>
 /// Click input drives the player with <em>auto-walk</em>: <see cref="Click"/> converts a
@@ -1165,37 +1167,23 @@ public sealed class GameEngine : IDisposable
     }
 
     /// <summary>
-    /// Returns the <see cref="Direction"/> closest to <paramref name="vector"/>: the vector is
-    /// normalized and the direction whose unit delta has the largest dot product with it wins,
+    /// Returns the canonical <see cref="Direction"/> closest to <paramref name="vector"/>: the
+    /// vector is normalized and snapped to the nearest of the eight canonical unit directions in
+    /// <see cref="Direction.All"/> by dot product (<see cref="DirectionExtensions.Nearest8"/>),
     /// mirroring <see cref="GameConfig.GetMovementDirection(System.Collections.Generic.IEnumerable{Key})"/>'s
-    /// quantization. Used by the auto-walk to face the waypoint it is moving toward.
+    /// quantization. Used by the auto-walk to face the waypoint it is moving toward; the facing
+    /// (and the event payloads) stay one of the eight canonical directions in this story.
     /// </summary>
     /// <param name="vector">The movement vector (never the zero vector when called).</param>
-    /// <returns>The closest of the eight <see cref="Direction"/> values.</returns>
+    /// <returns>The closest of the eight canonical <see cref="Direction"/> values.</returns>
     private static Direction DirectionFromVector(Vector2 vector)
     {
-        var length = Math.Sqrt((vector.X * vector.X) + (vector.Y * vector.Y));
-        if (length <= 0)
+        if (vector.X == 0 && vector.Y == 0)
         {
             return Direction.Down;
         }
 
-        var normalized = new Vector2(vector.X / length, vector.Y / length);
-
-        Direction? best = null;
-        var bestDot = double.NegativeInfinity;
-        foreach (var direction in Enum.GetValues<Direction>())
-        {
-            var delta = direction.Delta();
-            var dot = (normalized.X * delta.X) + (normalized.Y * delta.Y);
-            if (dot > bestDot)
-            {
-                bestDot = dot;
-                best = direction;
-            }
-        }
-
-        return best!.Value;
+        return new Direction(vector.X, vector.Y).Nearest8();
     }
 
     /// <summary>
@@ -1252,7 +1240,7 @@ public sealed class GameEngine : IDisposable
         // resolution so a fully blocked move (no net displacement) can be reported as a
         // collision stop below.
         var before = Player.Position;
-        var delta = direction.Delta() * (Player.Character.BaseSpeed * dt);
+        var delta = direction * (Player.Character.BaseSpeed * dt);
 
         // Report the start of movement BEFORE the position update. When the player is already
         // resting idle against a wall in the same direction (the previous frame ended in a
