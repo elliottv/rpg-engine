@@ -88,6 +88,28 @@ Returns the canonical name (e.g. `"Up"`) when the direction equals one of the ei
 directions in `All`, for readability and logging; otherwise returns the component pair
 `"(X, Y)"`.
 
+## Continuous movement
+
+A character moves by `Direction * (BaseSpeed * factor * dt)` (or `Direction * (BaseSpeed * dt)`
+inside `Update`), where `Direction` is a **unit** vector. Because `Direction` is a vector, any
+unit vector produces continuous movement — the engine no longer limits facing to 8 directions.
+A non-unit vector scales the displacement by its length, so always move with unit vectors: use
+`Normalized` to turn a raw delta (e.g. a touch/analogue-stick vector or a mouse drag) into a
+unit direction first. Sprites stay 8-direction by adapting the continuous facing with
+`DirectionExtensions.Nearest8` at draw time.
+
+```csharp
+// A raw delta (not necessarily unit length) is normalized before movement.
+var rawDelta = new Direction(30, 40);     // e.g. a stick vector or mouse drag
+var direction = rawDelta.Normalized;      // (0.6, 0.8) — unit length
+var character = new Character { BaseSpeed = 2 };
+character.Move(direction, speedFactor: 1, dt: 1); // moves (1.2, 1.6) tiles: direction * 2
+
+// Sprites adapt the (possibly continuous) facing to the nearest canonical 8-direction row.
+var nearest = direction.Nearest8();       // DownRight
+Console.WriteLine(nearest.RowIndex());    // 2 — the Right (side-view) row
+```
+
 ## Example
 
 ```csharp
