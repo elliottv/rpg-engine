@@ -1049,7 +1049,12 @@ public sealed class GameEngine : IDisposable
     /// auto-walk step (a waypoint leg) begins with <see cref="Player.OnStartMoving"/> via
     /// <see cref="Player.ReportAutoWalkStep(Direction)"/> <em>before</em> that step's position
     /// update: on the first frame of the walk and every time a waypoint is reached while another
-    /// remains. The last step's completion stops the player (<see cref="Player.OnStopMoving"/>).
+    /// remains. Each step's direction — the facing and the <see cref="Player.OnStartMoving"/>
+    /// payload — is the exact (continuous) unit vector from the player's current position to
+    /// the next waypoint center, never quantized to the eight canonical directions; sprites still
+    /// adapt it to the nearest canonical 8 direction at draw time. The last step's completion
+    /// stops the player (<see cref="Player.OnStopMoving"/>), carrying that step's (continuous)
+    /// leg direction as the last facing vector.
     /// When a map is set the displacement is resolved with the same per-axis slide-to-boundary
     /// clamping as key movement (see <see cref="MovementCollisionResolver"/>), so the auto-walk
     /// never moves the player through a solid tile: if the direct displacement toward the
@@ -1094,9 +1099,15 @@ public sealed class GameEngine : IDisposable
             }
 
             // A waypoint was reached and another remains: the next auto-walk step begins now,
-            // before any of its displacements (which happen on the following frames).
+            // before any of its displacements (which happen on the following frames). The next
+            // leg's direction is the exact unit vector from the (just-snapped) current position
+            // to the following waypoint center — continuous, never quantized to the 8
+            // directions. Sprites still adapt it to the nearest canonical 8 direction at draw
+            // time (Character.Draw snaps via Direction.Nearest8).
             var (nextTargetX, nextTargetY) = _autoWalkPath.Peek();
-            var nextDirection = DirectionFromVector(new Position(nextTargetX + 0.5, nextTargetY + 0.5) - Player.Position);
+            var toNextTarget = new Position(nextTargetX + 0.5, nextTargetY + 0.5) - Player.Position;
+            var nextDistance = Math.Sqrt((toNextTarget.X * toNextTarget.X) + (toNextTarget.Y * toNextTarget.Y));
+            var nextDirection = new Direction(toNextTarget.X / nextDistance, toNextTarget.Y / nextDistance);
             Player.ReportAutoWalkStep(nextDirection);
             _autoWalkStepStarted = true;
             return true;
@@ -1110,7 +1121,13 @@ public sealed class GameEngine : IDisposable
         // non-tile-centred) position, so the walk is cancelled and the player is not displaced at
         // all, rather than sliding through (or getting stuck at) a wall.
         var before = Player.Position;
-        var direction = DirectionFromVector(toTarget);
+        // The leg's facing is the exact unit vector toward the waypoint center (toTarget is the
+        // leg vector, so dividing by its length normalizes it): continuous, never quantized to
+        // the 8 directions. The displacement below already moves along this same leg vector
+        // (toTarget * (step / distance)); the displacement is unchanged, only the facing/event
+        // payload stops being quantized. Sprites still adapt it to the nearest canonical 8
+        // direction at draw time (Character.Draw snaps via Direction.Nearest8).
+        var legDirection = new Direction(toTarget.X / distance, toTarget.Y / distance);
         var move = toTarget * (step / distance);
         var destination = before + move;
 
@@ -1119,7 +1136,7 @@ public sealed class GameEngine : IDisposable
         // set when the step begins and stays set until the next waypoint is reached).
         if (!_autoWalkStepStarted)
         {
-            Player.ReportAutoWalkStep(direction);
+            Player.ReportAutoWalkStep(legDirection);
             _autoWalkStepStarted = true;
         }
 
@@ -1164,26 +1181,6 @@ public sealed class GameEngine : IDisposable
     {
         _autoWalkStepStarted = false;
         _autoWalkPath.Clear();
-    }
-
-    /// <summary>
-    /// Returns the canonical <see cref="Direction"/> closest to <paramref name="vector"/>: the
-    /// vector is normalized and snapped to the nearest of the eight canonical unit directions in
-    /// <see cref="Direction.All"/> by dot product (<see cref="DirectionExtensions.Nearest8"/>),
-    /// mirroring <see cref="GameConfig.GetMovementDirection(System.Collections.Generic.IEnumerable{Key})"/>'s
-    /// quantization. Used by the auto-walk to face the waypoint it is moving toward; the facing
-    /// (and the event payloads) stay one of the eight canonical directions in this story.
-    /// </summary>
-    /// <param name="vector">The movement vector (never the zero vector when called).</param>
-    /// <returns>The closest of the eight canonical <see cref="Direction"/> values.</returns>
-    private static Direction DirectionFromVector(Vector2 vector)
-    {
-        if (vector.X == 0 && vector.Y == 0)
-        {
-            return Direction.Down;
-        }
-
-        return new Direction(vector.X, vector.Y).Nearest8();
     }
 
     /// <summary>
