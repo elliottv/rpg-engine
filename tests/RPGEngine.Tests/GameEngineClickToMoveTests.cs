@@ -73,8 +73,11 @@ public partial class GameEngineTests
 
     /// <summary>
     /// Verifies OnStartMoving fires once per auto-walk step (per waypoint in the A* path) and
-    /// OnStopMoving fires exactly once when the path completes, with the correct facing
-    /// direction.
+    /// OnStopMoving fires exactly once when the path completes. The player starts
+    /// <strong>off-tile-centre</strong> so the first leg is non-canonical: the first
+    /// OnStartMoving payload (and the facing it sets) is the exact continuous unit vector from
+    /// the start position to the first waypoint centre — not quantized to an 8-direction
+    /// bucket — while the per-step count and the single OnStopMoving invariants still hold.
     /// </summary>
     [Fact]
     public void Click_OnStartMoving_FiresPerStep_AndOnStopMovingOnCompletion()
@@ -82,7 +85,10 @@ public partial class GameEngineTests
         using var fixture = CreateFilledMapFixture(10, 10);
         var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
         ConfigurePlayerSprite(engine, seed: 1);
-        engine.Player.Position = new Position(0.5, 1.5);
+        // Off-tile-centre (but inside the legal collision bounds, x >= 0.25), so the first leg
+        // is non-canonical.
+        var start = new Position(0.3, 1.8);
+        engine.Player.Position = start;
 
         var starts = new List<Direction>();
         var stops = new List<Direction>();
@@ -106,10 +112,20 @@ public partial class GameEngineTests
         Assert.Equal(target, engine.Player.Position);
 
         // OnStartMoving fires once per auto-walk step (count == path length) and exactly one
-        // OnStopMoving fires at completion, facing the last movement direction (down-right).
+        // OnStopMoving fires at completion.
         Assert.Equal(path.Count, starts.Count);
         Assert.Single(stops);
-        Assert.Equal(Direction.DownRight, stops[^1]);
+
+        // The first step's direction is the exact continuous unit vector from the (off-tile-centre)
+        // start position to the first waypoint centre: it is the same value the engine computed
+        // for the first leg (never an 8-direction bucket).
+        var firstWaypointCentre = new Position(path[0].X + 0.5, path[0].Y + 0.5);
+        var toFirst = firstWaypointCentre - start;
+        var firstDistance = Math.Sqrt((toFirst.X * toFirst.X) + (toFirst.Y * toFirst.Y));
+        var expectedFirst = new Direction(toFirst.X / firstDistance, toFirst.Y / firstDistance);
+        Assert.Equal(expectedFirst.X, starts[0].X, precision: 9);
+        Assert.Equal(expectedFirst.Y, starts[0].Y, precision: 9);
+        Assert.DoesNotContain(starts[0], Direction.All);
     }
 
     /// <summary>
@@ -308,4 +324,117 @@ public partial class GameEngineTests
         // top edge at y = 0).
         Assert.Equal(new Position(0.25, 0.5), engine.Player.Position);
     }
+
+    /// <summary>
+    /// Verifies click-to-move from a non-tile-centred position faces and reports the continuous
+    /// leg direction: <c>engine.Player.Direction</c> and the first <c>OnStartMoving</c> payload
+    /// carry the same continuous vector, and that vector is not one of the 8 canonical
+    /// <c>Direction.All</c> values for a deliberately skewed start.
+    /// </summary>
+    [Fact]
+    public void Click_OnNonCentredStart_FirstStepFacesAndReportsContinuousDirection()
+    {
+        using var fixture = CreateFilledMapFixture(10, 10);
+        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        ConfigurePlayerSprite(engine, seed: 1);
+        // Deliberately skewed (off-tile-centre, but inside the legal collision bounds) start so
+        // the first leg is strongly non-canonical.
+        var start = new Position(0.3, 1.8);
+        engine.Player.Position = start;
+
+        var starts = new List<Direction>();
+        engine.Player.OnStartMoving += (_, direction) => starts.Add(direction);
+
+        const int canvas = 480;
+        ClickOnTile(engine, 3, 4, canvas, canvas);
+        var path = engine.AutoWalkPath;
+        Assert.True(path.Count >= 1, "The test needs a path.");
+
+        // Advance just far enough for the first auto-walk step to begin (the first frame of the
+        // walk always starts the first leg when the leg is longer than one frame step).
+        engine.Update(FrameDt);
+
+        var first = Assert.Single(starts);
+        Assert.DoesNotContain(first, Direction.All);
+
+        // The facing set by the first step and the event payload are the same continuous vector.
+        Assert.Equal(engine.Player.Direction.X, first.X, precision: 9);
+        Assert.Equal(engine.Player.Direction.Y, first.Y, precision: 9);
+
+        // And that vector is the exact normalized vector toward the first waypoint centre.
+        var firstWaypointCentre = new Position(path[0].X + 0.5, path[0].Y + 0.5);
+        var toFirst = firstWaypointCentre - start;
+        var distance = Math.Sqrt((toFirst.X * toFirst.X) + (toFirst.Y * toFirst.Y));
+        Assert.Equal(toFirst.X / distance, first.X, precision: 9);
+        Assert.Equal(toFirst.Y / distance, first.Y, precision: 9);
+    }
+
+    /// <summary>
+    /// Non-regression: click-to-move from a tile-centred start still faces and reports the
+    /// canonical 8-direction vectors. An axis-aligned path's legs are the exact canonical
+    /// cardinal directions (bit-exact), and a diagonal path's legs are the canonical diagonal
+    /// unit vector within floating-point precision (the continuous normalization of a
+    /// centred-to-centred diagonal leg) — the quantization boundary at the sprite / key-input
+    /// level is untouched by the continuous auto-walk activation.
+    /// </summary>
+    [Fact]
+    public void Click_OnCentredStart_StillYieldsCanonical8Directions()
+    {
+        // Axis-aligned centred path: straight down column 0 from tile (0,1) to tile (0,6).
+        using var fixture = CreateFilledMapFixture(10, 10);
+        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        ConfigurePlayerSprite(engine, seed: 1);
+        engine.Player.Position = new Position(0.5, 1.5); // tile-centred start
+
+        var starts = new List<Direction>();
+        engine.Player.OnStartMoving += (_, direction) => starts.Add(direction);
+
+        const int canvas = 480;
+        ClickOnTile(engine, 0, 6, canvas, canvas);
+
+        var target = new Position(0.5, 6.5);
+        for (var frame = 0; frame < 5000 && engine.Player.Position != target; frame++)
+        {
+            engine.Update(FrameDt);
+        }
+
+        Assert.Equal(target, engine.Player.Position);
+        Assert.NotEmpty(starts);
+
+        // Every leg of the centred axis path is exactly the canonical Down direction.
+        foreach (var direction in starts)
+        {
+            Assert.Equal(Direction.Down, direction);
+        }
+        Assert.Contains(Direction.Down, Direction.All);
+
+        // Diagonal centred path: the legs are the canonical diagonal unit vector within
+        // floating-point precision (1/√2 vs the RootHalf constant).
+        var diagonalEngine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        ConfigurePlayerSprite(diagonalEngine, seed: 1);
+        diagonalEngine.Player.Position = new Position(0.5, 1.5);
+
+        var diagonalStarts = new List<Direction>();
+        diagonalEngine.Player.OnStartMoving += (_, direction) => diagonalStarts.Add(direction);
+
+        ClickOnTile(diagonalEngine, 3, 4, canvas, canvas);
+
+        var diagonalTarget = new Position(3.5, 4.5);
+        for (var frame = 0; frame < 5000 && diagonalEngine.Player.Position != diagonalTarget; frame++)
+        {
+            diagonalEngine.Update(FrameDt);
+        }
+
+        Assert.Equal(diagonalTarget, diagonalEngine.Player.Position);
+        Assert.NotEmpty(diagonalStarts);
+        foreach (var direction in diagonalStarts)
+        {
+            // The continuous leg vector is the canonical diagonal within precision, and its
+            // Nearest8 adaptation is exactly the canonical DownRight (sprite/key-input mapping).
+            Assert.Equal(Direction.DownRight.X, direction.X, precision: 9);
+            Assert.Equal(Direction.DownRight.Y, direction.Y, precision: 9);
+            Assert.Equal(Direction.DownRight, direction.Nearest8());
+        }
+    }
+
 }
