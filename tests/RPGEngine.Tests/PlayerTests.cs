@@ -324,6 +324,93 @@ public class PlayerTests
         Assert.Equal(new[] { Direction.Down }, stops);
     }
 
+    // ---------------------------------------------------------------------
+    // Story 75 (direction rework 2/2): Player.OnStartMoving / OnStopMoving
+    // carry the direction *vector* (X, Y), which may be continuous. Key input
+    // yields canonical 8 directions, but a host can drive continuous movement
+    // through Move/StartMoving and the events report the exact continuous
+    // vector; Stop and a blocked move report the last (possibly continuous)
+    // direction vector.
+    // ---------------------------------------------------------------------
+
+    /// <summary>
+    /// Verifies Move(new Direction(0.6, 0.8), 1, 1) from idle raises OnStartMoving carrying that
+    /// exact continuous vector, before the displacement.
+    /// </summary>
+    [Fact]
+    public void Move_ContinuousDirection_WhenIdle_RaisesOnStartMovingWithExactVector()
+    {
+        var player = new Player { Position = new Position(10, 20) };
+        player.Character.BaseSpeed = 2;
+        var continuous = new Direction(0.6, 0.8);
+        var events = new List<Direction>();
+        player.OnStartMoving += (_, direction) =>
+        {
+            events.Add(direction);
+            // The event fires before the displacement: the handler sees the pre-move position.
+            Assert.Equal(new Position(10, 20), player.Position);
+        };
+
+        player.Move(continuous, speedFactor: 1, dt: 1);
+
+        var raised = Assert.Single(events);
+        Assert.Equal(continuous.X, raised.X, precision: 9);
+        Assert.Equal(continuous.Y, raised.Y, precision: 9);
+        Assert.Equal(new Position(11.2, 21.6), player.Position); // BaseSpeed 2 * (0.6, 0.8)
+    }
+
+    /// <summary>
+    /// Verifies a direction change while moving (host-driven) raises OnStartMoving with the new
+    /// continuous vector, while a same-vector move raises nothing.
+    /// </summary>
+    [Fact]
+    public void Move_ContinuousDirection_DirectionChangeRaisesStart_ButSameVectorRaisesNothing()
+    {
+        var player = new Player();
+        var continuous = new Direction(0.6, 0.8);
+        var other = new Direction(-0.8, 0.6);
+        var starts = new List<Direction>();
+        var stops = new List<Direction>();
+        player.OnStartMoving += (_, direction) => starts.Add(direction);
+        player.OnStopMoving += (_, direction) => stops.Add(direction);
+
+        player.Move(continuous, speedFactor: 1, dt: 1);
+        starts.Clear();
+        stops.Clear();
+
+        // Same continuous vector while moving: no event.
+        player.Move(continuous, speedFactor: 1, dt: 1);
+        Assert.Empty(starts);
+        Assert.Empty(stops);
+
+        // A direction change while moving: a new start with the new continuous vector.
+        player.Move(other, speedFactor: 1, dt: 1);
+        var raised = Assert.Single(starts);
+        Assert.Equal(other.X, raised.X, precision: 9);
+        Assert.Equal(other.Y, raised.Y, precision: 9);
+        Assert.Empty(stops);
+    }
+
+    /// <summary>
+    /// Verifies Stop() raises OnStopMoving with the last (possibly continuous) direction vector.
+    /// </summary>
+    [Fact]
+    public void Stop_ContinuousDirection_RaisesOnStopMovingWithLastContinuousVector()
+    {
+        var player = new Player();
+        var continuous = new Direction(0.6, 0.8);
+        var stops = new List<Direction>();
+        player.OnStopMoving += (_, direction) => stops.Add(direction);
+
+        player.Move(continuous, speedFactor: 1, dt: 1);
+        player.Stop();
+
+        var raised = Assert.Single(stops);
+        Assert.Equal(continuous.X, raised.X, precision: 9);
+        Assert.Equal(continuous.Y, raised.Y, precision: 9);
+        Assert.Equal(continuous, player.Direction);
+    }
+
     /// <summary>The cardinal directions and the exact X/Y displacement Move(d, 2, 0.5) must produce at BaseSpeed 100.</summary>
     public static TheoryData<Direction, double, double> CardinalMoveCases => new()
     {
