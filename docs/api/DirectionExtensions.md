@@ -52,3 +52,24 @@ Console.WriteLine(Direction.Up.Opposite());        // Down
 Console.WriteLine(Direction.UpRight.Opposite());   // DownLeft
 Console.WriteLine(new Direction(0.6, 0.8).Opposite()); // (-0.6, -0.8)
 ```
+
+## Continuous movement with the 8-direction layer
+
+`Direction` is a continuous 2-D vector (see `Direction.md`). Movement uses the vector directly —
+`Direction * (BaseSpeed * factor * dt)` — while these helpers keep the two 8-direction surfaces
+working: sprites adapt a continuous facing with `Nearest8` / `RowIndex`, and `Normalized`
+produces the unit vector to move with from a raw delta.
+
+```csharp
+// Normalize a raw delta to a unit direction before moving with it.
+var rawDelta = new Direction(3, 4);   // length 5 — not a unit vector
+var unit = rawDelta.Normalized;       // (0.6, 0.8)
+var character = new Character { BaseSpeed = 2 };
+character.Move(unit, speedFactor: 1, dt: 1); // moves (1.2, 1.6) tiles
+
+// At draw time the continuous facing snaps to the nearest canonical 8 direction / sheet row,
+// so sprites keep the classic 8-direction look even for continuous facing.
+var facing = new Direction(0.9, 0.7); // continuous, closest to DownRight
+Console.WriteLine(facing.Nearest8());  // DownRight
+Console.WriteLine(facing.RowIndex());  // 2 — the DownRight (side-view) row
+```

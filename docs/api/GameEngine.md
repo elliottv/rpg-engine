@@ -38,7 +38,10 @@ registry and the pressed-keys state, and exposes the game-loop entry points `Upd
   continuous 2-D vector, see `Direction.md`) which is then snapped to the nearest of the eight
   canonical directions: opposite keys cancel (`W`+`S` or `A`+`D`), and a diagonal pair combines
   into a canonical diagonal (`W`+`D` → up-right) at the same speed as cardinal movement. Key
-  input always yields one of the eight canonical directions; sprites render 8 directions
+  input always yields one of the eight canonical unit directions; each character then moves by
+  `Direction * (BaseSpeed * dt)`. Sprites render 8 directions at the draw boundary: a continuous
+  facing (key movement is always canonical, but click-to-move and host-driven continuous moves
+  are not) is adapted to the nearest canonical 8 direction for the sheet row
   (see [Architecture](../Architecture.md)).
 - **Click-to-move** (auto-walk): `Click(surfaceX, surfaceY)` converts a host-surface click on the
   main canvas (using the canvas size recorded by the most recent `Render`) to a world position,
@@ -47,7 +50,14 @@ registry and the pressed-keys state, and exposes the game-loop entry points `Upd
   waypoint at `BaseSpeed`, popping waypoints as they are reached and calling `Player.Stop()` when
   the path completes. Each auto-walk step begins with `Player.OnStartMoving` **before** that
   step's position update (once per waypoint), and the completed path stops the player with
-  `Player.OnStopMoving` exactly once. Clicking a **solid tile** or an **unreachable target** cancels the walk
+  `Player.OnStopMoving` exactly once. Auto-walk uses **continuous directions**: every leg faces
+  the player toward and reports the exact (continuous) **unit vector** to the next waypoint
+  center — never quantized to the nearest of the 8 directions — and the displacement moves
+  along that same leg vector (the player still stops exactly centered on the clicked tile). The
+  sprite still adapts the continuous facing to the nearest canonical 8 direction at draw time,
+  and both `Player.OnStartMoving`/`Player.OnStopMoving` carry that direction vector. Key movement
+  is untouched: it still maps to the eight canonical unit directions (see the movement-input
+  bullet above). Clicking a **solid tile** or an **unreachable target** cancels the walk
   without moving; a click that yields a path **replaces** the current walk even mid-walk. Each
   auto-walk displacement is resolved against the map's solid tiles like key movement, so the
   auto-walk never moves the player through (or into) a solid tile: when the direct displacement

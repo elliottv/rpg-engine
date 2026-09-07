@@ -33,8 +33,12 @@ The player exposes a **movement-state machine** through two events:
   - click-to-move: the last auto-walk step is reached (the path completes);
   - the player is blocked by a collision (a fully blocked move).
 
-Both events carry only the facing `Direction` — the direction **vector** — which is all a host needs to mirror the player
-on other clients via `Character.StartMoving` / `Character.StopMoving`.
+Both events carry only the movement/facing direction **vector** (`Direction`, X and Y) —
+which is all a host needs to mirror the player on other clients via
+`Character.StartMoving` / `Character.StopMoving`. The payload is never quantized to an
+8-direction bucket: key input produces one of the eight canonical unit vectors, a host-driven
+continuous `Move` produces that exact continuous vector, and click-to-move produces the exact
+unit vector toward each waypoint.
 
 ## Fields
 
@@ -121,9 +125,14 @@ Occurs when the player **starts moving in a new direction**, **before the positi
 - **Click-to-move** (auto-walk): each time a new auto-walk step begins — the first step, and
   every time the next waypoint is reached while another remains. `OnStartMoving` therefore fires
   once **per auto-walk step** (once per waypoint in the path), and the event is raised before
-  that step's displacement is applied.
+  that step's displacement is applied. Each step's payload is the exact **continuous** unit
+  vector from the player's current position to the next waypoint centre (see
+  `GameEngine.md`) — never quantized to the nearest of the 8 directions. Sprites still adapt
+  that continuous facing to the nearest canonical 8 direction at draw time.
 
-The event carries the direction **vector** (`Direction`) the player is moving in.
+The event carries the movement/facing direction **vector** (`Direction`, X and Y) the player is
+moving in. Key movement reports one of the eight canonical unit vectors; a host that drives a
+continuous move (e.g. a future analogue-stick input) reports that exact continuous vector.
 
 ```csharp
 var player = new Player();
@@ -132,9 +141,12 @@ player.OnStartMoving += (_, direction) =>
     Console.WriteLine($"started moving {direction}");
 };
 
-player.Move(Direction.Right, speedFactor: 1, dt: 1); // prints "started moving Right"
+player.Move(Direction.Right, speedFactor: 1, dt: 1); // prints "started moving Right" (canonical key vector)
 player.Move(Direction.UpRight, speedFactor: 1, dt: 1); // direction change: prints "started moving UpRight"
 player.Move(Direction.UpRight, speedFactor: 1, dt: 1); // same direction: nothing
+
+// A host-driven continuous move reports the exact vector (no 8-direction quantization):
+player.Move(new Direction(0.6, 0.8), speedFactor: 1, dt: 1); // prints "started moving (0.6, 0.8)"
 ```
 
 ### `event EventHandler<Direction>? OnStopMoving`
@@ -150,8 +162,9 @@ Occurs when the player **stops moving**:
   `OnStartMoving` then `OnStopMoving` in the same frame. The reported direction is the
   direction the player tried to move in (the player turns to face the wall).
 
-The event carries the direction **vector** (`Direction`) the player was last moving in. Stopping does not change the
-facing direction.
+The event carries the direction **vector** (`Direction`, X and Y) the player was last moving
+in — the exact last vector, which may be continuous (a host-driven move or an auto-walk leg).
+Stopping does not change the facing direction.
 
 ```csharp
 var player = new Player();
@@ -193,9 +206,17 @@ direction changes while already moving (e.g. right → up-right). A move while a
 the *same* direction raises nothing (no per-frame events). With `speedFactor == 0` the player
 only turns: no event is raised (a turn is neither a start nor a stop).
 
+`direction` is a continuous unit vector: the displacement is `direction * (BaseSpeed *
+speedFactor * dt)`. Key input supplies one of the eight canonical unit vectors; a host may also
+drive any continuous unit vector (the events and `Direction` carry it exactly, and the sprite
+still renders with the nearest canonical 8-direction row).
+
 ```csharp
 player.Move(Direction.Right, dt: 1.0 / 60);
 player.Move(Direction.Up, speedFactor: 0); // turn only: no event
+
+// A host-driven continuous move: displacement (0.6, 0.8) * BaseSpeed * factor * dt.
+player.Move(new Direction(0.6, 0.8), speedFactor: 1, dt: 1);
 ```
 
 ### `void Move(double speedFactor = 1, double dt = 1)`

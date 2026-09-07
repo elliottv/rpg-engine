@@ -935,4 +935,58 @@ public class DocsExamplesTests
         var expectedSprite = CharacterTestHelper.SpriteColor(seed: 1, characterIndex: 1, Direction.Down, frame: 1);
         Assert.Equal(expectedSprite, bitmap.GetPixel(120, 120));
     }
+
+    // ---------------------------------------------------------------------
+    // Story 75: continuous movement is activated. docs/api/Character.md,
+    // docs/api/Player.md, docs/api/GameEngine.md, docs/api/Direction.md and
+    // docs/api/DirectionExtensions.md show that a character moves by
+    // Direction * (BaseSpeed * factor * dt) along any continuous unit vector,
+    // that Player.OnStartMoving / OnStopMoving carry the direction *vector*,
+    // and that click-to-move legs report the exact (continuous) leg vector
+    // while sprites adapt a continuous facing to the nearest canonical 8
+    // direction at draw time.
+    // ---------------------------------------------------------------------
+    /// <summary>
+    /// Verifies the continuous-movement examples: a character moves along an arbitrary unit
+    /// vector by <c>Direction * (BaseSpeed * factor * dt)</c>, a direction-less Move reuses the
+    /// previous continuous Direction, and the player's movement events carry the exact direction
+    /// vector (X, Y) for a continuous (non-canonical) move.
+    /// </summary>
+    [Fact]
+    public void ContinuousMovement_AndEventsCarryDirectionVectors()
+    {
+        // A character moves along any continuous unit vector: displacement = Direction * speed.
+        var character = new Character { BaseSpeed = 2, Position = new Position(0, 0) };
+        var diagonal = new Direction(0.6, 0.8); // unit length (0.6^2 + 0.8^2 = 1)
+        character.Move(diagonal, speedFactor: 1, dt: 1);
+        Assert.Equal(1.2, character.Position.X, precision: 9); // 2 * 0.6
+        Assert.Equal(1.6, character.Position.Y, precision: 9); // 2 * 0.8
+
+        // StartMoving/Update apply the same vector semantics continuously (no map: raw move).
+        character.StartMoving(new Direction(-0.8, 0.6));
+        character.Update(dt: 0.5); // BaseSpeed * dt = 1 tile along (-0.8, 0.6)
+        Assert.Equal(1.2 - 0.8, character.Position.X, precision: 9);
+        Assert.Equal(1.6 + 0.6, character.Position.Y, precision: 9);
+
+        // The player's events carry the exact direction vector, even for continuous moves.
+        var player = new Player { Position = new Position(10, 20) };
+        player.Character.BaseSpeed = 2;
+        Direction? started = null;
+        Direction? stopped = null;
+        player.OnStartMoving += (_, direction) => started = direction;
+        player.OnStopMoving += (_, direction) => stopped = direction;
+
+        player.Move(new Direction(0.6, 0.8), speedFactor: 1, dt: 1);
+        Assert.Equal(0.6, started!.Value.X, precision: 9);
+        Assert.Equal(0.8, started.Value.Y, precision: 9);
+
+        player.Stop();
+        Assert.Equal(0.6, stopped!.Value.X, precision: 9); // the last (continuous) vector
+        Assert.Equal(0.8, stopped.Value.Y, precision: 9);
+
+        // Sprites stay 8-direction: a continuous facing renders with the nearest canonical row.
+        Assert.Equal(Direction.DownRight, new Direction(0.9, 0.7).Nearest8());
+        Assert.Equal(2, new Direction(0.9, 0.7).RowIndex()); // the Right (side-view) row
+    }
+
 }

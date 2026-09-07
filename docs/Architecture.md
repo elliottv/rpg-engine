@@ -229,6 +229,14 @@ There are **two ways a character moves**, and both go through the same `Characte
    `Update(dt, map)` on every character each frame (supplying the current map), so a started
    character moves automatically with no per-frame host code.
 
+Every displacement is the direction **vector** scaled by the speed: `Direction * BaseSpeed *
+factor * dt` (`Move`) or `Direction * BaseSpeed * dt` (`Update`). `Direction` is a continuous
+unit vector, so a host can feed any unit vector (a future analogue-stick input, a normalized
+touch delta) into `Move`/`StartMoving` and the character moves along it — movement is no longer
+limited to 8 directions. Key input keeps producing the eight canonical unit directions (item 1);
+the sprite pipeline keeps consuming 8 directions by snapping the continuous facing at draw time
+(see `Character.Draw` → `Direction.Nearest8`).
+
 **Autonomous movement is collision-resolved exactly like the player's key-driven movement**: the
 engine passes the map to every character's `Update`, so a started character's displacement is
 resolved against the map's solid tiles and the map edge with the same footprint and the same
@@ -387,16 +395,26 @@ engine walks the player to the clicked tile.
 **Auto-walk** (inside `GameEngine.Update`): the engine keeps an internal queue of target tile
 waypoints (the A* path). When there is **no manual key movement** this frame and the path is
 non-empty, it moves the player toward the center of the next waypoint tile
-(`(tileX + 0.5, tileY + 0.5)`) at `BaseSpeed` (tile units). When the distance to the waypoint
-center is ≤ the frame's step, the player snaps to the center, the waypoint is popped, and the
-walk continues; when the queue empties, the engine calls `Player.Stop()`. The path is computed
-over walkable tiles (no corner cutting), so between tile centres the movement is clear; to cover
-the case where the player starts a walk from a **non-tile-centred** position (e.g. a key-movement
-boundary beside a wall), each auto-walk displacement is resolved with the **same per-axis
-slide-to-boundary clamping** as key movement (see `MovementCollisionResolver`). A displacement
-that would cross a solid corner is clamped, and because the waypoint then cannot be reached
-without crossing a solid tile, the walk is **cancelled** and the player is not displaced — the
-auto-walk never moves the player through or into a solid tile.
+(`(tileX + 0.5, tileY + 0.5)`) at `BaseSpeed` (tile units). Each leg's facing direction is the
+**exact continuous unit vector** toward that waypoint center — `new Direction(toTarget.X /
+distance, toTarget.Y / distance)` — used both as the player's facing and as the
+`Player.ReportAutoWalkStep` argument (the `OnStartMoving` payload). It is **never quantized** to
+the nearest of the 8 canonical directions (the old `DirectionFromVector` helper is gone from the
+auto-walk path); the displacement moves along the same leg vector (`toTarget * (step /
+distance)`) and the player still stops exactly centered on the clicked tile. Sprites adapt the
+continuous facing to the nearest canonical 8 direction only at draw time (`Character.Draw`
+snaps via `Direction.Nearest8`), so the rendered sprite row stays one of the classic 8
+directions. When the distance to the waypoint center is ≤ the frame's step, the player snaps to
+the center, the waypoint is popped, and the walk continues; when the queue empties, the engine
+calls `Player.Stop()` (which raises `Player.OnStopMoving` with the last, possibly continuous,
+leg direction). The path is computed over walkable tiles (no corner cutting), so between tile
+centres the movement is clear; to cover the case where the player starts a walk from a
+**non-tile-centred** position (e.g. a key-movement boundary beside a wall), each auto-walk
+displacement is resolved with the **same per-axis slide-to-boundary clamping** as key movement
+(see `MovementCollisionResolver`). A displacement that would cross a solid corner is clamped, and
+because the waypoint then cannot be reached without crossing a solid tile, the walk is
+**cancelled** and the player is not displaced — the auto-walk never moves the player through or
+into a solid tile.
 
 **Input precedence during auto-walk**:
 
@@ -420,7 +438,8 @@ the last auto-walk step is reached (the path completes), and when the player is 
 collision. The engine drives the events through the internal bridges `Player.ReportMovement`
 (key movement, start on idle → moving or on a direction change while moving, called before the
 displacement), `Player.ReportAutoWalkStep` (auto-walk, start every call, once per step boundary
-before that step's position update) and `Player.ReportBlockedMove` (a collision stop), so a fully
+before that step's position update — each call carries the exact continuous unit vector toward
+the next waypoint centre) and `Player.ReportBlockedMove` (a collision stop), so a fully
 blocked move from idle fires start then stop in the same frame while a held key against the same
 wall fires nothing more. `Player.Stop()` raises `OnStopMoving` only when the player was moving;
 the engine calls it when there is no input and no auto-walk target.

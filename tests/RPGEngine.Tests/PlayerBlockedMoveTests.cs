@@ -90,4 +90,27 @@ public class PlayerBlockedMoveTests
         Assert.Equal(new[] { Direction.Right }, starts);
         Assert.Equal(new[] { Direction.Right }, stops);
     }
+
+    /// <summary>
+    /// Verifies ReportBlockedMove raises OnStopMoving with the attempted (possibly continuous)
+    /// direction vector.
+    /// </summary>
+    [Fact]
+    public void ReportBlockedMove_ContinuousDirection_RaisesOnStopMovingWithAttemptedVector()
+    {
+        var player = new Player();
+        var continuous = new Direction(0.6, 0.8);
+        var events = new List<Direction>();
+        player.OnStopMoving += (_, direction) => events.Add(direction);
+
+        player.Move(Direction.Right, speedFactor: 1, dt: 1);
+        events.Clear();
+
+        player.ReportBlockedMove(continuous);
+
+        var raised = Assert.Single(events);
+        Assert.Equal(continuous.X, raised.X, precision: 9);
+        Assert.Equal(continuous.Y, raised.Y, precision: 9);
+        Assert.Equal(continuous, player.Direction);
+    }
 }
