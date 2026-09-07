@@ -1,4 +1,5 @@
 namespace RPGEngine;
+using System.Text.Json.Serialization;
 
 /// <summary>
 /// A direction in the game world, expressed as a 2-D screen-space vector with
@@ -117,6 +118,7 @@ public readonly record struct Direction(double X, double Y)
     /// <c>BaseSpeed * dt</c> displacement regardless of the input vector's length.
     /// </summary>
     /// <exception cref="InvalidOperationException">The direction is the zero vector <c>(0, 0)</c>, which has no direction to normalize.</exception>
+    [JsonIgnore]
     public Direction Normalized
     {
         get
