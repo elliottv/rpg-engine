@@ -300,6 +300,15 @@ public sealed class GameEngine : IDisposable
     }
 
     /// <summary>
+    /// Clears all pressed keys and the auto walk path
+    /// </summary>
+    public void ReleaseAllInputs()
+    {
+        _autoWalkPath.Clear();
+        _pressedKeys.Clear();
+    }
+
+    /// <summary>
     /// Reports a click on the <em>main</em> game canvas to the engine, in host-surface (canvas)
     /// coordinates — the same coordinate space as <see cref="SurfaceToWorld"/>. The engine
     /// converts the click to a world position using the canvas size recorded by the most recent
