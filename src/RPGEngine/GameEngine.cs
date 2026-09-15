@@ -202,7 +202,11 @@ public sealed class GameEngine : IDisposable
     public GameEngine()
     {
         Player = new Player();
-        Config = new GameConfig();
+
+        // The engine-owned default is a transitional bridge (GameConfig is abstract, see
+        // GameConfig.cs): the Config evolution epic makes passing the host's own GameConfig
+        // subclass to the constructor mandatory, at which point this default disappears.
+        Config = new DefaultGameConfig();
     }
 
     /// <summary>Gets the player character. The camera always follows the player.</summary>
