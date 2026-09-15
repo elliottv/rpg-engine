@@ -137,7 +137,11 @@ foreach (var layer in engine.Map?.ObjectLayers ?? [])
 >   cancel), so keyboard movement is unchanged. Which key does what is the game's configuration: a
 >   **user-defined subclass of `GameConfig`** (`MyGameConfig : GameConfig`) whose engine-defined
 >   options are the movement keys and whose other properties (audio volume, GUI key binds, …) the
->   engine ignores (see `docs/api/GameConfig.md`).
+>   engine ignores (see `docs/api/GameConfig.md`). A host whose input surface loses focus or goes
+>   to the background (WPF `Window.Deactivated`, Blazor `blur` / `visibilitychange`, a mobile
+>   pause) calls `engine.ReleaseAllInputs()`: every held key is released and any queued auto-walk
+>   is cancelled, so the player stops on the next `Update` (with `Player.OnStopMoving`) instead of
+>   walking forever on a key whose key-up the engine can never receive.
 > - **Click-to-move** uses **continuous directions**: each auto-walk leg faces and reports the
 >   exact unit vector toward the next waypoint centre (never quantized), while displacement still
 >   ends centred on the clicked tile.
@@ -168,7 +172,7 @@ foreach (var layer in engine.Map?.ObjectLayers ?? [])
 | Page | What it covers |
 | --- | --- |
 | [Architecture](Architecture.md) | Composition model, camera, spritesheet layout, part ordering, rendering order and the Tiled read model. |
-| [api/GameEngine.md](api/GameEngine.md) | Root object: game loop, input (8 directions), **click-to-move auto-walk (`Click`)** and the input-precedence rules, asset loading (sync + async: spritesheets, part sheets and the single **icon set** via `LoadIconSet` / `LoadIconSetAsync`) and `SpriteSheetExists`, camera, black background / map centering, **Y-sorted character rendering** (NPCs + player by `Position.Y`, higher Y drawn on top, **icons drawn above each sprite**), map ownership (`IDisposable`), and the minimap (`RenderMinimap` — fit/zoom semantics, green player + yellow NPC dots). |
+| [api/GameEngine.md](api/GameEngine.md) | Root object: game loop, input (8 directions: key-down/key-up, and `ReleaseAllInputs` when the host loses focus), **click-to-move auto-walk (`Click`)** and the input-precedence rules, asset loading (sync + async: spritesheets, part sheets and the single **icon set** via `LoadIconSet` / `LoadIconSetAsync`) and `SpriteSheetExists`, camera, black background / map centering, **Y-sorted character rendering** (NPCs + player by `Position.Y`, higher Y drawn on top, **icons drawn above each sprite**), map ownership (`IDisposable`), and the minimap (`RenderMinimap` — fit/zoom semantics, green player + yellow NPC dots). |
 | [api/Character.md](api/Character.md) / [api/Player.md](api/Player.md) | In-world state, sprite references, the speed-scaled walk-cycle animation (`AnimationCycleSpeed`), autonomous movement (`StartMoving` / `StopMoving` / `IsMoving`), the movement-state events (`OnStartMoving` / `OnStopMoving` / `Stop()`), and **`IconIndex`** (icons drawn above the sprite when an icon set is loaded). |
 | [api/SpriteSheet.md](api/SpriteSheet.md) | The 12×8 sheet layout (derived cell size, e.g. 576×384 or 936×864) and the **1..8 character index** semantics. |
 | [api/IconSet.md](api/IconSet.md) | Icon sets: a 32×32 tile grid with **row-major** indexing (`row = iconIndex / ColumnCount`, `col = iconIndex % ColumnCount`), loaded into the engine and displayed above character sprites. |
