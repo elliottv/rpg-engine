@@ -31,7 +31,9 @@ internal static class SampleScene
     /// <param name="assetsRoot">Directory containing the materialized fixtures.</param>
     public static GameEngine Create(string assetsRoot)
     {
-        var engine = new GameEngine
+        // The engine is built with the host's own configuration instance (an instance of
+        // GameConfig is mandatory: the engine never creates a default configuration).
+        var engine = new GameEngine(new SampleGameConfig())
         {
             Map = TileMap.Load(Path.Combine(assetsRoot, FixtureAssets.MapFile)),
         };
