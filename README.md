@@ -29,6 +29,11 @@ Every public class, property and method is XML-documented (CS1591 enforced) and 
 `docs/api/` with commented, compilable examples (`DocsExamplesTests` runs them against the real
 API).
 
+A `GameEngine` is built with the host's own configuration: the game derives a type from
+`GameConfig` (the engine's own options are the movement keys; audio volume, GUI key binds, ...
+are user-defined) and passes an instance to the constructor, which the engine keeps and reads
+live — see [docs/api/GameConfig.md](docs/api/GameConfig.md).
+
 A `TileMap` is `IDisposable` (it prerenders every visible tile layer into an `SKImage` on load
 and releases them on dispose). The engine owns the assigned map: replacing `GameEngine.Map`
 disposes the previous map, and disposing the engine disposes the current one.

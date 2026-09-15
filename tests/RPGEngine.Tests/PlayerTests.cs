@@ -139,7 +139,7 @@ public class PlayerTests
     [Fact]
     public void DrivenLikeTheEngine_TracksExpectedPath()
     {
-        var engine = new GameEngine();
+        var engine = new GameEngine(new TestGameConfig());
         var player = engine.Player;
         var config = engine.Config;
 

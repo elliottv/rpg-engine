@@ -35,9 +35,12 @@ public class DocsExamplesTests
     {
         using var fixtures = FixtureAssets.MaterializeToTempDirectory();
 
-        // 1. Create the engine. It starts with a fresh player, an empty NPC list,
-        //    the default WASD configuration and no map.
-        var engine = new GameEngine();
+        // 1. Create the host's own configuration (the game derives MyGameConfig : GameConfig and adds
+        //    its own options: audio volume, GUI key binds, ...), then the engine with it. The engine
+        //    starts with a fresh player, an empty NPC list and no map; the configuration is mandatory
+        //    (the engine never creates a default one).
+        var config = new MyGameConfig();
+        var engine = new GameEngine(config);
 
         // 2. Load assets. The map owns its tilesets; characters reference sheets by name.
         engine.Map = TileMap.Load(fixtures.PathOf(FixtureAssets.MapFile));
@@ -92,7 +95,7 @@ public class DocsExamplesTests
         using var fixture = new TiledTestFixture(
             10, 10,
             new[] { new TileLayerSpec("ground", Enumerable.Repeat(1u, 10 * 10).ToArray()) });
-        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        var engine = new GameEngine(new MyGameConfig()) { Map = TileMap.Load(fixture.MapPath) };
         engine.Player.Position = new Position(0.5, 1.5);
 
         var starts = new List<Direction>();
@@ -142,7 +145,7 @@ public class DocsExamplesTests
             2,
             2,
             new[] { new TileLayerSpec("ground", new uint[] { 1, 1, 1, 1 }) });
-        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        var engine = new GameEngine(new MyGameConfig()) { Map = TileMap.Load(fixture.MapPath) };
 
         using var bitmap = new SKBitmap(240, 240);
         using (var canvas = new SKCanvas(bitmap))
@@ -180,7 +183,7 @@ public class DocsExamplesTests
         using var fixture = new TiledTestFixture(
             4, 2,
             new[] { new TileLayerSpec("ground", new uint[] { 1, 1, 1, 1, 1, 1, 1, 1 }) });
-        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        var engine = new GameEngine(new MyGameConfig()) { Map = TileMap.Load(fixture.MapPath) };
         engine.Player.Position = new Position(0.5, 0.5);
         engine.Characters.Add(new Character { Position = new Position(3.5, 1.5) });
 
@@ -340,7 +343,7 @@ public class DocsExamplesTests
     [Fact]
     public void Character_StartMovingStopMoving_DrivesNpcAutonomously()
     {
-        var engine = new GameEngine();
+        var engine = new GameEngine(new MyGameConfig());
         var npc = new Character { BaseSpeed = 2, Position = new Position(3, 4) };
         npc.SpriteSheets.Add(new SpriteSheetRef("villager", CharacterIndex: 2));
         engine.Characters.Add(npc);
@@ -444,7 +447,7 @@ public class DocsExamplesTests
     [Fact]
     public void Key_HostTranslation_ForwardsToEngine()
     {
-        var engine = new GameEngine();
+        var engine = new GameEngine(new MyGameConfig());
 
         // e.g. a Blazor KeyboardEventArgs with key == "ArrowUp" → engine Key.Up.
         // The arrow keys are not bound by default (WASD is), so rebind UpKey first.
@@ -818,7 +821,7 @@ public class DocsExamplesTests
         }
 
         // GameEngine.LoadSpriteSheetAsync: the engine-level delegating overload.
-        var engine = new GameEngine();
+        var engine = new GameEngine(new MyGameConfig());
         using (var stream = new AsyncOnlyStream(FixtureAssets.DecodePngStream(FixtureAssets.FullSheet)))
         {
             await engine.LoadSpriteSheetAsync("hero", stream);
@@ -856,7 +859,7 @@ public class DocsExamplesTests
         }
 
         // GameEngine.LoadPartSpriteSheetAsync: the engine-level delegating overload.
-        var engine = new GameEngine();
+        var engine = new GameEngine(new MyGameConfig());
         using (var stream = new AsyncOnlyStream(FixtureAssets.DecodePngStream(FixtureAssets.PartBody)))
         {
             await engine.LoadPartSpriteSheetAsync("hero_body", stream, CharacterPartType.Body);
@@ -930,7 +933,7 @@ public class DocsExamplesTests
         }
 
         // 2. Load the set into the engine and display an icon above a character's sprite.
-        var engine = new GameEngine();
+        var engine = new GameEngine(new MyGameConfig());
         using (var sheetStream = CharacterTestHelper.CreateSheetStream(seed: 1))
         {
             engine.LoadSpriteSheet("hero", sheetStream);

@@ -36,7 +36,7 @@ public class GameEngineCollisionOnMoveTests
             0, 0, 1, 0,
             0, 0, 1, 0,
         });
-        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        var engine = new GameEngine(new TestGameConfig()) { Map = TileMap.Load(fixture.MapPath) };
         ConfigurePlayerSprite(engine, seed: 1);
         engine.Player.Position = new Position(0.5, 1.0);
 
@@ -78,7 +78,7 @@ public class GameEngineCollisionOnMoveTests
             0, 0, 1, 0,
             0, 0, 1, 0,
         });
-        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        var engine = new GameEngine(new TestGameConfig()) { Map = TileMap.Load(fixture.MapPath) };
         ConfigurePlayerSprite(engine, seed: 1);
         engine.Player.Position = new Position(0.5, 1.0);
 
@@ -131,7 +131,7 @@ public class GameEngineCollisionOnMoveTests
         }
 
         using var fixture = CreateCollisionMapFixture(4, 4, gids);
-        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        var engine = new GameEngine(new TestGameConfig()) { Map = TileMap.Load(fixture.MapPath) };
         ConfigurePlayerSprite(engine, seed: 1);
         engine.Player.Position = new Position(0.5, 1.5);
 
@@ -188,7 +188,7 @@ public class GameEngineCollisionOnMoveTests
         }
 
         using var fixture = CreateCollisionMapFixture(5, 5, gids);
-        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        var engine = new GameEngine(new TestGameConfig()) { Map = TileMap.Load(fixture.MapPath) };
         ConfigurePlayerSprite(engine, seed: 1);
 
         // Start flush against the left edge of the wall column: the fixed 0.5x0.5 box's right
@@ -237,7 +237,7 @@ public class GameEngineCollisionOnMoveTests
         }
 
         using var fixture = CreateCollisionMapFixture(5, 5, gids);
-        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        var engine = new GameEngine(new TestGameConfig()) { Map = TileMap.Load(fixture.MapPath) };
         ConfigurePlayerSprite(engine, seed: 1);
 
         // Start in open space: moving UpRight is free until the box's right edge reaches the
@@ -289,7 +289,7 @@ public class GameEngineCollisionOnMoveTests
     {
         // A 5x5 map with no collision layer: only the map edge is solid, far away from the path.
         using var fixture = CreateFilledMapFixture(5, 5);
-        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        var engine = new GameEngine(new TestGameConfig()) { Map = TileMap.Load(fixture.MapPath) };
         ConfigurePlayerSprite(engine, seed: 1);
         engine.Player.Position = new Position(1.5, 3.0);
 
@@ -327,7 +327,7 @@ public class GameEngineCollisionOnMoveTests
     {
         // A 2x2 filled map (no collision layer): only the map edge is solid.
         using var fixture = CreateFilledMapFixture(2, 2);
-        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        var engine = new GameEngine(new TestGameConfig()) { Map = TileMap.Load(fixture.MapPath) };
         ConfigurePlayerSprite(engine, seed: 1);
         engine.Player.Position = new Position(1.5, 1.5);
 

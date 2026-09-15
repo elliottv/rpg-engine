@@ -16,8 +16,11 @@ for rendering and DotTiled for Tiled map/tileset parsing. The engine is framewor
 
 ## Quick start ("hello world")
 
-The following is the canonical end-to-end example. It creates a `GameEngine`, **asynchronously**
-loads a tile map with a `TiledAssetFetcherAsync` and a full character spritesheet with
+The following is the canonical end-to-end example. It creates the game's own configuration and
+the `GameEngine` with it — the engine's configuration is the host's own subclass of `GameConfig`
+(the engine's own options are the movement keys; audio volume, GUI key binds, ... are
+user-defined, see [api/GameConfig.md](api/GameConfig.md)). It then **asynchronously** loads a
+tile map with a `TiledAssetFetcherAsync` and a full character spritesheet with
 `LoadSpriteSheetAsync`, adds an NPC built from part sheets, drives one frame with
 `Update`/`Render`/`Input` (including **8-direction diagonal input**), and reads the map's custom
 **properties** and **object layers**. The exact same scene is what the desktop and WebAssembly
@@ -32,9 +35,12 @@ using RPGEngine.Sprites;
 using RPGEngine.Tiled;
 using SkiaSharp;
 
-// 1. Create the engine. It starts with a fresh player, an empty NPC list, the default
-//    WASD configuration and no map.
-var engine = new GameEngine();
+// 1. Create the host's own configuration (the game derives MyGameConfig : GameConfig and adds
+//    its own options: audio volume, GUI key binds, ...), then the engine with it. The engine
+//    starts with a fresh player, an empty NPC list and no map; the configuration is mandatory
+//    (the engine never creates a default one).
+var config = new MyGameConfig();
+var engine = new GameEngine(config);
 
 // 2. Load assets asynchronously. The map owns its tilesets; a TiledAssetFetcherAsync resolves
 //    the external .tsx and its image (e.g. HttpClient.GetByteArrayAsync in a browser host).

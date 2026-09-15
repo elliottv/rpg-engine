@@ -7,6 +7,10 @@ type by deriving from it (`sealed class MyGameConfig : GameConfig { }` is alread
 configuration) and adds the options of the subsystems the engine deliberately does not implement —
 audio volume, GUI/interaction key binds, gamepad bindings, … — as ordinary properties.
 
+An instance of the derived type is **mandatory**: it must be passed to the
+`GameEngine(GameConfig)` constructor ([GameEngine.md](GameEngine.md)), which keeps that very
+instance and reads it at input time. The engine never creates a configuration of its own.
+
 The engine's own options are the four movement keys, which default to WASD (`Key.W`, `Key.S`,
 `Key.A`, `Key.D`). The engine only ever reads those keys, `GetDirection` and `GetMovementDirection`;
 everything else in a derived configuration is plain live data the engine ignores.

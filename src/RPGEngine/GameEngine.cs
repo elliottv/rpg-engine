@@ -5,10 +5,10 @@ using SkiaSharp;
 namespace RPGEngine;
 
 /// <summary>
-/// The root of the engine. It owns the game state (player, characters, map and configuration),
-/// the spritesheet registry and the pressed-keys state, and exposes the game-loop entry points
-/// <see cref="Update"/>, <see cref="Render"/>, <see cref="Input"/> and the asset-loading methods
-/// used by the host application.
+/// The root of the engine. It owns the game state (player, characters and map), holds the host's
+/// <see cref="GameConfig"/> instance, owns the spritesheet registry and the pressed-keys state, and
+/// exposes the game-loop entry points <see cref="Update"/>, <see cref="Render"/>,
+/// <see cref="Input"/> and the asset-loading methods used by the host application.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -23,6 +23,15 @@ namespace RPGEngine;
 /// own elapsed time (<c>dt</c>, in seconds) to advance the simulation, then <see cref="Render"/>
 /// with the same <c>dt</c> to draw the frame onto its canvas. The engine never runs its own loop
 /// and never blocks.
+/// </para>
+/// <para>
+/// The configuration is the host's: the host passes an instance of its own
+/// <see cref="GameConfig"/> subclass to the constructor and the engine keeps that very instance
+/// (<see cref="Config"/>), so the engine never creates a configuration of its own. The engine's own
+/// options are the movement keys of the instance; everything else in it is user-defined data the
+/// engine ignores. The configuration is read at input time and never cached, so a change the host
+/// makes — rebinding <c>Config.UpKey</c>, for instance — is taken into account by the next
+/// <see cref="Update"/>.
 /// </para>
 /// <para>
 /// Rendering issues SkiaSharp canvas/image drawing operations only; it never rasterizes the
@@ -195,18 +204,24 @@ public sealed class GameEngine : IDisposable
 
     /// <summary>
     /// Initializes a new instance of the <see cref="GameEngine"/> class with default state: a
-    /// fresh <see cref="Player"/>, an empty <see cref="Characters"/> list, a
-    /// <see cref="GameConfig"/> with the default WASD bindings, no map and an empty spritesheet
-    /// registry.
+    /// fresh <see cref="Player"/>, an empty <see cref="Characters"/> list, no map, an empty
+    /// spritesheet registry and the host's configuration.
     /// </summary>
-    public GameEngine()
+    /// <param name="config">
+    /// The host's configuration: an instance of the host's own <see cref="GameConfig"/> subclass.
+    /// The engine never creates a configuration of its own; it keeps this very instance for its
+    /// lifetime and reads it at input time (see <see cref="Config"/>).
+    /// </param>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="config"/> is <see langword="null"/>. The configuration is mandatory:
+    /// there is no parameterless constructor and the engine has no default configuration.
+    /// </exception>
+    public GameEngine(GameConfig config)
     {
-        Player = new Player();
+        ArgumentNullException.ThrowIfNull(config);
 
-        // The engine-owned default is a transitional bridge (GameConfig is abstract, see
-        // GameConfig.cs): the Config evolution epic makes passing the host's own GameConfig
-        // subclass to the constructor mandatory, at which point this default disappears.
-        Config = new DefaultGameConfig();
+        Player = new Player();
+        Config = config;
     }
 
     /// <summary>Gets the player character. The camera always follows the player.</summary>
@@ -245,11 +260,32 @@ public sealed class GameEngine : IDisposable
     }
 
     /// <summary>
-    /// Gets or sets the configuration values used by the engine. The engine reads the
+    /// Gets the host's configuration: the very same <see cref="GameConfig"/> instance that was
+    /// passed to the <see cref="GameEngine(GameConfig)"/> constructor. The engine reads the
     /// configuration at input time and never caches a snapshot, so updates take effect
     /// immediately.
     /// </summary>
-    public GameConfig Config { get; set; }
+    /// <value>
+    /// The configuration instance the engine was constructed with. It is get-only: the instance is
+    /// part of the construction contract and cannot be swapped afterwards.
+    /// </value>
+    /// <remarks>
+    /// <para>
+    /// The engine's own options are the four movement keys of this instance (WASD by default);
+    /// everything else a host declared on its <see cref="GameConfig"/> subclass (audio volume,
+    /// GUI/interaction key binds, …) is user-defined data the engine ignores.
+    /// </para>
+    /// <para>
+    /// The instance stays mutable after construction: rebinding a movement key
+    /// (<c>engine.Config.UpKey = Key.Up</c>) or changing one of the host's own options takes
+    /// effect on the next <see cref="Update"/>, because the configuration is consulted live at
+    /// input time. The declared type is <see cref="GameConfig"/>; a host that keeps the reference
+    /// it passed to the constructor needs no cast at all (it is the same object), and when only
+    /// the engine is at hand the concrete type is recovered with a cast
+    /// (<c>((MyGameConfig)engine.Config).MasterVolume</c>).
+    /// </para>
+    /// </remarks>
+    public GameConfig Config { get; }
 
     /// <summary>
     /// Gets the width in pixels of the canvas from the most recent <see cref="Render"/> call

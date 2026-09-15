@@ -2,9 +2,10 @@
 
 Namespace: `RPGEngine` — the root of the engine.
 
-`GameEngine` owns the game state (player, characters, map and configuration), the spritesheet
-registry and the pressed-keys state, and exposes the game-loop entry points `Update`, `Render`,
-`Input` and the asset-loading methods used by the host application.
+`GameEngine` owns the game state (player, characters and map), holds the host's `GameConfig`
+instance, owns the spritesheet registry and the pressed-keys state, and exposes the game-loop
+entry points `Update`, `Render`, `Input` and the asset-loading methods used by the host
+application.
 
 ## Remarks
 
@@ -115,13 +116,26 @@ registry and the pressed-keys state, and exposes the game-loop entry points `Upd
 
 ## Constructors
 
-### `GameEngine()`
+### `GameEngine(GameConfig config)`
 
-Initializes a new instance with a fresh `Player`, an empty `Characters` list, a `GameConfig`
-with the default WASD bindings, no map and an empty spritesheet registry.
+Initializes a new instance with a fresh `Player`, an empty `Characters` list, no map, an empty
+spritesheet registry and **the host's configuration**. `config` is an instance of the host's own
+`GameConfig` subclass and is **mandatory**: the engine never creates a default configuration, so
+there is no parameterless constructor. The engine keeps this very instance (see `Config`) and reads
+it at input time, never a snapshot.
+
+Throws `ArgumentNullException` when `config` is `null`.
 
 ```csharp
-var engine = new GameEngine();
+// The host defines its own configuration type (MyGameConfig : GameConfig, see GameConfig.md)
+// and passes an instance: the engine starts with a fresh player, an empty NPC list, this
+// configuration and no map.
+var config = new MyGameConfig { MasterVolume = 0.5f };
+using var engine = new GameEngine(config);
+
+// The instance stays live: the engine reads it at input time and never snapshots it.
+config.MasterVolume = 0.8f;     // same instance: the engine sees the change immediately
+engine.Config.UpKey = Key.Up;   // the instance stays mutable: rebinding still works
 ```
 
 ## Properties
@@ -131,7 +145,8 @@ var engine = new GameEngine();
 Gets the player character. The camera always follows the player.
 
 ```csharp
-var engine = new GameEngine();
+// MyGameConfig : GameConfig is the host's own configuration type (see GameConfig.md).
+var engine = new GameEngine(new MyGameConfig());
 engine.Player.Position = new Position(2, 2);
 engine.Player.SpriteSheets.Add(new SpriteSheetRef("hero", CharacterIndex: 1));
 ```
@@ -167,11 +182,25 @@ engine.Map = TileMap.Load("assets/other.tmx"); // the first map is disposed here
 
 ### `GameConfig Config`
 
-Gets or sets the configuration values used by the engine. The engine reads the configuration at
-input time and never caches a snapshot, so updates take effect immediately.
+Gets the host's configuration: the **very same** `GameConfig` instance that was passed to the
+constructor (identity, not a copy). The property is **get-only** — the configuration is part of the
+construction contract and cannot be swapped afterwards — while the instance itself stays mutable.
+
+The declared type is the base `GameConfig`: the engine's own options are the **movement keys**, and
+everything else in the instance (audio volume, GUI key binds, ...) is user-defined data the engine
+ignores. A host that kept the reference it passed to the constructor needs no cast (it is the same
+object); when only the engine is at hand, the concrete type is recovered with a cast
+(`((MyGameConfig)engine.Config).MasterVolume`).
+
+The engine reads the configuration **at input time and never caches a snapshot**, so a change takes
+effect on the next `Update`.
 
 ```csharp
+// The get-only property returns the live instance; rebinding a movement key still works.
 engine.Config.UpKey = Key.Up; // rebind movement up to the up-arrow key
+
+// Recover the host's own options when only the engine is at hand.
+var volume = ((MyGameConfig)engine.Config).MasterVolume;
 ```
 
 ## Methods
@@ -347,7 +376,8 @@ hosts only need to call this when the engine itself is being torn down. Safe to 
 once.
 
 ```csharp
-using var engine = new GameEngine { Map = TileMap.Load("assets/map.tmx") };
+// MyGameConfig : GameConfig is the host's own configuration type (see GameConfig.md).
+using var engine = new GameEngine(new MyGameConfig()) { Map = TileMap.Load("assets/map.tmx") };
 // ... game loop ...
 // engine.Dispose() runs at the end of the using block and disposes the map.
 ```
@@ -483,7 +513,8 @@ engine.SpriteSheetExists(null); // ArgumentNullException
 ## Full example ("hello world")
 
 ```csharp
-var engine = new GameEngine();
+// The host passes its own configuration instance (MyGameConfig : GameConfig, see GameConfig.md).
+var engine = new GameEngine(new MyGameConfig());
 engine.Map = TileMap.Load("assets/map.tmx");
 engine.LoadSpriteSheet("hero", "assets/characters/character_full.png");
 engine.Player.Position = new Position(6, 6);

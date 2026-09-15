@@ -27,7 +27,7 @@ public partial class GameEngineTests
     public void ClampPlayerToMap_UsesFixedOneTileBox_RegardlessOfSpriteSize()
     {
         using var fixture = CreateFilledMapFixture(10, 10); // 480×480 px
-        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        var engine = new GameEngine(new TestGameConfig()) { Map = TileMap.Load(fixture.MapPath) };
 
         // A larger spritesheet (78×108 cells) must not widen or raise the collision box: the
         // clamp still uses the fixed 0.5×0.5-tile lower-body box (the head sticks out visually but
@@ -61,7 +61,7 @@ public partial class GameEngineTests
     {
         const int canvasSize = 240;
         using var fixture = CreateFilledMapFixture(10, 10); // 480×480 px
-        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        var engine = new GameEngine(new TestGameConfig()) { Map = TileMap.Load(fixture.MapPath) };
 
         using (var stream = CharacterTestHelper.CreateSheetStream(seed: 1, width: 936, height: 864))
         {
@@ -88,7 +88,7 @@ public partial class GameEngineTests
     public void ClampPlayerToMap_DefaultSprite_ClampsFeetFootprint()
     {
         using var fixture = CreateFilledMapFixture(10, 10); // 480×480 px
-        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        var engine = new GameEngine(new TestGameConfig()) { Map = TileMap.Load(fixture.MapPath) };
         ConfigurePlayerSprite(engine, seed: 1);
 
         // Beyond the bottom-right corner: the 0.5×0.5 box's half-width is 0.25 tiles, so the feet
@@ -126,7 +126,7 @@ public partial class GameEngineTests
             0, 0, 1, 0,
             0, 0, 1, 0,
         });
-        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        var engine = new GameEngine(new TestGameConfig()) { Map = TileMap.Load(fixture.MapPath) };
         ConfigurePlayerSprite(engine, seed: 1);
 
         // The default 48x48 sprite collides with a fixed 0.5x0.5-tile lower-body box (half a
@@ -160,7 +160,7 @@ public partial class GameEngineTests
             1, 1, 1, 1,
             1, 1, 1, 1,
         });
-        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        var engine = new GameEngine(new TestGameConfig()) { Map = TileMap.Load(fixture.MapPath) };
         ConfigurePlayerSprite(engine, seed: 1);
 
         engine.Player.Position = new Position(1.0, 1.5);
@@ -191,7 +191,7 @@ public partial class GameEngineTests
         }
 
         using var fixture = CreateCollisionMapFixture(5, 5, gids);
-        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        var engine = new GameEngine(new TestGameConfig()) { Map = TileMap.Load(fixture.MapPath) };
         ConfigurePlayerSprite(engine, seed: 1);
 
         // Start flush against the left edge of the wall column (x=3): the fixed 0.5x0.5 box
@@ -219,7 +219,7 @@ public partial class GameEngineTests
     {
         // A 4x4 map whose ground layer draws a tile in every cell but has no collision layer.
         using var fixture = CreateFilledMapFixture(4, 4);
-        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        var engine = new GameEngine(new TestGameConfig()) { Map = TileMap.Load(fixture.MapPath) };
         ConfigurePlayerSprite(engine, seed: 1);
 
         // Feet in row 1 so the fixed 0.5x0.5 tile box (y in [1.0, 1.5]) is fully inside the map.
@@ -250,7 +250,7 @@ public partial class GameEngineTests
         var gids = new uint[16];
         gids[(0 * 4) + 2] = 1;
         using var fixture = CreateCollisionMapFixture(4, 4, gids);
-        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        var engine = new GameEngine(new TestGameConfig()) { Map = TileMap.Load(fixture.MapPath) };
         ConfigurePlayerSprite(engine, seed: 1);
 
         // Feet at y = 1.0: the 0.5×0.5 box spans y ∈ [0.5, 1.0], so the solid tile at (2, 0) is
@@ -274,7 +274,7 @@ public partial class GameEngineTests
         var gids = new uint[16];
         gids[(1 * 4) + 2] = 1;
         using var fixture = CreateCollisionMapFixture(4, 4, gids);
-        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        var engine = new GameEngine(new TestGameConfig()) { Map = TileMap.Load(fixture.MapPath) };
         ConfigurePlayerSprite(engine, seed: 1);
 
         engine.Player.Position = new Position(0.5, 1.5);
@@ -307,7 +307,7 @@ public partial class GameEngineTests
     {
         // A 2x2 map with a ground layer only (no collision layer).
         using var fixture = CreateFilledMapFixture(2, 2);
-        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        var engine = new GameEngine(new TestGameConfig()) { Map = TileMap.Load(fixture.MapPath) };
         ConfigurePlayerSprite(engine, seed: 1);
 
         // Start in row 1 so the fixed 0.5x0.5 box is fully inside the map, then walk right: the
@@ -379,7 +379,7 @@ public partial class GameEngineTests
         }
 
         using var fixture = CreateCollisionMapFixture(6, 6, gids);
-        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        var engine = new GameEngine(new TestGameConfig()) { Map = TileMap.Load(fixture.MapPath) };
         ConfigurePlayerSprite(engine, seed: 1);
 
         engine.Player.Position = new Position(2.0, 1.5);
@@ -411,7 +411,7 @@ public partial class GameEngineTests
         }
 
         using var fixture = CreateCollisionMapFixture(6, 6, gids);
-        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        var engine = new GameEngine(new TestGameConfig()) { Map = TileMap.Load(fixture.MapPath) };
         ConfigurePlayerSprite(engine, seed: 1);
 
         engine.Player.Position = new Position(0.5, 2.0);
@@ -443,7 +443,7 @@ public partial class GameEngineTests
         }
 
         using var fixture = CreateCollisionMapFixture(6, 6, gids);
-        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        var engine = new GameEngine(new TestGameConfig()) { Map = TileMap.Load(fixture.MapPath) };
         ConfigurePlayerSprite(engine, seed: 1);
 
         engine.Player.Position = new Position(5.5, 2.0);
@@ -475,7 +475,7 @@ public partial class GameEngineTests
         }
 
         using var fixture = CreateCollisionMapFixture(6, 6, gids);
-        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        var engine = new GameEngine(new TestGameConfig()) { Map = TileMap.Load(fixture.MapPath) };
         ConfigurePlayerSprite(engine, seed: 1);
 
         engine.Player.Position = new Position(2.0, 5.5);
@@ -507,7 +507,7 @@ public partial class GameEngineTests
         }
 
         using var fixture = CreateCollisionMapFixture(6, 6, gids);
-        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        var engine = new GameEngine(new TestGameConfig()) { Map = TileMap.Load(fixture.MapPath) };
         ConfigurePlayerSprite(engine, seed: 1);
 
         // A single step of 4 tiles (dt = 2.0 at 2 tiles/s) toward the wall at x = 3: the feet
@@ -541,7 +541,7 @@ public partial class GameEngineTests
         }
 
         using var fixture = CreateCollisionMapFixture(3, 4, gids);
-        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        var engine = new GameEngine(new TestGameConfig()) { Map = TileMap.Load(fixture.MapPath) };
         ConfigurePlayerSprite(engine, seed: 1);
 
         // Centred in the corridor entrance (feet x = 1.5, row 0 open): the 0.5x0.5 box spans
@@ -576,7 +576,7 @@ public partial class GameEngineTests
         }
 
         using var fixture = CreateCollisionMapFixture(3, 4, gids);
-        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        var engine = new GameEngine(new TestGameConfig()) { Map = TileMap.Load(fixture.MapPath) };
         using (var stream = CharacterTestHelper.CreateSheetStream(seed: 1, width: 936, height: 864))
         {
             engine.LoadSpriteSheet("hero", stream);
@@ -613,7 +613,7 @@ public partial class GameEngineTests
         gids[(2 * 7) + 3] = 1;
 
         using var fixture = CreateCollisionMapFixture(7, 5, gids);
-        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        var engine = new GameEngine(new TestGameConfig()) { Map = TileMap.Load(fixture.MapPath) };
         ConfigurePlayerSprite(engine, seed: 1);
 
         // The player stands flush against the wall's left boundary, below the wall's bottom
@@ -668,7 +668,7 @@ public partial class GameEngineTests
         }
 
         using var fixture = CreateCollisionMapFixture(6, 6, gids);
-        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        var engine = new GameEngine(new TestGameConfig()) { Map = TileMap.Load(fixture.MapPath) };
         ConfigurePlayerSprite(engine, seed: 1);
 
         // Place the player at an illegal position: feet at y=3.49, so the fixed 0.5x0.5 box
@@ -707,7 +707,7 @@ public partial class GameEngineTests
         }
 
         using var fixture = CreateCollisionMapFixture(6, 6, gids);
-        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        var engine = new GameEngine(new TestGameConfig()) { Map = TileMap.Load(fixture.MapPath) };
         ConfigurePlayerSprite(engine, seed: 1);
 
         engine.Player.Position = new Position(2.0, 3.49);
