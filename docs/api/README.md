@@ -14,7 +14,7 @@ documented**. Every page below includes a commented, compilable example; the tes
 | Type | Kind | Page |
 | --- | --- | --- |
 | `GameEngine` | class (root object) | [GameEngine.md](GameEngine.md) |
-| `GameConfig` | class | [GameConfig.md](GameConfig.md) |
+| `GameConfig` | abstract class (derive your own game configuration) | [GameConfig.md](GameConfig.md) |
 | `Character` | class | [Character.md](Character.md) |
 | `Player` | class | [Player.md](Player.md) |
 | `Direction` | readonly record struct | [Direction.md](Direction.md) |

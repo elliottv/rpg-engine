@@ -368,7 +368,9 @@ public class DocsExamplesTests
     [Fact]
     public void GameConfig_KeyBindings()
     {
-        var config = new GameConfig();
+        // GameConfig is abstract: the game's configuration is a user-defined subclass (here the
+        // test suite's minimal TestGameConfig), which inherits the WASD movement bindings.
+        var config = new TestGameConfig();
 
         // Defaults are WASD and GetDirection maps each key to a direction.
         Assert.Equal(Key.W, config.UpKey);
@@ -392,7 +394,7 @@ public class DocsExamplesTests
     [Fact]
     public void GameConfig_GetMovementDirection_CombinesHeldKeys()
     {
-        var config = new GameConfig();
+        var config = new TestGameConfig();
 
         // A single key maps to its cardinal direction.
         Assert.Equal(Direction.Up, config.GetMovementDirection([Key.W]));
@@ -410,6 +412,32 @@ public class DocsExamplesTests
         // No bound keys (or only unmapped keys) produce no movement.
         Assert.Null(config.GetMovementDirection(Array.Empty<Key>()));
         Assert.Null(config.GetMovementDirection([Key.Space]));
+    }
+
+    /// <summary>
+    /// Verifies the derived-configuration example (docs/api/GameConfig.md): the host's own
+    /// configuration type adds options and key bindings the engine knows nothing about, while
+    /// inheriting the engine movement bindings and the "one key, one action" rule.
+    /// </summary>
+    [Fact]
+    public void GameConfig_DerivedConfiguration_AddsCustomOptions()
+    {
+        // The host defines its configuration: the engine movement keys (inherited) plus the options
+        // of the subsystems the engine does not implement.
+        var config = new MyGameConfig { MasterVolume = 0.5f };
+
+        // The derived configuration inherits the engine defaults...
+        Assert.Equal(Direction.Up, config.GetMovementDirection([Key.W]));
+        Assert.Equal(0.5f, config.MasterVolume);
+
+        // ...and the "one key, one action" rule holds in both directions, leaving the configuration
+        // unchanged when it rejects an assignment: first a movement key on a reserved key...
+        Assert.Throws<ArgumentException>(() => config.UpKey = Key.E);
+        Assert.Equal(Key.W, config.UpKey);
+
+        // ...then a custom binding on a key that moves the player.
+        Assert.Throws<ArgumentException>(() => config.InteractKey = Key.W);
+        Assert.Equal(Key.E, config.InteractKey);
     }
 
     /// <summary>Verifies hosts translate their framework key events to the engine <see cref="Key"/> values.</summary>
@@ -987,6 +1015,34 @@ public class DocsExamplesTests
         // Sprites stay 8-direction: a continuous facing renders with the nearest canonical row.
         Assert.Equal(Direction.DownRight, new Direction(0.9, 0.7).Nearest8());
         Assert.Equal(2, new Direction(0.9, 0.7).RowIndex()); // the Right (side-view) row
+    }
+
+    /// <summary>
+    /// The game configuration of the docs example: the engine's movement keys plus options the
+    /// engine knows nothing about (audio volume, a GUI/interaction key) — the shape a host's own
+    /// configuration takes.
+    /// </summary>
+    private sealed class MyGameConfig : GameConfig
+    {
+        /// <summary>Gets or sets the master audio volume, 0..1. The engine never reads this.</summary>
+        public float MasterVolume { get; set; } = 1f;
+
+        private Key _interactKey = Key.E;
+
+        /// <summary>Gets or sets the key that opens the dialogue/GUI panel.</summary>
+        /// <exception cref="ArgumentException">The key is already bound to a movement direction.</exception>
+        public Key InteractKey
+        {
+            get => _interactKey;
+            set
+            {
+                ThrowIfKeyAlreadyBoundToMovement(value, nameof(value));
+                _interactKey = value;
+            }
+        }
+
+        /// <inheritdoc />
+        protected override IEnumerable<Key> ReservedKeys => [InteractKey];
     }
 
 }

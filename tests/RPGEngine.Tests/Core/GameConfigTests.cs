@@ -17,7 +17,7 @@ public class GameConfigTests
     [Fact]
     public void Defaults_AreWAsd_AndGetDirectionReturnsExpectedDirections()
     {
-        var config = new GameConfig();
+        var config = new TestGameConfig();
 
         Assert.Equal(Key.W, config.UpKey);
         Assert.Equal(Key.S, config.DownKey);
@@ -38,7 +38,7 @@ public class GameConfigTests
     [Fact]
     public void ReassigningUpKey_TakesEffectImmediately()
     {
-        var config = new GameConfig();
+        var config = new TestGameConfig();
 
         config.UpKey = Key.Z;
 
@@ -55,7 +55,7 @@ public class GameConfigTests
         Direction expectedDirection,
         Key previousKey)
     {
-        var config = new GameConfig();
+        var config = new TestGameConfig();
 
         switch (propertyName)
         {
@@ -89,7 +89,7 @@ public class GameConfigTests
         Key conflictingKey,
         Direction originalDirection)
     {
-        var config = new GameConfig();
+        var config = new TestGameConfig();
 
         var exception = Record.Exception(() => Set(config, propertyName, conflictingKey));
 
@@ -118,7 +118,7 @@ public class GameConfigTests
     [InlineData("RightKey", Key.D)]
     public void AssigningSameKeyToItsOwnProperty_IsANoOp(string propertyName, Key ownKey)
     {
-        var config = new GameConfig();
+        var config = new TestGameConfig();
 
         Set(config, propertyName, ownKey); // must not throw
 
@@ -141,7 +141,7 @@ public class GameConfigTests
     [InlineData(Key.Space)]
     public void GetDirection_OnUnmappedKey_ReturnsNull(Key unmappedKey)
     {
-        var config = new GameConfig();
+        var config = new TestGameConfig();
 
         Assert.Null(config.GetDirection(unmappedKey));
     }
@@ -169,7 +169,7 @@ public class GameConfigTests
     [Fact]
     public void Bindings_AlwaysRemainUnique()
     {
-        var config = new GameConfig();
+        var config = new TestGameConfig();
 
         config.UpKey = Key.Up;
         config.DownKey = Key.Down;
@@ -194,7 +194,7 @@ public class GameConfigTests
     [Fact]
     public void GetMovementDirection_SingleKey_ReturnsItsCardinalDirection()
     {
-        var config = new GameConfig();
+        var config = new TestGameConfig();
 
         Assert.Equal(Direction.Up, config.GetMovementDirection([Key.W]));
     }
@@ -203,7 +203,7 @@ public class GameConfigTests
     [Fact]
     public void GetMovementDirection_TwoPerpendicularKeys_ReturnsDiagonal()
     {
-        var config = new GameConfig();
+        var config = new TestGameConfig();
 
         Assert.Equal(Direction.UpRight, config.GetMovementDirection([Key.W, Key.D]));
     }
@@ -212,7 +212,7 @@ public class GameConfigTests
     [Fact]
     public void GetMovementDirection_OppositeKeys_CancelToNull()
     {
-        var config = new GameConfig();
+        var config = new TestGameConfig();
 
         Assert.Null(config.GetMovementDirection([Key.W, Key.S]));
         Assert.Null(config.GetMovementDirection([Key.A, Key.D]));
@@ -222,7 +222,7 @@ public class GameConfigTests
     [Fact]
     public void GetMovementDirection_ThreeKeysWithCancellingHorizontalPair_ReturnsVertical()
     {
-        var config = new GameConfig();
+        var config = new TestGameConfig();
 
         Assert.Equal(Direction.Up, config.GetMovementDirection([Key.W, Key.A, Key.D]));
     }
@@ -231,7 +231,7 @@ public class GameConfigTests
     [Fact]
     public void GetMovementDirection_EmptySet_ReturnsNull()
     {
-        var config = new GameConfig();
+        var config = new TestGameConfig();
 
         Assert.Null(config.GetMovementDirection(Array.Empty<Key>()));
     }
@@ -240,7 +240,7 @@ public class GameConfigTests
     [Fact]
     public void GetMovementDirection_UnmappedKeysAreIgnored()
     {
-        var config = new GameConfig();
+        var config = new TestGameConfig();
 
         Assert.Null(config.GetMovementDirection([Key.Space]));
         Assert.Equal(Direction.Up, config.GetMovementDirection([Key.W, Key.Space]));
@@ -250,7 +250,7 @@ public class GameConfigTests
     [Fact]
     public void GetMovementDirection_RespectsRebinding()
     {
-        var config = new GameConfig();
+        var config = new TestGameConfig();
         config.UpKey = Key.Z;
 
         Assert.Equal(Direction.Up, config.GetMovementDirection([Key.Z]));
@@ -261,9 +261,105 @@ public class GameConfigTests
     [Fact]
     public void GetMovementDirection_NullArgument_ThrowsArgumentNullException()
     {
-        var config = new GameConfig();
+        var config = new TestGameConfig();
 
         Assert.Throws<ArgumentNullException>(() => config.GetMovementDirection(null!));
+    }
+
+    // ---------------------------------------------------------------------
+    // Story 79: GameConfig is the extendable base class of the game's
+    // configuration. A minimal subclass inherits everything above; a
+    // derived configuration adds options the engine ignores and its own key
+    // bindings, without ever touching the engine.
+    // ---------------------------------------------------------------------
+    /// <summary>Locks the decision record: GameConfig is abstract, so a configuration is always an instance of a derived type.</summary>
+    [Fact]
+    public void GameConfig_IsAbstract()
+    {
+        Assert.True(typeof(GameConfig).IsAbstract);
+    }
+
+    /// <summary>Verifies a key reserved by the derived configuration cannot be bound to a movement direction, leaving the configuration unchanged.</summary>
+    [Fact]
+    public void DerivedConfig_ReservedKey_CannotBeBoundToAMovementDirection()
+    {
+        var config = new ExtendedConfig(); // InteractKey == Key.E, and E is reserved
+
+        var exception = Record.Exception(() => config.UpKey = Key.E);
+
+        Assert.IsType<ArgumentException>(exception);
+
+        // The rejected assignment left the configuration exactly as it was.
+        Assert.Equal(Key.W, config.UpKey);
+        Assert.Equal(Direction.Up, config.GetDirection(Key.W));
+        Assert.Null(config.GetDirection(Key.E));
+    }
+
+    /// <summary>Verifies the derived configuration's own binding refuses a key that moves the player, leaving the binding unchanged.</summary>
+    [Fact]
+    public void DerivedConfig_CustomBindingOnAMovementKey_IsRejected()
+    {
+        var config = new ExtendedConfig();
+
+        var exception = Record.Exception(() => config.InteractKey = Key.W); // W moves up
+
+        Assert.IsType<ArgumentException>(exception);
+        Assert.Equal(Key.E, config.InteractKey);
+    }
+
+    /// <summary>Verifies a custom key that is not bound to a movement direction is accepted, and that the reservation follows it.</summary>
+    [Fact]
+    public void DerivedConfig_FreeCustomKey_IsAccepted()
+    {
+        var config = new ExtendedConfig();
+
+        config.InteractKey = Key.Q;
+
+        Assert.Equal(Key.Q, config.InteractKey);
+        Assert.Null(config.GetDirection(Key.Q)); // a custom binding is not a movement direction
+
+        // The reservation follows the property: Q is now reserved, so it cannot move the player.
+        Assert.Throws<ArgumentException>(() => config.UpKey = Key.Q);
+    }
+
+    /// <summary>Verifies the derived class's own options are ordinary live properties the engine ignores.</summary>
+    [Fact]
+    public void DerivedConfig_UserDefinedOptions_AreLiveProperties()
+    {
+        var config = new ExtendedConfig { MasterVolume = 0.5f };
+
+        Assert.Equal(0.5f, config.MasterVolume);
+
+        config.MasterVolume = 0.25f; // live: changing it needs no notification mechanism
+        Assert.Equal(0.25f, config.MasterVolume);
+
+        // The engine-facing options are unaffected by the user-defined ones.
+        Assert.Equal(Direction.Up, config.GetMovementDirection([Key.W]));
+    }
+
+    /// <summary>Verifies the key-to-direction mapping is an extension point: an override of GetMovementDirection is observed by callers.</summary>
+    [Fact]
+    public void DerivedConfig_MovementMappingOverride_IsObservedByCallers()
+    {
+        GameConfig config = new AlwaysRightConfig();
+
+        // The override replaces the inherited WASD mapping completely.
+        Assert.Equal(Direction.Right, config.GetMovementDirection(Array.Empty<Key>()));
+        Assert.Equal(Direction.Right, config.GetMovementDirection([Key.W, Key.S]));
+    }
+
+    /// <summary>Verifies GetDirection is virtual too, and that the inherited GetMovementDirection resolves through the override.</summary>
+    [Fact]
+    public void DerivedConfig_GetDirectionOverride_IsConsumedByInheritedGetMovementDirection()
+    {
+        GameConfig config = new SpaceJumpsUpConfig();
+
+        Assert.Equal(Direction.Up, config.GetDirection(Key.Space));
+
+        // The inherited GetMovementDirection resolves every pressed key through the override, so an
+        // added binding combines with the inherited WASD keys like any other movement key.
+        Assert.Equal(Direction.Up, config.GetMovementDirection([Key.Space]));
+        Assert.Equal(Direction.UpRight, config.GetMovementDirection([Key.Space, Key.D]));
     }
 
     /// <summary>The rebind cases: property, new key, the bound direction and the previous key it replaces.</summary>
@@ -308,4 +404,48 @@ public class GameConfigTests
                 throw new ArgumentException($"Unknown property '{propertyName}'.", nameof(propertyName));
         }
     }
+
+    /// <summary>
+    /// A derived configuration with the two kinds of members the epic cares about: user-defined
+    /// options the engine ignores (<see cref="MasterVolume"/>) and a user-defined key binding
+    /// (<see cref="InteractKey"/>) kept in sync with the inherited movement bindings.
+    /// </summary>
+    private sealed class ExtendedConfig : GameConfig
+    {
+        /// <summary>Gets or sets the master audio volume, 0..1. The engine never reads this.</summary>
+        public float MasterVolume { get; set; } = 1f;
+
+        private Key _interactKey = Key.E;
+
+        /// <summary>Gets or sets the key that opens the dialogue/GUI panel.</summary>
+        /// <exception cref="ArgumentException">The key is already bound to a movement direction.</exception>
+        public Key InteractKey
+        {
+            get => _interactKey;
+            set
+            {
+                ThrowIfKeyAlreadyBoundToMovement(value, nameof(value));
+                _interactKey = value;
+            }
+        }
+
+        /// <inheritdoc />
+        protected override IEnumerable<Key> ReservedKeys => [InteractKey];
+    }
+
+    /// <summary>A derived configuration that replaces the whole mapping: any pressed-key set means "move right".</summary>
+    private sealed class AlwaysRightConfig : GameConfig
+    {
+        /// <inheritdoc />
+        public override Direction? GetMovementDirection(IEnumerable<Key> pressedKeys) => Direction.Right;
+    }
+
+    /// <summary>A derived configuration that extends the mapping: the space bar moves up like W.</summary>
+    private sealed class SpaceJumpsUpConfig : GameConfig
+    {
+        /// <inheritdoc />
+        public override Direction? GetDirection(Key key) =>
+            key == Key.Space ? Direction.Up : base.GetDirection(key);
+    }
+
 }
