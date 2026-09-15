@@ -35,7 +35,7 @@ public partial class GameEngineTests
     [Fact]
     public void Input_UpKeyForOneSecond_MovesPlayerUpByBaseSpeed()
     {
-        var engine = new GameEngine();
+        var engine = new GameEngine(new TestGameConfig());
         engine.Player.Character.BaseSpeed = 2;
         engine.Player.Position = new Position(200, 200);
 
@@ -65,7 +65,7 @@ public partial class GameEngineTests
     [Fact]
     public void Config_RebindUpKeyToZ_UsesZAndIgnoresW()
     {
-        var engine = new GameEngine();
+        var engine = new GameEngine(new TestGameConfig());
         engine.Config.UpKey = Key.Z;
         engine.Player.Position = new Position(100, 100);
 
@@ -98,7 +98,7 @@ public partial class GameEngineTests
     {
         const int canvasSize = 240;
         using var fixture = CreateFilledMapFixture(10, 10); // 480×480 pixels
-        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        var engine = new GameEngine(new TestGameConfig()) { Map = TileMap.Load(fixture.MapPath) };
         ConfigurePlayerSprite(engine, seed: 1);
 
         // Top-left corner: origin (0,0). The player at (0.5, 1.0) has its feet (middle-bottom)
@@ -144,7 +144,7 @@ public partial class GameEngineTests
     {
         const int canvasSize = 240;
         using var fixture = CreateFilledMapFixture(10, 10); // 480×480 red tiles
-        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        var engine = new GameEngine(new TestGameConfig()) { Map = TileMap.Load(fixture.MapPath) };
 
         ConfigurePlayerSprite(engine, seed: 1);
         engine.Player.Position = new Position(0.5, 1.0); // feet at (24, 48) px, sprite at (0,0)
@@ -202,7 +202,7 @@ public partial class GameEngineTests
     [Fact]
     public void Characters_NeverContainsPlayerCharacter()
     {
-        var engine = new GameEngine();
+        var engine = new GameEngine(new TestGameConfig());
 
         Assert.DoesNotContain(engine.Player.Character, engine.Characters);
 
@@ -222,7 +222,7 @@ public partial class GameEngineTests
     [Fact]
     public void Update_NpcStartedWithStartMoving_MovesNpc()
     {
-        var engine = new GameEngine();
+        var engine = new GameEngine(new TestGameConfig());
         var npc = new Character { BaseSpeed = 2, Position = new Position(5, 5) };
         npc.StartMoving(Direction.Left);
         engine.Characters.Add(npc);
@@ -257,7 +257,7 @@ public partial class GameEngineTests
             0, 0, 1, 0,
             0, 0, 1, 0,
         });
-        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        var engine = new GameEngine(new TestGameConfig()) { Map = TileMap.Load(fixture.MapPath) };
         var npc = new Character { BaseSpeed = 2, Position = new Position(0.5, 1.0) };
         npc.StartMoving(Direction.Right);
         engine.Characters.Add(npc);
@@ -281,7 +281,7 @@ public partial class GameEngineTests
     {
         // A 2x2 map with a ground layer only (no collision layer): only the map edge is solid.
         using var fixture = CreateFilledMapFixture(2, 2);
-        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        var engine = new GameEngine(new TestGameConfig()) { Map = TileMap.Load(fixture.MapPath) };
         var npc = new Character { BaseSpeed = 2, Position = new Position(0.5, 1.5) };
         npc.StartMoving(Direction.Left);
         engine.Characters.Add(npc);
@@ -307,7 +307,7 @@ public partial class GameEngineTests
     [Fact]
     public void LoadSpriteSheet_DuplicateName_ThrowsInvalidOperationException()
     {
-        var engine = new GameEngine();
+        var engine = new GameEngine(new TestGameConfig());
         using (var stream = CharacterTestHelper.CreateSheetStream(0))
         {
             engine.LoadSpriteSheet("hero", stream);
@@ -321,7 +321,7 @@ public partial class GameEngineTests
     [Fact]
     public void Render_CharacterWithLoadedSheetAndValidIndex_RendersNonEmpty()
     {
-        var engine = new GameEngine();
+        var engine = new GameEngine(new TestGameConfig());
         using (var stream = CharacterTestHelper.CreateSheetStream(0))
         {
             engine.LoadSpriteSheet("hero", stream);
@@ -339,7 +339,7 @@ public partial class GameEngineTests
     [InlineData(9)]
     public void Render_InvalidCharacterIndex_ThrowsArgumentOutOfRangeException(int characterIndex)
     {
-        var engine = new GameEngine();
+        var engine = new GameEngine(new TestGameConfig());
         using (var stream = CharacterTestHelper.CreateSheetStream(0))
         {
             engine.LoadSpriteSheet("hero", stream);
@@ -362,7 +362,7 @@ public partial class GameEngineTests
     [Fact]
     public void SpriteSheetExists_FullSheet_ReflectsLoadState()
     {
-        var engine = new GameEngine();
+        var engine = new GameEngine(new TestGameConfig());
 
         Assert.False(engine.SpriteSheetExists("hero"));
 
@@ -378,7 +378,7 @@ public partial class GameEngineTests
     [Fact]
     public void SpriteSheetExists_PartSheet_ReturnsTrue()
     {
-        var engine = new GameEngine();
+        var engine = new GameEngine(new TestGameConfig());
         using (var stream = CharacterTestHelper.CreateSheetStream(1))
         {
             engine.LoadPartSpriteSheet("hair", stream, CharacterPartType.Hair1);
@@ -391,7 +391,7 @@ public partial class GameEngineTests
     [Fact]
     public void SpriteSheetExists_UnknownName_ReturnsFalse()
     {
-        var engine = new GameEngine();
+        var engine = new GameEngine(new TestGameConfig());
 
         Assert.False(engine.SpriteSheetExists("missing"));
     }
@@ -400,7 +400,7 @@ public partial class GameEngineTests
     [Fact]
     public void SpriteSheetExists_DifferentCase_ReturnsFalse()
     {
-        var engine = new GameEngine();
+        var engine = new GameEngine(new TestGameConfig());
         using (var stream = CharacterTestHelper.CreateSheetStream(0))
         {
             engine.LoadSpriteSheet("hero", stream);
@@ -414,7 +414,7 @@ public partial class GameEngineTests
     [Fact]
     public void SpriteSheetExists_SurroundingWhitespace_IsTrimmed()
     {
-        var engine = new GameEngine();
+        var engine = new GameEngine(new TestGameConfig());
         using (var stream = CharacterTestHelper.CreateSheetStream(0))
         {
             engine.LoadSpriteSheet("hero", stream);
@@ -428,7 +428,7 @@ public partial class GameEngineTests
     [Fact]
     public void SpriteSheetExists_NullName_ThrowsArgumentNullException()
     {
-        var engine = new GameEngine();
+        var engine = new GameEngine(new TestGameConfig());
 
         Assert.Throws<ArgumentNullException>(() => engine.SpriteSheetExists(null!));
     }
@@ -442,7 +442,7 @@ public partial class GameEngineTests
     [Fact]
     public async Task LoadSpriteSheetAsync_AndSpriteSheetRef_RendersNonEmpty()
     {
-        var engine = new GameEngine();
+        var engine = new GameEngine(new TestGameConfig());
         using (var stream = new AsyncOnlyStream(CharacterTestHelper.CreateSheetStream(0)))
         {
             await engine.LoadSpriteSheetAsync("hero", stream);
@@ -458,7 +458,7 @@ public partial class GameEngineTests
     [Fact]
     public async Task LoadPartSpriteSheetAsync_ComposesParts()
     {
-        var engine = new GameEngine();
+        var engine = new GameEngine(new TestGameConfig());
 
         // body (opaque) + hair2 (opaque) + head (fully transparent, name without '$'). The
         // transparent head lets the hair2 layer show through when facing up, proving the parts
@@ -500,7 +500,7 @@ public partial class GameEngineTests
     [Fact]
     public void Update_HoldingDiagonalPair_MovesDiagonallyAndRevertsOnRelease()
     {
-        var engine = new GameEngine();
+        var engine = new GameEngine(new TestGameConfig());
         engine.Player.Character.BaseSpeed = 2;
         engine.Player.Position = new Position(200, 200);
 
@@ -511,7 +511,7 @@ public partial class GameEngineTests
             engine.Update(FrameDt);
         }
 
-        // UpRight = (+√½, -√½); one second at 2 tiles/s → (±2·√½) ≈ (±1.414) per axis.
+        // UpRight = (+√½, -√½); one second at 2 tiles/s → (±√2) ≈ (±1.414) per axis.
         var component = 2 * Math.Sqrt(0.5);
         Assert.Equal(200 + component, engine.Player.Position.X, precision: 6);
         Assert.Equal(200 - component, engine.Player.Position.Y, precision: 6);
@@ -530,7 +530,7 @@ public partial class GameEngineTests
     [Fact]
     public void Update_OppositeKeysCancel_ProducesNoMovement()
     {
-        var engine = new GameEngine();
+        var engine = new GameEngine(new TestGameConfig());
         engine.Player.Position = new Position(100, 100);
 
         engine.Input(Key.W, true);
@@ -544,7 +544,7 @@ public partial class GameEngineTests
     [Fact]
     public void Update_DiagonalResolution_RespectsConfigRebinding()
     {
-        var engine = new GameEngine();
+        var engine = new GameEngine(new TestGameConfig());
         engine.Config.UpKey = Key.Z;
         engine.Player.Position = new Position(100, 100);
 
@@ -569,7 +569,7 @@ public partial class GameEngineTests
     {
         const int canvasSize = 240;
         using var fixture = CreateFilledMapFixture(2, 2); // 96×96 px
-        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        var engine = new GameEngine(new TestGameConfig()) { Map = TileMap.Load(fixture.MapPath) };
         engine.Player.Position = new Position(0, 0);
 
         // offset = (240 - 96) / (2 * 48) = 1.5 on each axis; the origin is the negative offset.
@@ -598,7 +598,7 @@ public partial class GameEngineTests
     {
         const int canvasSize = 240;
         using var fixture = CreateFilledMapFixture(10, 10); // 480×480 px
-        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        var engine = new GameEngine(new TestGameConfig()) { Map = TileMap.Load(fixture.MapPath) };
 
         // Top-left: origin (0,0).
         engine.Player.Position = new Position(0, 0);
@@ -635,7 +635,7 @@ public partial class GameEngineTests
             },
             tileColors: colors))
         {
-            var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+            var engine = new GameEngine(new TestGameConfig()) { Map = TileMap.Load(fixture.MapPath) };
             ConfigurePlayerSprite(engine, seed: 1);
             engine.Player.Position = new Position(0.5, 1.0); // sprite fills the 48×48 tile
 
@@ -654,7 +654,7 @@ public partial class GameEngineTests
             },
             tileColors: colors))
         {
-            var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+            var engine = new GameEngine(new TestGameConfig()) { Map = TileMap.Load(fixture.MapPath) };
             ConfigurePlayerSprite(engine, seed: 1);
             engine.Player.Position = new Position(0.5, 1.0); // sprite fills the 48×48 tile
 
@@ -691,7 +691,7 @@ public partial class GameEngineTests
                 [1] = new List<(uint FrameTileId, int DurationMs)> { (1, 100), (2, 100) },
             });
 
-        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        var engine = new GameEngine(new TestGameConfig()) { Map = TileMap.Load(fixture.MapPath) };
         ConfigurePlayerSprite(engine, seed: 1);
         engine.Player.Position = new Position(0.5, 1.0); // sprite fills the 48×48 tile at (0,0)
 
@@ -725,7 +725,7 @@ public partial class GameEngineTests
     public void Render_NpcOverNpc_HigherYDrawnOnTop()
     {
         using var fixture = CreateFilledMapFixture(10, 10); // 480x480 red tiles
-        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        var engine = new GameEngine(new TestGameConfig()) { Map = TileMap.Load(fixture.MapPath) };
 
         engine.Characters.Add(ConfigureNpc(engine, "npcLower", seed: 2, characterIndex: 2, new Position(2.0, 2.0)));
         engine.Characters.Add(ConfigureNpc(engine, "npcHigher", seed: 3, characterIndex: 3, new Position(2.0, 2.5)));
@@ -745,7 +745,7 @@ public partial class GameEngineTests
     public void Render_NpcOverPlayer_NpcDrawnOnTop()
     {
         using var fixture = CreateFilledMapFixture(10, 10); // 480x480 red tiles
-        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        var engine = new GameEngine(new TestGameConfig()) { Map = TileMap.Load(fixture.MapPath) };
         ConfigurePlayerSprite(engine, seed: 1);
         engine.Player.Position = new Position(2.0, 2.0);
 
@@ -766,7 +766,7 @@ public partial class GameEngineTests
     public void Render_PlayerOverNpc_PlayerDrawnOnTop()
     {
         using var fixture = CreateFilledMapFixture(10, 10); // 480x480 red tiles
-        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        var engine = new GameEngine(new TestGameConfig()) { Map = TileMap.Load(fixture.MapPath) };
         ConfigurePlayerSprite(engine, seed: 1);
         engine.Player.Position = new Position(2.0, 2.5);
 
@@ -787,7 +787,7 @@ public partial class GameEngineTests
     public void Render_EqualY_KeepsCharactersListOrder()
     {
         using var fixture = CreateFilledMapFixture(10, 10); // 480x480 red tiles
-        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        var engine = new GameEngine(new TestGameConfig()) { Map = TileMap.Load(fixture.MapPath) };
 
         var first = ConfigureNpc(engine, "npcFirst", seed: 2, characterIndex: 2, new Position(2.0, 2.5));
         var second = ConfigureNpc(engine, "npcSecond", seed: 3, characterIndex: 3, new Position(2.0, 2.5));
@@ -819,7 +819,7 @@ public partial class GameEngineTests
     [Fact]
     public void Render_NoMap_CharactersRenderYSorted()
     {
-        var engine = new GameEngine(); // no map: camera origin (0,0), only characters drawn
+        var engine = new GameEngine(new TestGameConfig()); // no map: camera origin (0,0), only characters drawn
 
         engine.Characters.Add(ConfigureNpc(engine, "npcLower", seed: 2, characterIndex: 2, new Position(2.0, 2.0)));
         engine.Characters.Add(ConfigureNpc(engine, "npcHigher", seed: 3, characterIndex: 3, new Position(2.0, 2.5)));
@@ -845,7 +845,7 @@ public partial class GameEngineTests
     [Fact]
     public void SurfaceToWorld_WorldToSurface_AreInversesWithinTolerance()
     {
-        var engine = new GameEngine(); // no map -> camera origin (0,0), ts 48
+        var engine = new GameEngine(new TestGameConfig()); // no map -> camera origin (0,0), ts 48
 
         // With origin (0,0) and ts 48, SurfaceToWorld(408, 408, 960, 960) == (8.5, 8.5).
         var world = engine.SurfaceToWorld(408, 408, 960, 960);
@@ -872,7 +872,7 @@ public partial class GameEngineTests
     {
         const int canvasSize = 240;
         using var fixture = CreateFilledMapFixture(10, 10); // 480×480 px
-        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        var engine = new GameEngine(new TestGameConfig()) { Map = TileMap.Load(fixture.MapPath) };
         ConfigurePlayerSprite(engine, seed: 1);
 
         // Player at (4.5, 4.5) tiles -> camera origin (2, 2) tiles, so the player's world
@@ -907,7 +907,7 @@ public partial class GameEngineTests
         // the player's desired origin (8.5 - 962/96 < 0) clamps to 0 and the map is larger than
         // the canvas, so there is no centering offset.
         using var fixture = CreateFilledMapFixture(21, 21);
-        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        var engine = new GameEngine(new TestGameConfig()) { Map = TileMap.Load(fixture.MapPath) };
         ConfigurePlayerSprite(engine, seed: 1);
         engine.Player.Position = new Position(8.5, 8.5);
 
@@ -940,7 +940,7 @@ public partial class GameEngineTests
     [Fact]
     public void Render_RecordsCanvasSize()
     {
-        var engine = new GameEngine();
+        var engine = new GameEngine(new TestGameConfig());
         Assert.Equal(0, engine.LastCanvasWidth);
         Assert.Equal(0, engine.LastCanvasHeight);
 
@@ -967,7 +967,7 @@ public partial class GameEngineTests
     {
         using var firstFixture = CreateFilledMapFixture(2, 2);
         var firstMap = TileMap.Load(firstFixture.MapPath);
-        var engine = new GameEngine { Map = firstMap };
+        var engine = new GameEngine(new TestGameConfig()) { Map = firstMap };
         Assert.False(firstMap.IsDisposed);
 
         // Replacing the map disposes the previous map.
@@ -989,7 +989,7 @@ public partial class GameEngineTests
     {
         using var fixture = CreateFilledMapFixture(2, 2);
         var map = TileMap.Load(fixture.MapPath);
-        var engine = new GameEngine { Map = map };
+        var engine = new GameEngine(new TestGameConfig()) { Map = map };
         map.Dispose(); // e.g. a host that disposed the map it had loaded directly.
 
         using var bitmap = new SKBitmap(96, 96);
@@ -1006,7 +1006,7 @@ public partial class GameEngineTests
     [Fact]
     public void Update_KeyMovement_RaisesOnStartMovingAndOnStopMoving()
     {
-        var engine = new GameEngine();
+        var engine = new GameEngine(new TestGameConfig());
         engine.Player.Character.BaseSpeed = 2;
         engine.Player.Position = new Position(10, 10);
 
@@ -1034,7 +1034,7 @@ public partial class GameEngineTests
     [Fact]
     public void Update_KeyMovement_ChangingDirectionRaisesOnStartMoving()
     {
-        var engine = new GameEngine();
+        var engine = new GameEngine(new TestGameConfig());
         engine.Player.Character.BaseSpeed = 2;
         engine.Player.Position = new Position(10, 10);
 
@@ -1066,7 +1066,7 @@ public partial class GameEngineTests
     [Fact]
     public void Update_KeyMovement_PressingSecondKeyForDiagonal_RaisesOnStartMoving()
     {
-        var engine = new GameEngine();
+        var engine = new GameEngine(new TestGameConfig());
         engine.Player.Character.BaseSpeed = 2;
         engine.Player.Position = new Position(10, 10);
 
@@ -1103,7 +1103,7 @@ public partial class GameEngineTests
     [Fact]
     public void Update_KeyMovement_ReleasingOneKeyOfDiagonal_RevertsAndRaisesOnStartMoving()
     {
-        var engine = new GameEngine();
+        var engine = new GameEngine(new TestGameConfig());
         engine.Player.Character.BaseSpeed = 2;
         engine.Player.Position = new Position(10, 10);
 
