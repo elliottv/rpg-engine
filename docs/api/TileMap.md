@@ -154,8 +154,9 @@ replaced and when the engine itself is disposed, so hosts usually do not call `D
 directly.
 
 ```csharp
+// MyGameConfig : GameConfig is the host's own configuration type (see GameConfig.md).
 // The engine owns the map: replacing it (or disposing the engine) disposes it automatically.
-var engine = new GameEngine { Map = TileMap.Load("assets/map.tmx") };
+var engine = new GameEngine(new MyGameConfig()) { Map = TileMap.Load("assets/map.tmx") };
 engine.Map = TileMap.Load("assets/other.tmx"); // the first map is disposed here
 engine.Dispose();                              // the current map is disposed here
 ```

@@ -103,7 +103,8 @@ canvas.DrawImage(icon, new SKPoint(0, 0));
 ## Example: loading a set and displaying an icon above a character
 
 ```csharp
-var engine = new GameEngine();
+// MyGameConfig : GameConfig is the host's own configuration type (see GameConfig.md).
+var engine = new GameEngine(new MyGameConfig());
 
 // Load the player's full spritesheet and the icon set (a 96×64 PNG = 3 columns × 2 rows).
 engine.LoadSpriteSheet("hero", "assets/characters/character_full.png");
