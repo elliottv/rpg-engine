@@ -45,7 +45,7 @@ public partial class GameEngineTests
                 1, 1, 2, 2,
             }) },
             tileColors: new[] { SKColors.Red, SKColors.Blue });
-        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        var engine = new GameEngine(new TestGameConfig()) { Map = TileMap.Load(fixture.MapPath) };
 
         // Player near the top-left, NPC near the bottom-right, both away from the sampled tiles.
         engine.Player.Position = new Position(0.5, 0.5);
@@ -91,7 +91,7 @@ public partial class GameEngineTests
     public void RenderMinimap_Dots_AtScaledPositions()
     {
         using var fixture = CreateFilledMapFixture(2, 2); // 96x96 red map
-        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        var engine = new GameEngine(new TestGameConfig()) { Map = TileMap.Load(fixture.MapPath) };
 
         // A 200x200 canvas: baseFit = min(200/96, 200/96) = 25/12, so the 96x96 map is scaled to
         // exactly 200x200 and fills the canvas (origin 0,0).
@@ -127,7 +127,7 @@ public partial class GameEngineTests
             10, 10,
             new[] { new TileLayerSpec("ground", gids) },
             tileColors: new[] { SKColors.Red, SKColors.Blue });
-        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        var engine = new GameEngine(new TestGameConfig()) { Map = TileMap.Load(fixture.MapPath) };
 
         const int canvasSize = 240; // baseFit 0.5; zoom 4 -> scale 2, visible region 120x120 map px
 
@@ -168,7 +168,7 @@ public partial class GameEngineTests
     public void RenderMinimap_DotOutsideVisibleRegion_IsNotDrawn()
     {
         using var fixture = CreateFilledMapFixture(10, 10); // 480x480 red map
-        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        var engine = new GameEngine(new TestGameConfig()) { Map = TileMap.Load(fixture.MapPath) };
 
         const int canvasSize = 240; // zoom 4 -> scale 2, visible region 120x120 map px
         engine.Player.Position = new Position(5, 5); // visible region (180,180)-(300,300)
@@ -195,7 +195,7 @@ public partial class GameEngineTests
     [Fact]
     public void RenderMinimap_NoMap_LeavesCanvasUntouched()
     {
-        var engine = new GameEngine(); // no map
+        var engine = new GameEngine(new TestGameConfig()); // no map
 
         using var bitmap = new SKBitmap(120, 90);
         using (var canvas = new SKCanvas(bitmap))
@@ -222,7 +222,7 @@ public partial class GameEngineTests
     public void RenderMinimap_NonPositiveZoom_ThrowsArgumentOutOfRangeException(double zoomLevel)
     {
         using var fixture = CreateFilledMapFixture(2, 2);
-        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        var engine = new GameEngine(new TestGameConfig()) { Map = TileMap.Load(fixture.MapPath) };
 
         using var bitmap = new SKBitmap(96, 96);
         using var canvas = new SKCanvas(bitmap);
@@ -234,7 +234,7 @@ public partial class GameEngineTests
     public void RenderMinimap_SmallPositiveZoom_IsAccepted()
     {
         using var fixture = CreateFilledMapFixture(2, 2);
-        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        var engine = new GameEngine(new TestGameConfig()) { Map = TileMap.Load(fixture.MapPath) };
 
         // zoom 0.5 on a 200x200 canvas: scale = 25/24, the 96x96 map is scaled to 100x100 and
         // centered with 50 px margins; the map is still drawn (e.g. its center is a map pixel).
@@ -265,7 +265,7 @@ public partial class GameEngineTests
             {
                 [0] = new List<(uint FrameTileId, int DurationMs)> { (0, 100), (1, 100), (2, 100) },
             });
-        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        var engine = new GameEngine(new TestGameConfig()) { Map = TileMap.Load(fixture.MapPath) };
 
         // Place the player away from the animated cell so the green player dot never overlaps the
         // sampled pixel. A 96x96 map on a 96x96 canvas: scale 1, origin (0,0), so the animated
@@ -294,7 +294,7 @@ public partial class GameEngineTests
     public void RenderMinimap_DoesNotMutateEngineState_MainRenderUnchanged()
     {
         using var fixture = CreateFilledMapFixture(4, 4);
-        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        var engine = new GameEngine(new TestGameConfig()) { Map = TileMap.Load(fixture.MapPath) };
         ConfigurePlayerSprite(engine, seed: 1);
         engine.Player.Position = new Position(1.5, 1.5);
         engine.Characters.Add(new Character { Position = new Position(2.5, 2.5) });
