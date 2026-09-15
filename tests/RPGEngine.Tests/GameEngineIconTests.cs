@@ -49,7 +49,7 @@ public class GameEngineIconTests
         var path = WriteTempPng(IconSetTestHelper.CreateIconSetPng(rows: 2, cols: 3));
         try
         {
-            var byPath = new GameEngine();
+            var byPath = new GameEngine(new TestGameConfig());
             byPath.LoadIconSet(path);
             ConfigurePlayer(byPath);
             byPath.Player.Character.IconIndex = 0;
@@ -61,7 +61,7 @@ public class GameEngineIconTests
         }
 
         // By stream.
-        var byStream = new GameEngine();
+        var byStream = new GameEngine(new TestGameConfig());
         using (var stream = IconSetTestHelper.CreateIconSetStream(rows: 2, cols: 3))
         {
             byStream.LoadIconSet(stream);
@@ -72,7 +72,7 @@ public class GameEngineIconTests
         AssertIconRendered(byStream, expected);
 
         // Async via an async-only stream (proves no synchronous read of the caller's stream).
-        var byAsync = new GameEngine();
+        var byAsync = new GameEngine(new TestGameConfig());
         using (var stream = new AsyncOnlyStream(IconSetTestHelper.CreateIconSetStream(rows: 2, cols: 3)))
         {
             await byAsync.LoadIconSetAsync(stream);
@@ -90,7 +90,7 @@ public class GameEngineIconTests
     [Fact]
     public void LoadIconSet_ReplacesPreviousSet()
     {
-        var engine = new GameEngine();
+        var engine = new GameEngine(new TestGameConfig());
 
         // Set A: 96×64 (3 columns × 2 rows).
         using (var streamA = IconSetTestHelper.CreateIconSetStream(rows: 2, cols: 3))
@@ -122,7 +122,7 @@ public class GameEngineIconTests
     [Fact]
     public async Task LoadIconSet_InvalidInput_Throws()
     {
-        var engine = new GameEngine();
+        var engine = new GameEngine(new TestGameConfig());
 
         // null path / null stream.
         Assert.Throws<ArgumentNullException>(() => engine.LoadIconSet((string)null!));
@@ -144,7 +144,7 @@ public class GameEngineIconTests
     [Fact]
     public void Render_CharacterWithIconIndex_DrawsIconAboveSprite()
     {
-        var engine = new GameEngine();
+        var engine = new GameEngine(new TestGameConfig());
         ConfigurePlayer(engine);
         engine.Player.Character.IconIndex = 0;
         using (var iconStream = IconSetTestHelper.CreateIconSetStream(rows: 2, cols: 3))
@@ -168,7 +168,7 @@ public class GameEngineIconTests
     [Fact]
     public void Render_CharacterWithoutIconIndex_DrawsNoIcon()
     {
-        var engine = new GameEngine();
+        var engine = new GameEngine(new TestGameConfig());
         ConfigurePlayer(engine);
         using (var iconStream = IconSetTestHelper.CreateIconSetStream(rows: 2, cols: 3))
         {
@@ -188,7 +188,7 @@ public class GameEngineIconTests
     [Fact]
     public void Render_TwoCharacters_DifferentIcons()
     {
-        var engine = new GameEngine();
+        var engine = new GameEngine(new TestGameConfig());
         using (var iconStream = IconSetTestHelper.CreateIconSetStream(rows: 2, cols: 3))
         {
             engine.LoadIconSet(iconStream);
@@ -221,7 +221,7 @@ public class GameEngineIconTests
     [Fact]
     public void Render_CharacterWithIconIndex_NoIconSetLoaded_Throws()
     {
-        var engine = new GameEngine();
+        var engine = new GameEngine(new TestGameConfig());
         ConfigurePlayer(engine);
         engine.Player.Character.IconIndex = 0;
 
