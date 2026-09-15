@@ -44,7 +44,10 @@ internal static class SampleScene
     /// <param name="assetsRoot">Directory containing the materialized fixtures.</param>
     public static GameEngine Create(string assetsRoot)
     {
-        var engine = new GameEngine
+        // The engine is built with the host's configuration instance, which is mandatory (there is
+        // no parameterless constructor): the test configuration inherits the engine's WASD
+        // movement bindings.
+        var engine = new GameEngine(new TestGameConfig())
         {
             Map = TileMap.Load(Path.Combine(assetsRoot, FixtureAssets.MapFile)),
         };

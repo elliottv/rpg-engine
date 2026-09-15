@@ -68,7 +68,9 @@ public sealed class GameScene
             await http.GetByteArrayAsync(baseUrl + "map.tmx").ConfigureAwait(false),
             writable: false);
 
-        var engine = new GameEngine
+        // The engine is built with the host's own configuration instance (an instance of
+        // GameConfig is mandatory: the engine never creates a default configuration).
+        var engine = new GameEngine(new SampleGameConfig())
         {
             Map = await TileMap.LoadAsync(
                 mapStream,
