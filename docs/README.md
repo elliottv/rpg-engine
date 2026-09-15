@@ -128,7 +128,10 @@ foreach (var layer in engine.Map?.ObjectLayers ?? [])
 > (BaseSpeed * factor * dt)` along whatever unit vector it faces. Three surfaces consume the
 > type:
 > - **Key input** maps to the **8 canonical unit directions** (`W`+`D` → up-right, opposites
->   cancel), so keyboard movement is unchanged.
+>   cancel), so keyboard movement is unchanged. Which key does what is the game's configuration: a
+>   **user-defined subclass of `GameConfig`** (`MyGameConfig : GameConfig`) whose engine-defined
+>   options are the movement keys and whose other properties (audio volume, GUI key binds, …) the
+>   engine ignores (see `docs/api/GameConfig.md`).
 > - **Click-to-move** uses **continuous directions**: each auto-walk leg faces and reports the
 >   exact unit vector toward the next waypoint centre (never quantized), while displacement still
 >   ends centred on the clicked tile.
@@ -169,7 +172,7 @@ foreach (var layer in engine.Map?.ObjectLayers ?? [])
 | [api/MapProperty.md](api/MapProperty.md) / [api/MapPropertyType.md](api/MapPropertyType.md) | Typed map/layer/object custom properties. |
 | [api/TileMapObject.md](api/TileMapObject.md) / [api/TileMapObjectShape.md](api/TileMapObjectShape.md) / [api/TileMapObjectLayer.md](api/TileMapObjectLayer.md) | The object-layer read model. |
 | [api/TiledAssetFetcher.md](api/TiledAssetFetcher.md) / [api/TiledAssetFetcherAsync.md](api/TiledAssetFetcherAsync.md) | Resolving Tiled assets by URI (sync and async). |
-| [api/GameConfig.md](api/GameConfig.md) / [api/Key.md](api/Key.md) | Movement key bindings and host key translation (including `GetMovementDirection`). |
+| [api/GameConfig.md](api/GameConfig.md) / [api/Key.md](api/Key.md) | The game's configuration: the `GameConfig` base class a host derives from (movement key bindings, `GetMovementDirection`) and host key translation. |
 | [api/Position.md](api/Position.md) / [api/Direction.md](api/Direction.md) / [api/DirectionExtensions.md](api/DirectionExtensions.md) | Core primitives and the 8-direction extensions. |
 
 ## Building and running

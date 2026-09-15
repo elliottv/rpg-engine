@@ -52,7 +52,7 @@ The eight canonical unit directions, in the historical enum order.
 ### `static Direction operator -(Direction d)`
 
 Returns the opposite direction: component-wise negation `(-X, -Y)`. For the eight canonical
-directions this matches the enum's historical opposite (`Down` ⇄ `Up`, `Left` ⇄ `Right`, and
+directions this matches the enum's historical opposite (`Down` ↔ `Up`, `Left` ↔ `Right`, and
 each diagonal flips both signs); it stays well-defined for any continuous direction.
 
 ### `static Direction operator *(Direction d, double scalar)` / `static Direction operator *(double scalar, Direction d)`
