@@ -172,7 +172,7 @@ public class SampleSceneTests
     {
         using var fixtures = FixtureAssets.MaterializeToTempDirectory();
 
-        var engine = new GameEngine();
+        var engine = new GameEngine(new TestGameConfig());
         engine.LoadPartSpriteSheet("body", fixtures.PathOf(FixtureAssets.PartBody), CharacterPartType.Body);
         engine.LoadPartSpriteSheet("face", fixtures.PathOf(FixtureAssets.PartFace), CharacterPartType.Face);
         engine.LoadPartSpriteSheet("hair1", fixtures.PathOf(FixtureAssets.PartHair1), CharacterPartType.Hair1);
@@ -226,7 +226,7 @@ public class SampleSceneTests
     {
         var mapBytes = File.ReadAllBytes(FixtureAssets.FilePath(FixtureAssets.MapFile));
 
-        var engine = new GameEngine
+        var engine = new GameEngine(new TestGameConfig())
         {
             Map = TileMap.Load(new MemoryStream(mapBytes, writable: false), new Uri("file:///fixtures/map.tmx"), FetchAsset),
         };
