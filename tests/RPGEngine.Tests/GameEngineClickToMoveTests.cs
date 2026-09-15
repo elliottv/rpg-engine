@@ -35,7 +35,7 @@ public partial class GameEngineTests
     public void Click_OnWalkableTile_WalksAlongPathAndEndsCenteredOnClickedTile()
     {
         using var fixture = CreateFilledMapFixture(10, 10);
-        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        var engine = new GameEngine(new TestGameConfig()) { Map = TileMap.Load(fixture.MapPath) };
         ConfigurePlayerSprite(engine, seed: 1);
         engine.Player.Position = new Position(0.5, 1.5);
 
@@ -83,7 +83,7 @@ public partial class GameEngineTests
     public void Click_OnStartMoving_FiresPerStep_AndOnStopMovingOnCompletion()
     {
         using var fixture = CreateFilledMapFixture(10, 10);
-        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        var engine = new GameEngine(new TestGameConfig()) { Map = TileMap.Load(fixture.MapPath) };
         ConfigurePlayerSprite(engine, seed: 1);
         // Off-tile-centre (but inside the legal collision bounds, x >= 0.25), so the first leg
         // is non-canonical.
@@ -143,7 +143,7 @@ public partial class GameEngineTests
         }
 
         using var fixture = CreateCollisionMapFixture(6, 6, gids);
-        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        var engine = new GameEngine(new TestGameConfig()) { Map = TileMap.Load(fixture.MapPath) };
         ConfigurePlayerSprite(engine, seed: 1);
         engine.Player.Position = new Position(0.5, 1.5);
 
@@ -178,7 +178,7 @@ public partial class GameEngineTests
         gids[(1 * 7) + 3] = 1;
 
         using var fixture = CreateCollisionMapFixture(7, 5, gids);
-        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        var engine = new GameEngine(new TestGameConfig()) { Map = TileMap.Load(fixture.MapPath) };
         ConfigurePlayerSprite(engine, seed: 1);
         engine.Player.Position = new Position(0.5, 3.5);
 
@@ -219,7 +219,7 @@ public partial class GameEngineTests
         }
 
         using var fixture = CreateCollisionMapFixture(7, 7, gids);
-        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        var engine = new GameEngine(new TestGameConfig()) { Map = TileMap.Load(fixture.MapPath) };
         ConfigurePlayerSprite(engine, seed: 1);
         engine.Player.Position = new Position(0.5, 1.5);
 
@@ -241,7 +241,7 @@ public partial class GameEngineTests
     public void Input_KeyPressDuringAutoWalk_CancelsWalk_ButReleaseAloneDoesNot()
     {
         using var fixture = CreateFilledMapFixture(10, 10);
-        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        var engine = new GameEngine(new TestGameConfig()) { Map = TileMap.Load(fixture.MapPath) };
         ConfigurePlayerSprite(engine, seed: 1);
         engine.Player.Position = new Position(0.5, 1.5);
 
@@ -271,7 +271,7 @@ public partial class GameEngineTests
     public void Click_DuringAutoWalk_ReplacesDestinationWithoutStopping()
     {
         using var fixture = CreateFilledMapFixture(10, 10);
-        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        var engine = new GameEngine(new TestGameConfig()) { Map = TileMap.Load(fixture.MapPath) };
         ConfigurePlayerSprite(engine, seed: 1);
         engine.Player.Position = new Position(0.5, 1.5);
 
@@ -311,7 +311,7 @@ public partial class GameEngineTests
     public void Click_BeforeAnyRender_IsIgnoredWithoutThrowing()
     {
         using var fixture = CreateFilledMapFixture(10, 10);
-        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        var engine = new GameEngine(new TestGameConfig()) { Map = TileMap.Load(fixture.MapPath) };
 
         // No Render has happened, so the canvas size is unknown: the click must be a no-op.
         engine.Click(120, 90);
@@ -335,7 +335,7 @@ public partial class GameEngineTests
     public void Click_OnNonCentredStart_FirstStepFacesAndReportsContinuousDirection()
     {
         using var fixture = CreateFilledMapFixture(10, 10);
-        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        var engine = new GameEngine(new TestGameConfig()) { Map = TileMap.Load(fixture.MapPath) };
         ConfigurePlayerSprite(engine, seed: 1);
         // Deliberately skewed (off-tile-centre, but inside the legal collision bounds) start so
         // the first leg is strongly non-canonical.
@@ -382,7 +382,7 @@ public partial class GameEngineTests
     {
         // Axis-aligned centred path: straight down column 0 from tile (0,1) to tile (0,6).
         using var fixture = CreateFilledMapFixture(10, 10);
-        var engine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        var engine = new GameEngine(new TestGameConfig()) { Map = TileMap.Load(fixture.MapPath) };
         ConfigurePlayerSprite(engine, seed: 1);
         engine.Player.Position = new Position(0.5, 1.5); // tile-centred start
 
@@ -410,7 +410,7 @@ public partial class GameEngineTests
 
         // Diagonal centred path: the legs are the canonical diagonal unit vector within
         // floating-point precision (1/√2 vs the RootHalf constant).
-        var diagonalEngine = new GameEngine { Map = TileMap.Load(fixture.MapPath) };
+        var diagonalEngine = new GameEngine(new TestGameConfig()) { Map = TileMap.Load(fixture.MapPath) };
         ConfigurePlayerSprite(diagonalEngine, seed: 1);
         diagonalEngine.Player.Position = new Position(0.5, 1.5);
 
