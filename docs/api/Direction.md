@@ -52,7 +52,7 @@ The eight canonical unit directions, in the historical enum order.
 ### `static Direction operator -(Direction d)`
 
 Returns the opposite direction: component-wise negation `(-X, -Y)`. For the eight canonical
-directions this matches the enum's historical opposite (`Down` ↔ `Up`, `Left` ↔ `Right`, and
+directions this matches the enum's historical opposite (`Down` ⇄ `Up`, `Left` ⇄ `Right`, and
 each diagonal flips both signs); it stays well-defined for any continuous direction.
 
 ### `static Direction operator *(Direction d, double scalar)` / `static Direction operator *(double scalar, Direction d)`
@@ -123,8 +123,9 @@ var continuous = new Direction(0.6, 0.8);
 Console.WriteLine(continuous.Length); // 1 (0.6² + 0.8² = 1)
 Console.WriteLine(continuous);        // "(0.6, 0.8)" — not a canonical name
 
-// Key input always yields one of the eight canonical directions...
-var config = new GameConfig();
+// Key input always yields one of the eight canonical directions. Which key moves where comes from
+// the game's configuration, a user-defined subclass of GameConfig (see GameConfig.md).
+var config = new MyGameConfig();
 Console.WriteLine(config.GetMovementDirection([Key.W, Key.D])); // UpRight
 
 // ...and sprites adapt a continuous facing to the nearest canonical 8-direction row.
