@@ -53,7 +53,7 @@ GameEngine
 ├── Player (a Player wrapper around a Character)
 ├── Characters (IList<Character> of NPCs)
 ├── Map (TileMap?, owns its own TileSets)
-├── Config (GameConfig — WASD movement bindings)
+├── Config (GameConfig — the game's user-defined configuration subclass)
 ├── SpriteSheetManager (internal — loads and resolves full/part sheets by name)
 └── pressed-keys state (internal — fed by Input(Key, isPressed))
 ```
@@ -66,6 +66,11 @@ for each frame:
     engine.Update(dt)                        // move + animate
     engine.Render(canvas, dt)                // draw map + NPCs + player
 ```
+
+The configuration is the host's own subclass of `GameConfig` (`MyGameConfig : GameConfig`): the
+engine's own options are the four movement keys (WASD by default, with their `GetDirection` /
+`GetMovementDirection` mapping and the "one key, one action" rule), and whatever else the subclass
+declares (audio volume, GUI key binds, …) is plain host data the engine ignores.
 
 `GameEngine` never runs its own loop and never blocks.
 
