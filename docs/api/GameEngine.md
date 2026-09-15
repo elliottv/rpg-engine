@@ -68,6 +68,8 @@ application.
   auto-walk path; a key **release** does not; and while a bound movement key is held the
   auto-walk does not advance (manual key movement takes priority). A `Click` always replaces the
   path unless the new target is invalid (solid / no path), in which case it cancels the walk.
+  A host whose input surface loses focus calls `ReleaseAllInputs` (see below) to clear every held
+  key (the matching key-up never arrives) and cancel any queued walk.
   See [Architecture](../Architecture.md).
 - When a map is set, every character's displacement is resolved with **axis-separated movement
   and per-axis slide-to-boundary clamping** against the map's solid tiles (layers declaring the
@@ -221,6 +223,40 @@ when no movement key is held.
 engine.Input(Key.D, isPressed: true);   // key-down (also cancels any auto-walk)
 engine.Update(dt);
 engine.Input(Key.D, isPressed: false);  // key-up
+```
+
+### `void ReleaseAllInputs()`
+
+Releases every key currently held and cancels any in-progress auto-walk, returning the input state
+to "nothing is pressed".
+
+- **Use case:** hosts call it when the input surface loses focus or goes to the background (WPF
+  `Window.Deactivated` / `LostKeyboardFocus`, Blazor `blur` / `visibilitychange`, a mobile pause).
+  A key held at that moment would stay stuck down forever otherwise: the engine never receives the
+  matching key-up event, so the player would keep walking until that key is pressed and released
+  again.
+- **Effect:** the pressed-keys set is cleared (equivalent to a key-up for every held key) and the
+  auto-walk path is emptied, so a queued click-to-move walk is cancelled.
+- **The call itself** raises no event and changes neither the player's position nor its facing. On
+  the next `Update`, with no bound key held and no auto-walk path, the engine stops the player:
+  `Player.OnStopMoving` fires with the last direction (a player that was already idle raises
+  nothing, because `Player.Stop` is a no-op when idle).
+- **Idempotence:** safe to call at any time and any number of times, including when nothing is
+  pressed and no walk is running (a no-op).
+- **Afterwards** new `Input` events work normally (movement resumes on the next `Update`) and
+  `Click` can start a fresh auto-walk.
+
+```csharp
+var config = new MyGameConfig();
+var engine = new GameEngine(config);
+
+engine.Input(Key.D, isPressed: true);
+engine.Update(dt: 1.0 / 60);   // the player starts moving right
+
+// The host's input surface lost focus (e.g. WPF Window.Deactivated, Blazor blur):
+engine.ReleaseAllInputs();     // D is released and any auto-walk is cancelled
+
+engine.Update(dt: 1.0 / 60);   // the player stops here and OnStopMoving fires
 ```
 
 ### `void Update(double dt)`

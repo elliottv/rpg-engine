@@ -11,7 +11,8 @@ namespace RPGEngine.Sample.Desktop;
 /// The main window of the desktop sample host. It materializes the committed fixtures, builds
 /// the canonical sample scene, runs a 60 Hz game loop that calls
 /// <c>GameEngine.Update(dt)</c> and <c>GameEngine.Render(canvas, dt)</c>, and forwards WPF key
-/// events to <c>GameEngine.Input(Key, isPressed)</c>.
+/// events to <c>GameEngine.Input(Key, isPressed)</c>, and releases every held key with
+/// <c>GameEngine.ReleaseAllInputs()</c> when the window loses the keyboard focus.
 /// </summary>
 public partial class MainWindow : Window
 {
@@ -29,6 +30,13 @@ public partial class MainWindow : Window
         _engine = SampleScene.Create(fixtures.Root);
 
         CompositionTarget.Rendering += OnRendering;
+        Deactivated += (_, _) =>
+        {
+            // The window lost the keyboard focus: a key held at that moment never receives its
+            // key-up event, so every held key is released (and any queued auto-walk cancelled)
+            // instead of leaving the player walking with a stuck key.
+            _engine.ReleaseAllInputs();
+        };
         Closed += (_, _) =>
         {
             // The engine owns the map (a TileMap is IDisposable: it holds the prerendered

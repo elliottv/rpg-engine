@@ -128,6 +128,50 @@ public class DocsExamplesTests
     }
 
     // ---------------------------------------------------------------------
+    // docs/api/GameEngine.md: the ReleaseAllInputs example (story 81). A host
+    // whose input surface loses focus calls it so a key held at that moment is
+    // released (the engine would never receive the matching key-up) and any
+    // queued auto-walk is cancelled: the player stops on the next Update and
+    // Player.OnStopMoving fires once with the last direction.
+    // ---------------------------------------------------------------------
+    /// <summary>
+    /// The <c>ReleaseAllInputs</c> example from the documentation: a key is held (the player moves
+    /// right), the host's input surface loses focus and calls <see cref="GameEngine.ReleaseAllInputs"/>,
+    /// and the player stops on the next <see cref="GameEngine.Update(double)"/> with
+    /// <see cref="Player.OnStopMoving"/> fired once - the held key is really released instead of
+    /// staying stuck down.
+    /// </summary>
+    [Fact]
+    public void GameEngine_ReleaseAllInputs_StopsStuckPlayer()
+    {
+        var config = new MyGameConfig();
+        var engine = new GameEngine(config);
+
+        var stops = new List<Direction>();
+        engine.Player.OnStopMoving += (_, direction) => stops.Add(direction);
+
+        engine.Input(Key.D, isPressed: true);
+        engine.Update(dt: 1.0 / 60);   // the player starts moving right
+
+        Assert.Equal(Direction.Right, engine.Player.Direction);
+        var positionWhileMoving = engine.Player.Position;
+        Assert.True(positionWhileMoving.X > 0, "Holding D moves the player right.");
+
+        // The host's input surface lost focus (e.g. WPF Window.Deactivated, Blazor blur):
+        engine.ReleaseAllInputs();     // D is released and any auto-walk is cancelled
+
+        engine.Update(dt: 1.0 / 60);   // the player stops here and OnStopMoving fires
+
+        // The player stopped exactly where the focus loss caught it, and the stop was reported.
+        Assert.Equal(positionWhileMoving, engine.Player.Position);
+        Assert.Equal(new[] { Direction.Right }, stops);
+
+        // The key really was released: the following frames do not move the player either.
+        engine.Update(dt: 1.0 / 60);
+        Assert.Equal(positionWhileMoving, engine.Player.Position);
+    }
+
+    // ---------------------------------------------------------------------
     // docs/api/GameEngine.md: the Render example. When a map is smaller than the
     // canvas it is centered and the area around it is black (story 24).
     // ---------------------------------------------------------------------

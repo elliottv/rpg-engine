@@ -340,8 +340,38 @@ public sealed class GameEngine : IDisposable
     }
 
     /// <summary>
-    /// Clears all pressed keys and the auto walk path
+    /// Releases every key currently held and cancels any in-progress auto-walk, returning the
+    /// input state to &quot;nothing is pressed&quot;.
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <strong>Use case:</strong> hosts call it when the input surface loses focus or goes to the
+    /// background (WPF <c>Window.Deactivated</c> / <c>LostKeyboardFocus</c>, Blazor <c>blur</c> /
+    /// <c>visibilitychange</c>, a mobile pause). A key held at that moment would otherwise stay
+    /// stuck down forever: the engine never receives the matching key-up event, so the player would
+    /// keep walking until the key is pressed and released again.
+    /// </para>
+    /// <para>
+    /// <strong>Effect:</strong> the pressed-keys set is cleared (equivalent to a key-up for every
+    /// held key) and the auto-walk path is emptied, so a queued click-to-move walk is cancelled.
+    /// </para>
+    /// <para>
+    /// <strong>Interaction with the loop:</strong> the call itself raises no event and changes
+    /// neither the player's position nor its facing. On the next <see cref="Update(double)"/>,
+    /// with no bound key held and no auto-walk path, the engine stops the player:
+    /// <see cref="Player.OnStopMoving"/> fires with the last direction. A player that was already
+    /// idle raises nothing, because <see cref="Player.Stop"/> is a no-op when idle.
+    /// </para>
+    /// <para>
+    /// <strong>Idempotence:</strong> safe to call at any time and any number of times, including
+    /// when nothing is pressed and no walk is running (a no-op).
+    /// </para>
+    /// <para>
+    /// <strong>Afterwards:</strong> new <see cref="Input"/> events work normally (movement resumes
+    /// on the next <see cref="Update(double)"/>) and <see cref="Click(double, double)"/> can start
+    /// a fresh auto-walk.
+    /// </para>
+    /// </remarks>
     public void ReleaseAllInputs()
     {
         _autoWalkPath.Clear();
