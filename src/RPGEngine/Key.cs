@@ -20,6 +20,8 @@ namespace RPGEngine;
 /// </remarks>
 public enum Key
 {
+    /// <summary>No key.</summary>
+    None,
     /// <summary>The A key.</summary>
     A,
 
