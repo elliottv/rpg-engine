@@ -77,6 +77,7 @@ public abstract class GameConfig
         get => _upKey;
         set
         {
+            if(value != Key.None)
             ThrowIfKeyAlreadyBoundToAnotherDirection(value, Direction.Up, nameof(value));
             _upKey = value;
         }
@@ -95,6 +96,7 @@ public abstract class GameConfig
         get => _downKey;
         set
         {
+            if(value != Key.None)
             ThrowIfKeyAlreadyBoundToAnotherDirection(value, Direction.Down, nameof(value));
             _downKey = value;
         }
@@ -113,6 +115,7 @@ public abstract class GameConfig
         get => _leftKey;
         set
         {
+            if(value != Key.None)
             ThrowIfKeyAlreadyBoundToAnotherDirection(value, Direction.Left, nameof(value));
             _leftKey = value;
         }
@@ -131,6 +134,7 @@ public abstract class GameConfig
         get => _rightKey;
         set
         {
+            if(value != Key.None)
             ThrowIfKeyAlreadyBoundToAnotherDirection(value, Direction.Right, nameof(value));
             _rightKey = value;
         }

@@ -22,6 +22,7 @@ public enum Key
 {
     /// <summary>No key.</summary>
     None,
+    
     /// <summary>The A key.</summary>
     A,
 
@@ -114,4 +115,64 @@ public enum Key
 
     /// <summary>The space bar.</summary>
     Space,
+
+    /// <summary>The gamepad 0 button.</summary>
+    Gamepad0,
+
+    /// <summary>The gamepad 1 button.</summary>
+    Gamepad1,
+
+    /// <summary>The gamepad 2 button.</summary>
+    Gamepad2,
+
+    /// <summary>The gamepad 3 button.</summary>
+    Gamepad3,
+
+    /// <summary>The gamepad 4 button.</summary>
+    Gamepad4,
+
+    /// <summary>The gamepad 5 button.</summary>
+    Gamepad5,
+
+    /// <summary>The gamepad 6 button.</summary>
+    Gamepad6,
+
+    /// <summary>The gamepad 7 button.</summary>
+    Gamepad7,
+
+    /// <summary>The gamepad 8 button.</summary>
+    Gamepad8,
+
+    /// <summary>The gamepad 9 button.</summary>
+    Gamepad9,
+
+    /// <summary>The gamepad 10 button.</summary>
+    Gamepad10,
+
+    /// <summary>The gamepad 11 button.</summary>
+    Gamepad11,
+
+    /// <summary>The gamepad 12 button.</summary>
+    Gamepad12,
+
+    /// <summary>The gamepad 13 button.</summary>
+    Gamepad13,
+
+    /// <summary>The gamepad 14 button.</summary>
+    Gamepad14,
+
+    /// <summary>The gamepad 15 button.</summary>
+    Gamepad15,
+
+    /// <summary>The gamepad 16 button.</summary>
+    Gamepad16,
+
+    /// <summary>The gamepad 17 button.</summary>
+    Gamepad17,
+
+    /// <summary>The gamepad 18 button.</summary>
+    Gamepad18,
+
+    /// <summary>The gamepad 19 button.</summary>
+    Gamepad19,
 }
