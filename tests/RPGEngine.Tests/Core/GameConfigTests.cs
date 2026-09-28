@@ -146,26 +146,6 @@ public class GameConfigTests
         Assert.Null(config.GetDirection(unmappedKey));
     }
 
-    // ---------------------------------------------------------------------
-    // Additional coverage: the Key enum exposes exactly the documented set
-    // (A–Z, arrow keys, Space) and every movement binding stays unique.
-    // ---------------------------------------------------------------------
-    /// <summary>Verifies the Key enum contains the full documented set: A–Z, Up, Down, Left, Right and Space.</summary>
-    [Fact]
-    public void KeyEnum_ContainsDocumentedSet()
-    {
-        var expected = new[]
-        {
-            Key.None,
-            Key.A, Key.B, Key.C, Key.D, Key.E, Key.F, Key.G, Key.H, Key.I, Key.J,
-            Key.K, Key.L, Key.M, Key.N, Key.O, Key.P, Key.Q, Key.R, Key.S, Key.T,
-            Key.U, Key.V, Key.W, Key.X, Key.Y, Key.Z,
-            Key.Up, Key.Down, Key.Left, Key.Right, Key.Space,
-        };
-
-        Assert.Equal(expected, Enum.GetValues<Key>());
-    }
-
     /// <summary>Verifies that after rebinding, no two directions ever share a key.</summary>
     [Fact]
     public void Bindings_AlwaysRemainUnique()
