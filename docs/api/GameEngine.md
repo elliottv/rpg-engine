@@ -218,9 +218,10 @@ calling this method.
 A **key press** (`isPressed: true`) cancels any in-progress auto-walk; a key **release** does
 not. The walk is replaced by the next `Click`, or the player simply stops on the next `Update`
 when no movement key is held.
+Only movement keys cancel autowalk.
 
 ```csharp
-engine.Input(Key.D, isPressed: true);   // key-down (also cancels any auto-walk)
+engine.Input(Key.D, isPressed: true);   // key-down
 engine.Update(dt);
 engine.Input(Key.D, isPressed: false);  // key-up
 ```

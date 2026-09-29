@@ -236,6 +236,7 @@ public partial class GameEngineTests
     /// <summary>
     /// Verifies a key press during auto-walk cancels the path and the player stops on the next
     /// Update, while a key release alone does not cancel the walk.
+    /// Only movement keys cancel autowalk
     /// </summary>
     [Fact]
     public void Input_KeyPressDuringAutoWalk_CancelsWalk_ButReleaseAloneDoesNot()
@@ -248,13 +249,20 @@ public partial class GameEngineTests
         const int canvas = 480;
         ClickOnTile(engine, 5, 5, canvas, canvas);
 
-        // A key release alone does not cancel the walk.
-        engine.Input(Key.X, isPressed: false);
+        // A movement key release alone does not cancel the walk.
+        engine.Input(engine.Config.UpKey, isPressed: false);
         Assert.NotEmpty(engine.AutoWalkPath);
 
-        // A key press cancels it.
-        engine.Input(Key.X, isPressed: true);
+        // A non movement key input does not cancel the walk.
+        engine.Input(Key.O, isPressed: true);
+        Assert.NotEmpty(engine.AutoWalkPath);
+
+        // A movement key press cancels it.
+        engine.Input(engine.Config.UpKey, isPressed: true);
         Assert.Empty(engine.AutoWalkPath);
+
+        // Release the movement key to prevent movement
+        engine.Input(engine.Config.UpKey, isPressed: false);
 
         // The player stops on the next Update (no input, no path) and does not move further.
         var positionBefore = engine.Player.Position;

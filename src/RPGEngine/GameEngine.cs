@@ -331,7 +331,9 @@ public sealed class GameEngine : IDisposable
             // Input precedence: a key press cancels any in-progress auto-walk. The path is
             // replaced by the next Click, or the player simply stops on the next Update when no
             // movement key is held. A key release does not cancel the walk.
-            _autoWalkPath.Clear();
+            // Only movement keys cancel autowalk
+            if (key == Config.UpKey || key == Config.DownKey || key == Config.LeftKey || key == Config.RightKey)
+                _autoWalkPath.Clear();
         }
         else
         {
